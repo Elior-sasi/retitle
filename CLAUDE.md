@@ -5,3 +5,5 @@ Engine: `rt/` (CLI `python -m rt --help`). App: `rt/app.py` + `rt/ui/index.html`
 
 When localizing a video in chat with this repo: init -> shots -> detect (look at detect_sheet.jpg, fix/merge titles in titles.json, set translate=false for credits/logos/English names, write `he`) -> extract -> masks (look) -> clean -> track -> layers -> preview (look) -> compose -> check (look at every check/*.jpg). Rules: no niqqud, plain " quotes, hyphen not em dash, user's name glossary.
 User-facing text in Hebrew, accessible UI (large text, labels, RTL, contrast, reduced motion).
+
+Releases: CI publishes to this private repo and, with the repo secret RELEASES_TOKEN, also to the public Elior-sasi/retitle-releases, which installs and self-updates read (no token on the user's side).
