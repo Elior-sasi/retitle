@@ -57,6 +57,7 @@ def main():
     print(open(sp, encoding="utf-8").read())
     static_test(d)
     hardsub_test(d)
+    never_seen_test(d)
     qa_test()
     print("SELFTEST OK")
 
@@ -77,6 +78,49 @@ def hardsub_test(d):
         assert abs(a - 48 * k) <= 1 and abs(b - (48 * k + 43)) <= 1 and kind == "sub" and mode == "remove", got[k]
     cues = srt.from_hardsubs(p)
     assert len(cues) == 6 and "find her" in cues[1]["src"], cues
+
+
+def never_seen_test(d):
+    """Locked-off shot with a title for the whole shot: the background behind the letters is never
+    visible, so it is synthesised. It must be filled (no text left), stable between frames and
+    close to the truth."""
+    import cv2, numpy as np
+    from PIL import Image, ImageDraw, ImageFont
+    W, H, N = 960, 540, 72
+    r = np.random.default_rng(9)
+    bg = np.zeros((H, W, 3), np.float32)
+    for k in range(70):
+        cv2.circle(bg, (int(r.integers(0, W)), int(r.integers(0, H))), int(r.integers(20, 120)), r.uniform(30, 220, 3).tolist(), -1)
+    bg = cv2.GaussianBlur(bg, (0, 0), 3)
+    L = Image.new("L", (W, H), 0); dr = ImageDraw.Draw(L)
+    fnt = ImageFont.truetype(os.path.join(ROOT, "fonts", "Heebo[wght].ttf"), 80); fnt.set_variation_by_axes([800])
+    dr.text((150, 220), "THE LOST TIGER", font=fnt, fill=255)
+    a = np.array(L).astype(np.float32)[..., None] / 255
+    clip = os.path.join(d, "ns.mp4")
+    ff = os.environ.get("FFMPEG", "ffmpeg")
+    p = subprocess.Popen([ff, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", "24", "-i", "-",
+                          "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", clip], stdin=subprocess.PIPE)
+    truth = []
+    for f in range(N):
+        b = np.clip(bg + r.normal(0, 2, bg.shape), 0, 255)
+        truth.append(b)
+        p.stdin.write((b * (1 - a) + 255 * a).astype(np.uint8).tobytes())
+    p.stdin.close(); p.wait()
+    pj = os.path.join(d, "ns"); os.makedirs(pj)
+    vio.save_json(os.path.join(pj, "project.json"), {"video": clip, "info": vio.probe(clip)})
+    shots.run(pj); detect.run(pj, "eng"); extract.run(pj)
+    import time; t0 = time.time()
+    clean.run(pj)
+    T = vio.load_json(os.path.join(pj, "titles.json"))
+    t = T["titles"][0]; x0, y0, x1, y1 = t["region"]
+    st = vio.load_json(os.path.join(pj, "clean_stats.json"))[t["group"]]
+    outs = [cv2.imread(os.path.join(pj, "clean", t["group"], f"{f:06d}.png")).astype(np.float32) for f in (5, 40, 66)]
+    m = cv2.dilate((a[..., 0] > 0.1).astype(np.uint8), np.ones((5, 5), np.uint8))[y0:y1, x0:x1] > 0
+    err = float(np.abs(outs[1] - truth[40][y0:y1, x0:x1]).max(2)[m].mean())
+    flick = float(np.abs(outs[0] - outs[2]).max(2)[m].mean())
+    white = float((outs[1][m].min(1) > 235).mean())
+    print(f"never-seen: synth {st['synth_max']}, error {err:.1f}, flicker {flick:.1f}, white left {white:.3f}, {time.time() - t0:.0f}s")
+    assert st["synth_max"] > 0.8 and err < 25 and flick < 8 and white < 0.01, (st, err, flick, white)
 
 
 def qa_test():

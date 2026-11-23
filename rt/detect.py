@@ -219,7 +219,7 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None):
     titles = []
     for e in events:
         ds = e["dets"]
-        if len(ds) < 2 and ds[0]["conf"] < 80:
+        if len(ds) < 2 and ds[0]["conf"] < 65:
             continue  # one-off OCR noise
         texts = [d["text"] for d in ds]
         text = max(set(texts), key=lambda t: (texts.count(t) + len(norm(t)) / 4, len(t)))

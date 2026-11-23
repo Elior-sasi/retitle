@@ -19,6 +19,12 @@ def run(proj, every=None, progress=None):
     os.makedirs(sdir, exist_ok=True)
     feats, diffs, prev, prevh = [], [], None, None
     samples, last_s, last_f = [], None, -10 ** 9
+    # camera motion track: frame-to-frame translation on the whole picture (phase correlation),
+    # accumulated - later used to align distant frames even when text sits still on screen
+    MW, MH = 640, int(round(640 * h / w / 2)) * 2
+    TW, TH = 160, max(60, MH // 3)
+    win = cv2.createHanningWindow((TW, TH), cv2.CV_32F)
+    mprev, pos, conf = None, [(0.0, 0.0)], [1.0]
     n = 0
     for i, f in enumerate(vio.frames(P["video"], w, h)):
         small = cv2.resize(f, (192, 108), interpolation=cv2.INTER_AREA)
@@ -33,6 +39,20 @@ def run(proj, every=None, progress=None):
             md = float(np.mean(np.abs(g - prev))) / 255
             diffs.append((float(hd), md))
         feats.append(float(g.mean()))
+        mg = cv2.cvtColor(cv2.resize(f, (MW, MH), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY).astype(np.float32)
+        if mprev is not None:
+            # median over a grid of tiles: titles and subtitles cover only some tiles
+            sh = []
+            for ty in range(0, MH - TH + 1, TH):
+                for tx in range(0, MW - TW + 1, TW):
+                    (dx, dy), resp = cv2.phaseCorrelate(mprev[ty:ty + TH, tx:tx + TW], mg[ty:ty + TH, tx:tx + TW], win)
+                    if resp > 0.1:
+                        sh.append((dx, dy))
+            dx, dy = (np.median(np.array(sh), 0) if len(sh) >= 3 else (0.0, 0.0))
+            sx = w / MW
+            px, py = pos[-1]
+            pos.append((px + float(dx) * sx, py + float(dy) * sx)); conf.append(len(sh) / 12)
+        mprev = mg
         prev, prevh = g, hist
         if i % every == 0:
             # change test on a 64x36 block grid: any block that changed means new content
@@ -57,6 +77,7 @@ def run(proj, every=None, progress=None):
     P["n_frames"] = n
     vio.save_json(os.path.join(proj, "project.json"), P)
     vio.save_json(os.path.join(proj, "shots.json"), {"cuts": cuts, "n_frames": n,
+                  "motion": [[round(a, 2), round(b, 2)] for a, b in pos], "motion_conf": [round(c, 3) for c in conf],
                   "score": [round(float(s), 4) for s in score], "every": every, "samples": samples})
     return cuts
 

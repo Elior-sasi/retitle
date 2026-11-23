@@ -44,12 +44,26 @@ def _frame_mask(img, f, lines, reg, margin=0):
     return m
 
 
-def _align(tgt_g, src_g, valid, scale=0.5):
-    """Affine warp mapping src -> tgt. Returns (warp 2x3 at full res, residual) or (None, inf)."""
+def _align(tgt_g, src_g, valid, scale=0.5, init=None):
+    """Affine warp mapping src -> tgt. Returns (warp 2x3 at full res, residual) or (None, inf).
+    init: (dx, dy) from the camera-motion track. When given it is trusted: ECC may only refine it."""
     ts = cv2.resize(tgt_g, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     ss = cv2.resize(src_g, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     vm = cv2.resize(valid, (ts.shape[1], ts.shape[0]), interpolation=cv2.INTER_NEAREST)
     warp = np.eye(2, 3, dtype=np.float32)
+    if init is not None:
+        warp[0, 2], warp[1, 2] = init[0] * scale, init[1] * scale
+        w0 = warp.copy()
+        try:
+            _, warp = cv2.findTransformECC(ts, ss, warp, cv2.MOTION_AFFINE,
+                                           (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 40, 1e-5), vm, 5)
+            lin = np.abs(warp[:, :2] - np.eye(2)).max()
+            if np.abs(warp[:, 2] - w0[:, 2]).max() > max(3.0, 0.15 * np.abs(w0[:, 2]).max()) or lin > 0.05:
+                warp = w0   # ECC wandered off (flat area / graphics): keep the track
+        except cv2.error:
+            warp = w0
+        warp[:, 2] /= scale
+        return warp, 0.0
     # coarse translation first (camera pans can be 100+ px between distant frames), ECC refines
     try:
         win = cv2.createHanningWindow((ts.shape[1], ts.shape[0]), cv2.CV_32F)
@@ -125,7 +139,7 @@ def _others_mask(c, others, reg, shape, ci=None):
     return m
 
 
-def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, second=True, others=()):
+def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, second=True, others=(), motion=None):
     img = _load(proj, gid, f)
     H, W = img.shape[:2]
     M0 = frame_mask(img, f, lines, reg)
@@ -187,10 +201,16 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
             if t["id"] in refm and t["in"] - 2 <= c <= t["out"] + 2:
                 Mc |= refm[t["id"]]
         valid_t = ((cv2.dilate(M | Mc, np.ones((9, 9), np.uint8)) == 0)).astype(np.uint8)
-        warp, _ = _align(tg, cv2.cvtColor(ci, cv2.COLOR_BGR2GRAY).astype(np.float32), valid_t)
-        tries_w = [np.eye(2, 3, dtype=np.float32)]
-        if warp is not None and np.abs(warp - tries_w[0]).max() > 1e-3:
-            tries_w.insert(0, warp)
+        init = None
+        if motion is not None:
+            init = (motion[c][0] - motion[f][0], motion[c][1] - motion[f][1])
+        warp, _ = _align(tg, cv2.cvtColor(ci, cv2.COLOR_BGR2GRAY).astype(np.float32), valid_t, init=init)
+        if init is not None:
+            tries_w = [warp]   # the track knows the camera: no identity rival (static text fools it)
+        else:
+            tries_w = [np.eye(2, 3, dtype=np.float32)]
+            if warp is not None and np.abs(warp - tries_w[0]).max() > 1e-3:
+                tries_w.insert(0, warp)
         best = None
         for wp in tries_w:   # ECC can be pulled by graphics that appear with the text: keep identity as a rival
             r = _fit(img, ci, Mc, M, wp, W, H)
@@ -228,7 +248,7 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
     core = cv2.dilate(M0, np.ones((7, 7), np.uint8)) > 0
     need = hole_left & core
     if need.any():
-        plate = synth(plate, need)
+        plate = synth_cached(gid, f, plate, need, motion)
     unknown = hole_left & ~core
     frac = float((hole_left & (M0 > 0)).sum()) / max(1, (M0 > 0).sum())
     if second:
@@ -238,6 +258,8 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
         M = M0 | ((cv2.dilate(extra, np.ones((5, 5), np.uint8)) > 0) & ~unknown).astype(np.uint8) * 255
     else:
         M = M0
+    # antialias / compression halo around the letters: replace a little beyond the mask
+    M = M | (cv2.dilate(M0, np.ones((5, 5), np.uint8)) & ~(unknown.astype(np.uint8) * 255))
     a = cv2.GaussianBlur((M > 0).astype(np.float32), (0, 0), 1.2)[..., None]
     a = np.maximum(a, (M > 0)[..., None].astype(np.float32))
     out = (img.astype(np.float32) * (1 - a) + plate.astype(np.float32) * a).astype(np.uint8)
@@ -245,16 +267,46 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
 
 
 def synth(img, hole):
-    """Fill pixels never seen in any neighbour. FSR keeps texture; TELEA for tiny specks."""
-    known = (~hole).astype(np.uint8) * 255
-    if hole.sum() < 150 or not hasattr(cv2, "xphoto"):
+    """Fill pixels never seen in any other frame. Structure from a smooth fill (Navier-Stokes),
+    texture and grain from exemplar patches of the surrounding picture - no soft blobs."""
+    hole = hole.astype(bool)
+    if hole.sum() < 150:
         return cv2.inpaint(img, hole.astype(np.uint8) * 255, 5, cv2.INPAINT_TELEA)
-    out = np.zeros_like(img)
-    try:
-        cv2.xphoto.inpaint(img, known, out, cv2.xphoto.INPAINT_FSR_FAST)
-        return out
-    except cv2.error:
-        return cv2.inpaint(img, hole.astype(np.uint8) * 255, 5, cv2.INPAINT_TELEA)
+    from .inpaint import exemplar
+    ns = cv2.inpaint(img, hole.astype(np.uint8) * 255, 5, cv2.INPAINT_NS).astype(np.float32)
+    ex = exemplar(img, hole, patch=9).astype(np.float32)
+    hf = ex - cv2.GaussianBlur(ex, (0, 0), 2)
+    # grain only as strong as the real picture around the hole: copied patch seams stay invisible
+    ring = (cv2.dilate(hole.astype(np.uint8), np.ones((31, 31), np.uint8)) > 0) & ~hole
+    if ring.any():
+        imf = img.astype(np.float32)
+        sig = float((imf - cv2.GaussianBlur(imf, (0, 0), 2))[ring].std())
+        hf = np.clip(hf, -2.5 * sig, 2.5 * sig)
+    mix = cv2.GaussianBlur(ns, (0, 0), 2) + hf
+    out = img.copy()
+    out[hole] = np.clip(mix[hole], 0, 255).astype(np.uint8)
+    return out
+
+
+SYNTH = {}   # per card, for a locked-off camera: fill once, reuse (no flicker, much faster)
+
+
+def synth_cached(gid, f, img, hole, motion):
+    c = SYNTH.get(gid)
+    if c is not None and motion is not None:
+        cf, cmask, cimg = c
+        still = abs(motion[f][0] - motion[cf][0]) < 0.5 and abs(motion[f][1] - motion[cf][1]) < 0.5
+        if still and (hole & ~cmask).sum() <= 0.02 * max(1, hole.sum()):
+            out = img.copy()
+            out[hole] = cimg[hole]
+            rest = hole & ~cmask
+            if rest.any():
+                out = cv2.inpaint(out, rest.astype(np.uint8) * 255, 3, cv2.INPAINT_TELEA)
+            return out
+    out = synth(img, hole)
+    if motion is not None:
+        SYNTH[gid] = (f, hole.copy(), out.copy())
+    return out
 
 
 def run(proj, only=None):
@@ -271,14 +323,15 @@ def run(proj, only=None):
         reg = act[0]["region"]; lo, hi = act[0]["cache"]
         d = os.path.join(proj, "clean", gid)
         shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
-        _IMG.clear(); _MSK.clear()
+        _IMG.clear(); _MSK.clear(); SYNTH.clear()
         a = min(t["in"] for t in act); b = max(t["out"] for t in act)
         ids = {t["id"] for t in lines}
         others = [o for o in T["titles"] if o["id"] not in ids and
                   not (o["box"][2] < reg[0] or o["box"][0] > reg[2] or o["box"][3] < reg[1] or o["box"][1] > reg[3])]
         fr = []
         for f in range(a, b + 1):
-            out, frac, M = clean_frame(proj, gid, f, lines, reg, S["cuts"], n, lo, hi, others=others)
+            out, frac, M = clean_frame(proj, gid, f, lines, reg, S["cuts"], n, lo, hi, others=others,
+                                       motion=S.get("motion"))
             cv2.imwrite(os.path.join(d, f"{f:06d}.png"), out)
             cv2.imwrite(os.path.join(d, f"m{f:06d}.png"), M)
             fr.append(frac)

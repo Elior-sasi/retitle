@@ -610,7 +610,7 @@ async function openQA(){await flush();const r=await api('/api/qa',{});const L=r.
 $('#qa-re').onclick=()=>{$('#d-qa').close();openQA()};
 async function checkUpdate(show){let r;try{r=await api('/api/update/check',{})}catch(e){r={error:String(e)}}
   const m=$('#upd-msg'),go=$('#upd-go');go.hidden=true;
-  if(r.error){if(!show)return;m.textContent=`לא הצלחתי לבדוק עדכונים (${r.error}). אם הריפו פרטי, צריך טוקן GitHub בהעדפות.`}
+  if(r.error){if(!show)return;m.textContent=`לא הצלחתי לבדוק עדכונים. בדוק את החיבור לאינטרנט ונסה שוב.`}
   else if(r.newer){m.textContent=`יש גרסה חדשה: ${r.latest} (אצלך ${r.current||'לא ידוע'}).`;go.hidden=false;if(!show){say(`יש גרסה חדשה (${r.latest}) - עזרה > בדוק עדכונים`);return}}
   else{if(!show)return;m.textContent=`הגרסה שלך (${r.current}) היא האחרונה.`}
   openDlg('#d-upd')}

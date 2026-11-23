@@ -8,6 +8,8 @@ permissions:
 jobs:
   win:
     runs-on: windows-latest
+    env:
+      RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -57,14 +59,48 @@ jobs:
       - name: Zip
         shell: pwsh
         run: Compress-Archive dist/Retitle Retitle-win64.zip
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc /DAppVer=${{ github.run_number }} installer.iss
+          Copy-Item dist/Retitle-Setup.exe Retitle-Setup.exe
+      - name: Installer smoke test (silent install, start, uninstall)
+        shell: pwsh
+        run: |
+          Start-Process .\Retitle-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-" -Wait
+          $exe = "$env:LOCALAPPDATA\Programs\Retitle\Retitle.exe"
+          if (!(Test-Path $exe)) { throw "not installed" }
+          Start-Sleep 15
+          Invoke-RestMethod "http://127.0.0.1:8765/api/status" | Out-Null
+          Get-Process Retitle -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Process "$env:LOCALAPPDATA\Programs\Retitle\unins000.exe" -ArgumentList "/VERYSILENT" -Wait
+          Write-Host "INSTALLER SMOKE OK"
       - uses: actions/upload-artifact@v4
         with:
           name: Retitle-win64
-          path: Retitle-win64.zip
+          path: |
+            Retitle-Setup.exe
+            Retitle-win64.zip
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Retitle build ${{ github.run_number }}
-          files: Retitle-win64.zip
+          files: |
+            Retitle-Setup.exe
+            Retitle-win64.zip
+          make_latest: true
+      - name: Publish to the public releases repo (for installs without a token)
+        if: ${{ env.RELEASES_TOKEN != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: Elior-sasi/retitle-releases
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: build-${{ github.run_number }}
+          name: Retitle build ${{ github.run_number }}
+          files: |
+            Retitle-Setup.exe
+            Retitle-win64.zip
           make_latest: true

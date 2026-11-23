@@ -37,6 +37,16 @@ def run(proj, pad=48):
         sa, _ = shot_of(S["cuts"], n, a)
         _, eb = shot_of(S["cuts"], n, b)
         lo, hi = max(sa, a - pad), min(eb - 1, b + pad)
+        # slow camera moves: reach further (up to 10 s) until the picture has moved ~40 px,
+        # so the background behind the letters shows up in some frame
+        mo = S.get("motion")
+        if mo:
+            lim = int(10 * P["info"]["fps"])
+            dist = lambda x, y: abs(mo[x][0] - mo[y][0]) + abs(mo[x][1] - mo[y][1])
+            while lo > sa and a - lo < lim and dist(lo, a) < 40:
+                lo -= 1
+            while hi < eb - 1 and hi - b < lim and dist(hi, b) < 40:
+                hi += 1
         for t in lines:
             t["region"] = reg
         jobs[gid] = (lo, hi, reg)
