@@ -3,7 +3,7 @@ import os, cv2, numpy as np
 from . import vio, live
 
 
-def run(proj, every=None, progress=None):
+def run(proj, every=None, progress=None, rng=None):
     """Samples for OCR are taken every `every` frames (default ~1/6 s) but only written when the
     picture changed since the last written sample - long static stretches (interviews, still
     shots) cost one sample, which keeps hour-long episodes practical."""
@@ -15,16 +15,30 @@ def run(proj, every=None, progress=None):
     every = every or max(3, int(round(fps / 6)))
     total = max(1, int(info.get("duration", 0) * fps))
     sdir = os.path.join(proj, "samples")
-    shutil.rmtree(sdir, ignore_errors=True)
-    os.makedirs(sdir, exist_ok=True)
-    feats, diffs, prev, prevh = [], [], None, None
+    old = vio.load_json(os.path.join(proj, "shots.json"))
+    N = P.get("n_frames") or (old or {}).get("n_frames") or 0
+    if rng and not N:
+        N = vio.count_frames(P["video"])
+    if rng and N:
+        # work range: only that stretch (plus 2 s each side for the cuts around it) is read
+        a0, b0 = max(0, int(rng[0]) - int(2 * fps)), min(N - 1, int(rng[1]) + int(2 * fps))
+        total = max(1, b0 - a0 + 1)
+        os.makedirs(sdir, exist_ok=True)
+        for fn in os.listdir(sdir):
+            if fn[:-4].isdigit() and a0 <= int(fn[:-4]) <= b0:
+                os.remove(os.path.join(sdir, fn))
+    else:
+        rng, a0, b0 = None, 0, None
+        shutil.rmtree(sdir, ignore_errors=True)
+        os.makedirs(sdir, exist_ok=True)
+    feats, diffs, prev, prevh = [0.0] * a0, [(0.0, 0.0)] * a0, None, None
     samples, last_s, last_f = [], None, -10 ** 9
     # camera motion track: frame-to-frame translation on the whole picture (phase correlation),
     # accumulated - later used to align distant frames even when text sits still on screen
     MW, MH = 640, int(round(640 * h / w / 2)) * 2
     TW, TH = 160, max(60, MH // 3)
     win = cv2.createHanningWindow((TW, TH), cv2.CV_32F)
-    mprev, pos, conf = None, [(0.0, 0.0)], [1.0]
+    mprev, pos, conf = None, [(0.0, 0.0)] * (a0 + 1), [1.0] * (a0 + 1)
     from concurrent.futures import ThreadPoolExecutor
     nt = max(2, min(12, os.cpu_count() or 2))
 
@@ -59,10 +73,10 @@ def run(proj, every=None, progress=None):
         if buf:
             yield buf
 
-    n = 0
+    n = a0
     writes = []
     with ThreadPoolExecutor(nt) as ex:
-        for batch in batches(vio.frames(P["video"], w, h)):
+        for batch in batches(vio.frames(P["video"], w, h, first=a0 or None, last=b0)):
             F = list(ex.map(feat, batch))
             mgs = [mprev] + [x[2] for x in F] if mprev is not None else [x[2] for x in F]
             S = list(ex.map(shift, zip(mgs[:-1], mgs[1:])))
@@ -95,18 +109,40 @@ def run(proj, every=None, progress=None):
                         samples.append(i); last_s = sm; last_f = i
                 n = i + 1
             if progress:
-                progress(min(1.0, n / total))
+                progress(min(1.0, (n - a0) / total))
         for x in writes:
             x.result()
+    if rng:                                   # the rest of the video keeps what an earlier pass found
+        tail = max(0, N - n)
+        diffs += [(0.0, 0.0)] * tail; feats += [0.0] * tail
+        pos += [pos[-1]] * max(0, N - len(pos)); conf += [1.0] * max(0, N - len(conf))
+        if old and len(old.get("motion", [])) == N:
+            om = old["motion"]
+            # join the new stretch onto the old track without a jump at either end
+            dx, dy = om[a0][0] - pos[a0][0], om[a0][1] - pos[a0][1]
+            for i in range(a0, n):
+                pos[i] = (pos[i][0] + dx, pos[i][1] + dy)
+            ex, ey = (pos[n - 1][0] - om[n - 1][0], pos[n - 1][1] - om[n - 1][1]) if n - 1 < N else (0, 0)
+            for i in range(0, a0):
+                pos[i] = tuple(om[i]); conf[i] = old["motion_conf"][i]
+            for i in range(n, N):
+                pos[i] = (om[i][0] + ex, om[i][1] + ey); conf[i] = old["motion_conf"][i]
+        n = N
     d = np.array(diffs)
     score = d[:, 0] * 0.7 + d[:, 1] * 2.0
     cuts = [0]
-    for i in range(1, n):
+    for i in range(max(1, a0 + 1) if rng else 1, (b0 + 1) if rng else n):
         lo, hi = max(1, i - 12), min(n, i + 13)
         local = np.median(score[lo:hi])
         if score[i] > max(0.28, local * 3 + 0.08) and score[i] == score[max(1, i - 2):i + 3].max():
             if i - cuts[-1] >= 3:
                 cuts.append(i)
+    if rng:
+        keep = [c for c in (old or {}).get("cuts", []) if c < a0 or c > b0]
+        cuts = sorted(set(keep) | set(cuts) | {0})
+        samples = sorted(set(s_ for s_ in (old or {}).get("samples", []) if s_ < a0 or s_ > b0) | set(samples))
+        if old and len(old.get("score", [])) == N:
+            score = np.array([old["score"][i] if (i < a0 or i > b0) else score[i] for i in range(N)])
     # flash / fade frames: big luma jumps both ways - recorded separately, not cuts
     P["n_frames"] = n
     vio.save_json(os.path.join(proj, "project.json"), P)

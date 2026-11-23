@@ -162,9 +162,10 @@ def separate(mix, progress=None, overlap=OVERLAP):
     return np.concatenate([c for _, c in chunks(mix, progress, overlap)], 1)
 
 
-def speech_wav(video, out_wav, progress=None, soft=SOFT):
+def speech_wav(video, out_wav, progress=None, soft=SOFT, start=None, dur=None):
     """Write a 16 kHz mono WAV of the dialogue only (same length as the video's audio)."""
-    r = subprocess.run([vio.FFMPEG, "-v", "error", "-i", video, "-map", "0:a:0", "-ac", "2", "-ar", str(SR),
+    cut = (["-ss", f"{start:.3f}"] if start else []) + (["-t", f"{dur:.3f}"] if dur else [])
+    r = subprocess.run([vio.FFMPEG, "-v", "error", *cut, "-i", video, "-map", "0:a:0", "-ac", "2", "-ar", str(SR),
                         "-f", "f32le", "-"], capture_output=True, check=True, **vio.NOWIN)
     mix = np.frombuffer(r.stdout, np.float32).reshape(-1, 2).T.copy()
     del r

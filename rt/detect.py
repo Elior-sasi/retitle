@@ -211,10 +211,13 @@ def _live(proj, f, words):
     live.show(proj, f"מחפש טקסט - פריים {fr}" + (f" - נמצא: {' '.join(w['text'] for w in words)[:40]}" if words else ""), img, width=960)
 
 
-def run(proj, langs="eng", workers=None, scale=None, progress=None):
+def run(proj, langs="eng", workers=None, scale=None, progress=None, rng=None):
     P = vio.load_json(os.path.join(proj, "project.json"))
     S = vio.load_json(os.path.join(proj, "shots.json"))
     files = sorted(glob.glob(os.path.join(proj, "samples", "*.jpg")))
+    if rng:                                    # work range: only its samples (and 2 s around it)
+        m = int(2 * P["info"]["fps"])
+        files = [f for f in files if rng[0] - m <= int(os.path.basename(f)[:-4]) <= rng[1] + m]
     W = P["info"]["width"]
     if scale is None:  # detection works well at ~1280 px; faster for 4K / long material
         scale = min(1.0, 1280 / W)
@@ -231,7 +234,7 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None):
             if r or k % 8 == 0:
                 _live(proj, f, r)
     every = S["every"]
-    order = S.get("samples") or sorted(int(os.path.basename(f)[:-4]) for f in files)
+    order = sorted(set(S.get("samples") or []) | {int(os.path.basename(f)[:-4]) for f in files})
     sidx = {fr: k for k, fr in enumerate(order)}
     dets = []
     for f in files:
@@ -320,9 +323,45 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None):
         t["id"] = f"t{i + 1:02d}"
     classify_keep(titles, P)
     classify_hardsubs([t for t in titles if not t.get("auto_reason")], P)
+    if rng:
+        titles = merge_range(proj, titles, rng)
     vio.save_json(os.path.join(proj, "titles.json"), {"titles": titles})
     sheet(proj, titles, P)
     return titles
+
+
+def merge_range(proj, new, rng):
+    """Work range: titles found in it replace the ones there before; everything outside the range
+    (with its Hebrew, masks and style) stays as it was."""
+    a, b = rng
+    old = (vio.load_json(os.path.join(proj, "titles.json")) or {}).get("titles", [])
+    keep = [t for t in old if t["sample_out"] < a or t["sample_in"] > b]
+    new = [t for t in new if not (t["sample_out"] < a or t["sample_in"] > b)]
+    num = lambda x, p: int(x[1:]) if x and x[0] == p and x[1:].isdigit() else 0
+    ni = max([num(t["id"], "t") for t in old] + [0]); gi = max([num(t.get("group", ""), "g") for t in old] + [0])
+    gmap = {}
+    inside = [t for t in old if t not in keep]
+    USER = ("he", "translate", "mode", "layer", "style", "style_locked", "auto_mask", "mask", "in_override",
+            "out_override", "font_auto", "series_override", "from_series", "auto_reason", "logo_full", "reveal_dir")
+    used = set()
+    for t in new:
+        # the same text at the same time as before: keep the user's work on it (Hebrew, choices, style)
+        o = next((x for x in inside if x["id"] not in used and norm(x["src"]) == norm(t["src"])
+                  and x["sample_in"] <= t["sample_out"] and t["sample_in"] <= x["sample_out"]), None)
+        if o:
+            used.add(o["id"])
+            for k in USER:
+                if k in o:
+                    t[k] = o[k]
+                else:
+                    t.pop(k, None) if k in ("auto_reason",) else None
+            t["id"] = o["id"]
+            continue
+        ni += 1; t["id"] = f"t{ni:02d}"
+        if t["group"] not in gmap:
+            gi += 1; gmap[t["group"]] = f"g{gi:02d}"
+        t["group"] = gmap[t["group"]]
+    return sorted(keep + new, key=lambda t: (t["sample_in"], t["box"][1]))
 
 
 def classify_hardsubs(titles, P):

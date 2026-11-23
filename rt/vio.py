@@ -25,9 +25,16 @@ def probe(path):
             "codec": v.get("codec_name")}
 
 
-def frames(path, w, h, scale=None):
-    """Yield every decoded frame (BGR uint8) in order. scale=(sw,sh) to downscale."""
-    vf = ["-vf", f"scale={scale[0]}:{scale[1]}:flags=area"] if scale else []
+def frames(path, w, h, scale=None, first=None, last=None):
+    """Yield every decoded frame (BGR uint8) in order. scale=(sw,sh) to downscale.
+    first/last (inclusive): only that stretch is converted and sent (counted by decoded frames: exact)."""
+    flt = []
+    if first is not None or last is not None:
+        flt.append("trim=" + ":".join(x for x in (f"start_frame={first}" if first else "",
+                                                     f"end_frame={last + 1}" if last is not None else "") if x))
+    if scale:
+        flt.append(f"scale={scale[0]}:{scale[1]}:flags=area")
+    vf = ["-vf", ",".join(flt)] if flt else []
     ow, oh = scale if scale else (w, h)
     cmd = [FFMPEG, "-v", "error", "-i", path, "-map", "0:v:0", "-fps_mode", "passthrough",
            *vf, "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
@@ -105,3 +112,13 @@ def grab(path, f, info):
     if len(r.stdout) < w * h * 3:
         return None
     return np.frombuffer(r.stdout[:w * h * 3], np.uint8).reshape(h, w, 3).copy()
+
+
+def count_frames(path):
+    """Number of video frames without decoding (packet count)."""
+    out = subprocess.run([FFPROBE, "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
+                          "stream=nb_read_packets", "-of", "csv=p=0", path], capture_output=True, text=True, **NOWIN).stdout
+    try:
+        return int(out.strip().split(",")[0])
+    except ValueError:
+        return 0

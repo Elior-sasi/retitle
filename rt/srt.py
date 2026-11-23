@@ -25,11 +25,13 @@ def _words(wj):
     return out
 
 
-def prep(proj, whisper_json, lang_cjk=None):
+def prep(proj, whisper_json, lang_cjk=None, rng_s=None):
     P = vio.load_json(os.path.join(proj, "project.json"))
     cfg = {**DEF, **P.get("srt", {})}
     wj = vio.load_json(whisper_json)
     ws = [w for w in _words(wj) if w["t"].strip()]
+    if rng_s:                                  # work range: only cues there are rebuilt
+        ws = [w for w in ws if rng_s[0] <= w["s"] < rng_s[1]]
     cjk = lang_cjk if lang_cjk is not None else (wj.get("language") in ("ja", "zh", "ko") if isinstance(wj, dict) else False)
     maxc = 30 if cjk else 80
     cues, cur = [], []
@@ -47,6 +49,11 @@ def prep(proj, whisper_json, lang_cjk=None):
     for k, c in enumerate(cues):
         txt = "".join(x["t"] for x in c).strip() if cjk else " ".join(x["t"].strip() for x in c)
         res.append({"n": k + 1, "start": round(c[0]["s"], 3), "end": round(c[-1]["e"], 3), "src": txt, "he": ""})
+    if rng_s:                                  # cues outside the range keep their text and Hebrew
+        old = (vio.load_json(os.path.join(proj, "dialog.json")) or {}).get("cues", [])
+        res = sorted([c for c in old if c["end"] <= rng_s[0] or c["start"] >= rng_s[1]] + res, key=lambda c: c["start"])
+        for k, c in enumerate(res):
+            c["n"] = k + 1
     vio.save_json(os.path.join(proj, "dialog.json"), {"cues": res})
     return res
 
@@ -127,7 +134,7 @@ def build(proj, out_name=None, rle=None):
     return p, warns
 
 
-def transcribe(video, out_json, lang=None, model="large-v3"):
+def transcribe(video, out_json, lang=None, model="large-v3", offset=0.0, rng_s=None):
     """Runs where faster-whisper is installed (the PC). word timestamps on."""
     from . import asr
 
@@ -147,6 +154,15 @@ def transcribe(video, out_json, lang=None, model="large-v3"):
         from faster_whisper import WhisperModel     # GPU libraries missing: fall back to the CPU
         res = go(WhisperModel(asr.model_dir(model) if asr.ready(model) else model, device="cpu", compute_type="int8"))
     res["segments"] = [x for x in res["segments"] if not noise_line(x["text"])]
+    if offset:                                 # the audio was a cut of the work range: back to video time
+        for x in res["segments"]:
+            x["start"] += offset; x["end"] += offset
+            for w in x["words"]:
+                w["start"] += offset; w["end"] += offset
+    if rng_s and os.path.exists(out_json):     # keep what was transcribed outside the range
+        old = vio.load_json(out_json) or {}
+        res["segments"] = sorted([x for x in old.get("segments", []) if x["end"] <= rng_s[0] or x["start"] >= rng_s[1]]
+                                 + res["segments"], key=lambda x: x["start"])
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False, indent=1)
     return out_json

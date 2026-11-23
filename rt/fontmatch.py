@@ -408,12 +408,13 @@ def apply_row(t, row):
             st.pop(k, None)
 
 
-def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print):
+def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print, only=None):
     """Automatic pick at analysis time, for titles whose font nobody chose (not locked, not from the series).
     Local ranking only - the Claude check is per title, from the "find a similar font" button."""
     T = vio.load_json(os.path.join(proj, "titles.json"))
     todo = [t for t in T["titles"] if t.get("translate", True) and t.get("mode") != "remove" and t.get("kind") != "sub"
-            and "font" not in t.get("style_locked", []) and not t.get("from_series")]
+            and "font" not in t.get("style_locked", []) and not t.get("from_series")
+            and (only is None or t["id"] in only)]
     if not todo:
         return 0
     cands = candidate_traits(progress=lambda x: progress(0.8 * x) if progress else None)

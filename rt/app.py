@@ -190,20 +190,28 @@ def job_analyze():
     s = settings()
     proj = STATE["proj"]
 
+    rng = vio.load_json(P("project.json")).get("range")
+    before = {t["id"] for t in vio.load_json(P("titles.json"), {"titles": []})["titles"]} if rng else set()
+    if rng:
+        log(f"עובד רק על הטווח המסומן: {tcode(rng[0])} עד {tcode(rng[1])}")
+
     def a():
-        c = shots.run(proj, progress=prog)
+        c = shots.run(proj, progress=prog, rng=rng)
         log(f"{len(c)} שוטים")
 
     def b():
-        ts = detect.run(proj, s.get("src_lang") or "eng", progress=prog)
-        log(f"נמצאו {len(ts)} שורות טקסט")
+        ts = detect.run(proj, s.get("src_lang") or "eng", progress=prog, rng=rng)
+        log(f"נמצאו {len([t for t in ts if t['id'] not in before])} שורות טקסט" + (" בטווח" if rng else ""))
 
     def c():
         extract.run(proj, progress=prog)
         prog(0.9)
         thumbs()
     def d():
-        fonts_auto()
+        if rng:
+            fonts_auto(only={t["id"] for t in vio.load_json(P("titles.json"))["titles"] if t["id"] not in before})
+        else:
+            fonts_auto()
     run_steps([("מחפש חיתוכי שוטים", 0.15, a), ("מזהה טקסט על המסך", 0.45, b), ("מודד צבע, צל ותזמון מדויק", 0.32, c),
                ("מתאים גופן עברי לכל כותרת", 0.08, d)])
     n = series_apply()
@@ -296,12 +304,12 @@ def job_overlay():
     log("להדבקה על וידאו אחר באותו אורך וקצב פריימים (למשל גרסה בלי טקסט): שים את הקובץ ברצועה מעל הווידאו, מתחילת הציר.")
 
 
-def fonts_auto():
+def fonts_auto(only=None):
     from . import fontmatch
     s = settings()
     with LOCK:
         n = fontmatch.run(STATE["proj"], api_key=s.get("api_key", ""), model=s.get("model") or "claude-sonnet-5-5",
-                          progress=prog, log=log)
+                          progress=prog, log=log, only=only)
     if n:
         log(f"נבחר גופן אוטומטית ל-{n} כותרות" + (" (בעזרת Claude)" if s.get("api_key") else ""))
     return n
@@ -361,6 +369,14 @@ def job_transcribe():
         log("מוריד את מנוע התמלול (פעם אחת)...")
         asr.wait(name, progress=lambda x: STATE.update(progress=round(0.5 * x, 3)) if not STATE["cancel"] else prog(0))
     audio = PJ["video"]
+    rng = PJ.get("range")
+    fps = PJ["info"]["fps"] or 24
+    start, dur = (rng[0] / fps, (rng[1] + 1 - rng[0]) / fps) if rng else (None, None)
+    if rng:
+        log(f"מתמלל רק את הטווח המסומן: {tcode(rng[0])} עד {tcode(rng[1])}")
+        audio = P("range.wav")
+        subprocess.run([vio.FFMPEG, "-v", "error", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", PJ["video"],
+                        "-map", "0:a:0", "-ac", "1", "-ar", "16000", audio], check=True, **vio.NOWIN)
     if s.get("sep_vocals", True) and PJ.get("info", {}).get("has_audio", True):
         from . import vocals
         RANGE[:] = [0.5 if STATE["steps"] == 2 else 0.0, 0.75]
@@ -370,18 +386,19 @@ def job_transcribe():
                 log("מוריד את מודל הפרדת הדיבור (פעם אחת)...")
                 vocals.fetch(progress=lambda x: prog(0.2 * x))
             log("מפריד את הדיבור מהמוזיקה...")
-            audio = vocals.speech_wav(PJ["video"], P("speech.wav"), progress=lambda x: prog(0.2 + 0.8 * x))
+            audio = vocals.speech_wav(PJ["video"], P("speech.wav"), progress=lambda x: prog(0.2 + 0.8 * x), start=start, dur=dur)
         except Cancelled:
             raise
         except Exception as e:
             traceback.print_exc()
             log(f"הפרדת הדיבור לא הצליחה ({e}) - מתמלל מהפסקול המלא")
-            audio = PJ["video"]
+            audio = P("range.wav") if rng else PJ["video"]
         RANGE[:] = [0.75, 1.0]
     STATE.update(stage="מתמלל", step=2 if STATE["steps"] == 2 else 1, steps=STATE["steps"] or 1)
     log("מתמלל עם Whisper" + (" על כרטיס המסך..." if asr.has_nvidia() and asr.gpu_ready() else " על המעבד..."))
-    srt.transcribe(audio, P("whisper.json"), s.get("whisper_lang") or None, name)
-    srt.prep(STATE["proj"], P("whisper.json"))
+    rs = (start, start + dur) if rng else None
+    srt.transcribe(audio, P("whisper.json"), s.get("whisper_lang") or None, name, offset=start or 0.0, rng_s=rs)
+    srt.prep(STATE["proj"], P("whisper.json"), rng_s=rs)
     log("התמלול מוכן. בחר כתובית והקלד עברית.")
 
 
@@ -1076,6 +1093,20 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"proj": STATE["proj"] if p else None, "file": STATE.get("file")})
         if u.path == "/api/open":
             return self._send(200, {"proj": open_project(b["video"])})
+        if u.path == "/api/range":
+            if not STATE["proj"]:
+                return self._send(400, {"error": "no project"})
+            PJ = vio.load_json(P("project.json"))
+            r = b.get("range")
+            if r:
+                n = PJ.get("n_frames") or int(round(PJ["info"]["duration"] * PJ["info"]["fps"]))
+                a, z = sorted(int(x) for x in r[:2])
+                PJ["range"] = [max(0, a), min(n - 1, z)]
+            else:
+                PJ.pop("range", None)
+            with LOCK:
+                vio.save_json(P("project.json"), PJ)
+            return self._send(200, {"range": PJ.get("range")})
         if u.path == "/api/settings":
             s = settings()
             for k, v in b.items():
@@ -1328,6 +1359,12 @@ def _handoff(path):
         except Exception:
             continue
     return False
+
+
+def tcode(f):
+    fps = vio.load_json(P("project.json"))["info"]["fps"] or 24
+    t = f / fps
+    return f"{int(t // 3600):02d}:{int(t % 3600 // 60):02d}:{int(t % 60):02d}"
 
 
 def close_splash():
