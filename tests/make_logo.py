@@ -19,7 +19,7 @@ d.text((x + int(6 * SC), y + int(6 * SC)), "TIGER", font=F, fill=(10, 10, 10, 25
 d.text((x, y), "TIGER", font=F, fill=(255, 140, 0, 255))
 L = np.array(lay).astype(np.float32) / 255  # RGBA
 cx0, cx1 = x + b[0] - 10, x + b[2] + 16
-p = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+p = subprocess.Popen([os.environ.get("FFMPEG", "ffmpeg"), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
                       "-c:v", "libx264", "-crf", "14", "-pix_fmt", "yuv420p", OUT], stdin=subprocess.PIPE)
 for f in range(N):
     fr = bg.astype(np.float32)
