@@ -838,7 +838,7 @@ async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
       if(S.sel&&S.sel.k==='t'&&S.sel.id===id){renderInsp();const f=document.querySelector('#fm-list .fmc');if(f)f.focus()}}}
   wasRunning=s.running}
 const mmss=t=>{t=Math.max(0,Math.round(t));const h=Math.floor(t/3600),m=String(Math.floor(t%3600/60)).padStart(2,'0'),x=String(t%60).padStart(2,'0');return h?`${h}:${m}:${x}`:`${m}:${x}`};
-function showBusy(s){const b=$('#busy');if(!s.running){b.hidden=true;S.busyStg='';return}
+function showBusy(s){const b=$('#busy');if(!s.running){b.hidden=true;$('#busy-live').hidden=true;S.liveT=null;S.busyStg='';return}
   const first=b.hidden;b.hidden=false;$('#busy-h').textContent=JOBN[s.job]||s.job;
   const stg=s.cancelling?'מבטל...':s.steps>1?`שלב ${s.step} מתוך ${s.steps}: ${s.stage}`:(s.stage||'פועל...');
   if(stg!==S.busyStg){$('#busy-stg').textContent=stg;S.busyStg=stg}
