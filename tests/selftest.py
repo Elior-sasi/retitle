@@ -9,7 +9,8 @@ from rt import vio, shots, detect, extract, clean, render, compose, check, srt
 def main():
     d = tempfile.mkdtemp()
     clip = os.path.join(d, "clip.mp4")
-    subprocess.run([sys.executable, os.path.join(ROOT, "tests", "make_clip.py"), clip], check=True)
+    bgv = os.path.join(d, "bg.mp4")
+    subprocess.run([sys.executable, os.path.join(ROOT, "tests", "make_clip.py"), clip, bgv], check=True)
     p = os.path.join(d, "p"); os.makedirs(p)
     vio.save_json(os.path.join(p, "project.json"), {"video": clip, "info": vio.probe(clip)})
     cuts = shots.run(p); assert cuts == [0, 72], cuts
@@ -27,7 +28,24 @@ def main():
         assert abs(t["in"] - a) <= 1 and abs(t["out"] - b) <= 1, (t["src"], t["in"], t["out"])
         t["he"] = he[k]
     vio.save_json(os.path.join(p, "titles.json"), T)
-    clean.run(p); render.track(p); render.build_layers(p)
+    clean.run(p)
+    # the rebuilt background must match the true background under the removed text
+    import cv2, numpy as np
+    T = vio.load_json(os.path.join(p, "titles.json"))
+    info = vio.probe(bgv); bgs = list(vio.frames(bgv, info["width"], info["height"]))
+    worst = 0
+    for t in T["titles"]:
+        x0, y0, x1, y1 = t["region"]
+        for f in range(t["in"], t["out"] + 1, 3):
+            cimg = cv2.imread(os.path.join(p, "clean", t["group"], f"{f:06d}.png"))
+            m = cv2.imread(os.path.join(p, "clean", t["group"], f"m{f:06d}.png"), 0) > 0
+            if cimg is None or not m.any():
+                continue
+            err = float(np.abs(cimg.astype(int) - bgs[f][y0:y1, x0:x1].astype(int))[m].mean())
+            worst = max(worst, err)
+    print("clean error (mean abs, worst frame):", round(worst, 2))
+    assert worst < 10, worst
+    render.track(p); render.build_layers(p)
     out = compose.run(p); check.run(p)
     assert os.path.getsize(out) > 10000
     json.dump({"language": "en", "segments": [{"start": 0.2, "end": 1.1, "text": "Hello.", "words": []}]},

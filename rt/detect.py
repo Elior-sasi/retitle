@@ -28,7 +28,7 @@ def _tess(img, langs):
     out = []
     for psm in ("11", "3"):
         r = subprocess.run(["tesseract", "stdin", "stdout", "-l", langs, "--psm", psm, "tsv"],
-                           input=png.tobytes(), capture_output=True)
+                           input=png.tobytes(), capture_output=True, **vio.NOWIN)
         rows = csv.DictReader(io.StringIO(r.stdout.decode("utf-8", "replace")), delimiter="\t",
                               quoting=csv.QUOTE_NONE)
         for row in rows:
@@ -62,7 +62,7 @@ def _ocr(args):
                 ok, png = cv2.imencode(".png", crop)
                 try:
                     r = subprocess.run(["tesseract", "stdin", "stdout", "-l", langs, "--psm", "7"],
-                                       input=png.tobytes(), capture_output=True)
+                                       input=png.tobytes(), capture_output=True, **vio.NOWIN)
                 except FileNotFoundError:
                     break  # no tesseract: keep the boxes, text is read from the thumbnail
                 t = r.stdout.decode("utf-8", "replace").strip()

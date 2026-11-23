@@ -83,6 +83,9 @@ def build(proj, out_name=None):
     cues = [dict(c) for c in D["cues"] if c.get("he", "").strip()]
     for c in cues:
         a = c["start"]; e = c["end"]
+        if c.get("manual"):  # timed by hand in the editor: keep exactly
+            c["a"], c["b"] = a, e
+            continue
         near = [x for x in cuts if abs(x - a) <= cfg["snap_in"] * F]
         if near:
             a = min(near, key=lambda x: abs(x - a))
@@ -96,7 +99,7 @@ def build(proj, out_name=None):
     gap = cfg["gap_frames"] * F
     for i in range(len(cues) - 1):
         c, nx = cues[i], cues[i + 1]
-        if nx["a"] - c["b"] < gap or nx["a"] - c["b"] < cfg["chain_frames"] * F:
+        if nx["a"] - c["b"] < gap or (nx["a"] - c["b"] < cfg["chain_frames"] * F and not c.get("manual")):
             c["b"] = nx["a"] - gap
     warns = []
     out = []

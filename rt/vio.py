@@ -5,11 +5,13 @@ import numpy as np
 
 FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
 FFPROBE = os.environ.get("FFPROBE", "ffprobe")
+# no console windows flashing for ffmpeg/tesseract when running as a windowed Windows app
+NOWIN = {"creationflags": 0x08000000} if os.name == "nt" else {}
 
 
 def probe(path):
     out = subprocess.run([FFPROBE, "-v", "error", "-print_format", "json", "-show_streams",
-                          "-show_format", path], capture_output=True, text=True, check=True).stdout
+                          "-show_format", path], capture_output=True, text=True, check=True, **NOWIN).stdout
     d = json.loads(out)
     v = next(s for s in d["streams"] if s["codec_type"] == "video")
     a = [s for s in d["streams"] if s["codec_type"] == "audio"]
@@ -29,7 +31,7 @@ def frames(path, w, h, scale=None):
     ow, oh = scale if scale else (w, h)
     cmd = [FFMPEG, "-v", "error", "-i", path, "-map", "0:v:0", "-fps_mode", "passthrough",
            *vf, "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=ow * oh * 3 * 4)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=ow * oh * 3 * 4, **NOWIN)
     n = ow * oh * 3
     try:
         while True:
@@ -45,14 +47,15 @@ def frames(path, w, h, scale=None):
 class Writer:
     """Encode BGR frames, copy audio from src."""
 
-    def __init__(self, out, src, info, crf=14, preset="veryfast"):
+    def __init__(self, out, src, info, crf=14, preset="veryfast", scale=None):
         fps = f"{info['fps_num']}/{info['fps_den']}"
+        vf = ["-vf", f"scale={scale}:-2:flags=area"] if scale else []
         cmd = [FFMPEG, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
                "-s", f"{info['width']}x{info['height']}", "-r", fps, "-i", "-",
                "-i", src, "-map", "0:v", "-map", "1:a?", "-c:a", "copy",
-               "-c:v", "libx264", "-crf", str(crf), "-preset", preset,
+               *vf, "-c:v", "libx264", "-crf", str(crf), "-preset", preset,
                "-pix_fmt", "yuv420p", "-movflags", "+faststart", out]
-        self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, **NOWIN)
 
     def write(self, f):
         self.p.stdin.write(np.ascontiguousarray(f).tobytes())
@@ -79,3 +82,15 @@ def save_json(p, d):
 def tc(frame, fps):
     s = frame / fps
     return f"{int(s // 60)}:{s % 60:05.2f}"
+
+
+def grab(path, f, info):
+    """Decode exactly frame f (accurate seek: decode from previous keyframe, keep first pts >= t)."""
+    w, h, fps = info["width"], info["height"], info["fps"]
+    t = max(0.0, (f - 0.3) / fps)
+    cmd = [FFMPEG, "-v", "error", "-ss", f"{t:.6f}", "-i", path, "-map", "0:v:0", "-frames:v", "1",
+           "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+    r = subprocess.run(cmd, capture_output=True, **NOWIN)
+    if len(r.stdout) < w * h * 3:
+        return None
+    return np.frombuffer(r.stdout[:w * h * 3], np.uint8).reshape(h, w, 3).copy()

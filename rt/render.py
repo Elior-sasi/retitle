@@ -50,12 +50,14 @@ def _match(Dt, Dr, sc0):
     return best
 
 
-def track(proj):
+def track(proj, only=None):
     """Per frame [dx, dy, scale, alpha] of the source text relative to its reference frame.
     Text map = |source - cleaned| clipped (shape, independent of background brightness);
     scale+position by multi-scale template match, alpha by p90 contrast ratio."""
     T = vio.load_json(os.path.join(proj, "titles.json"))
     for gid, lines in groups(T).items():
+        if only is not None and gid not in only:
+            continue
         for t in lines:
             if not t.get("translate", True) or "mask" not in t:
                 continue
@@ -259,21 +261,25 @@ def text_layer(he, st, ss=2):
     return base, anchor, ink
 
 
-def build_layers(proj):
+def build_layers(proj, only=None):
     """Render each line's Hebrew layer once (supersampled) -> layers/<id>.png + meta."""
     T = vio.load_json(os.path.join(proj, "titles.json"))
     P = vio.load_json(os.path.join(proj, "project.json"))
     W = P["info"]["width"]
     d = os.path.join(proj, "layers"); os.makedirs(d, exist_ok=True)
-    meta = {}
+    meta = vio.load_json(os.path.join(d, "meta.json"), {}) if only else {}
     for t in T["titles"]:
+        if only is not None and t["id"] not in only:
+            continue
+        if not t.get("translate", True) or not t.get("he"):
+            meta.pop(t["id"], None)
         if not t.get("translate", True):
             continue
         lay = t.get("layer", {"type": "text"})
         ss = 2
         if lay["type"] == "text":
             if not t.get("he"):
-                print("missing he:", t["id"]); continue
+                continue
             st = t.get("style", {})
             img, anc, ink = text_layer(t["he"], st, ss)
             # keep inside safe width
@@ -282,6 +288,8 @@ def build_layers(proj):
                 st2 = dict(st); st2["size_px"] = (st.get("size_px") or auto_size(st)) * maxw / (ink[2] - ink[0])
                 img, anc, ink = text_layer(t["he"], st2, ss)
                 t["warn_shrunk"] = round(st2["size_px"], 1)
+            else:
+                t.pop("warn_shrunk", None)
         elif lay["type"] == "image":
             img = Image.open(os.path.join(proj, lay["path"])).convert("RGBA")
             ss = lay.get("ss", 1)
@@ -314,9 +322,16 @@ def place(layer_rgba, meta, anim, f, W, H):
     dx = dy = 0.0; sc = 1.0; al = 1.0
     mode = anim.get("mode", "static")
     if mode == "match":
-        v = anim["frames"].get(str(f))
-        if v is None:
-            return None
+        fr = anim["frames"]
+        v = fr.get(str(f))
+        if v is None:  # frames outside the measured range (timing extended by hand): hold the edge
+            keys = sorted(int(k) for k in fr)
+            if not keys:
+                return None
+            k = keys[0] if f < keys[0] else keys[-1] if f > keys[-1] else min(keys, key=lambda x: abs(x - f))
+            v = fr[str(k)]
+            if f < keys[0] or f > keys[-1]:
+                v = [v[0], v[1], v[2], 1.0]
         dx, dy, sc, al = v
     elif mode == "fade":
         a, b = anim["in"], anim["out"]

@@ -50,6 +50,14 @@ def _align(tgt_g, src_g, valid, scale=0.5):
     ss = cv2.resize(src_g, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     vm = cv2.resize(valid, (ts.shape[1], ts.shape[0]), interpolation=cv2.INTER_NEAREST)
     warp = np.eye(2, 3, dtype=np.float32)
+    # coarse translation first (camera pans can be 100+ px between distant frames), ECC refines
+    try:
+        win = cv2.createHanningWindow((ts.shape[1], ts.shape[0]), cv2.CV_32F)
+        (dx, dy), resp = cv2.phaseCorrelate(ts, ss, win)
+        if resp > 0.05:
+            warp[0, 2], warp[1, 2] = dx, dy
+    except cv2.error:
+        pass
     try:
         _, warp = cv2.findTransformECC(ts, ss, warp, cv2.MOTION_AFFINE,
                                        (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 60, 1e-5),
@@ -85,6 +93,14 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
         return (busy, abs(c - f))
     cands.sort(key=key)
     tg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    # each line's mask at its reference frame: in busy candidate frames the text is usually at the
+    # same place, and during fades the colour model misses it - exclude this area too
+    refm = {}
+    for t in lines:
+        if t.get("translate", True) and "mask" in t:
+            ri = _load(proj, gid, t["ref"])
+            if ri is not None:
+                refm[t["id"]] = cv2.dilate(line_mask(ri, t, reg), np.ones((5, 5), np.uint8))
     stack, okm = [], []
     used = 0
     for c in cands:
@@ -94,6 +110,9 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
         if ci is None:
             continue
         Mc = frame_mask(ci, c, lines, reg, margin=2)
+        for t in lines:
+            if t["id"] in refm and t["in"] - 2 <= c <= t["out"] + 2:
+                Mc |= refm[t["id"]]
         valid_t = ((cv2.dilate(M | Mc, np.ones((9, 9), np.uint8)) == 0)).astype(np.uint8)
         warp, _ = _align(tg, cv2.cvtColor(ci, cv2.COLOR_BGR2GRAY).astype(np.float32), valid_t)
         if warp is None:
@@ -163,6 +182,7 @@ def run(proj, only=None):
     T = vio.load_json(os.path.join(proj, "titles.json"))
     n = P["n_frames"]
     stats = vio.load_json(os.path.join(proj, "clean_stats.json"), {})
+    built = {}
     for gid, lines in groups(T).items():
         act = [t for t in lines if t.get("translate", True) and "mask" in t]
         if not act or (only and gid not in only):
@@ -180,5 +200,12 @@ def run(proj, only=None):
             fr.append(frac)
         stats[gid] = {"frames": [a, b], "synth_mean": round(float(np.mean(fr)), 3),
                       "synth_max": round(float(np.max(fr)), 3)}
+        for t in lines:
+            built[t["id"]] = [t["in"], t["out"], bool(t.get("translate", True))]
         print(gid, stats[gid])
     vio.save_json(os.path.join(proj, "clean_stats.json"), stats)
+    T2 = vio.load_json(os.path.join(proj, "titles.json"))  # re-read: the editor may have saved meanwhile
+    for t in T2["titles"]:
+        if t["id"] in built:
+            t["built"] = built[t["id"]]
+    vio.save_json(os.path.join(proj, "titles.json"), T2)

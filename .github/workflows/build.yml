@@ -33,14 +33,24 @@ jobs:
           python tests/selftest.py
       - name: Package
         run: >
-          pyinstaller --noconfirm --name Retitle --icon NONE
+          pyinstaller --noconfirm --windowed --name Retitle --icon NONE
           --add-data "rt/ui;rt/ui" --add-data "fonts;fonts" --add-binary "bin/ffmpeg.exe;bin" --add-binary "bin/ffprobe.exe;bin"
           --collect-all rapidocr_onnxruntime --collect-all faster_whisper --collect-all ctranslate2 --collect-all onnxruntime
-          --collect-submodules rt --hidden-import tkinter
+          --collect-all webview --hidden-import clr --collect-submodules rt --hidden-import tkinter
           retitle_app.py
-      - name: Exe smoke test
+      - name: Exe smoke test (engine through the API)
         shell: pwsh
         run: ./tests/exe_smoke.ps1
+      - name: Exe smoke test (window mode starts)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\Retitle\Retitle.exe" -PassThru
+          Start-Sleep 20
+          if ($p.HasExited) { Get-Content "$env:APPDATA\Retitle\retitle.log" -ErrorAction SilentlyContinue; throw "app exited" }
+          Invoke-RestMethod "http://127.0.0.1:8765/api/status" | Out-Null
+          Get-Content "$env:APPDATA\Retitle\retitle.log" -ErrorAction SilentlyContinue
+          Stop-Process -Id $p.Id -Force
+          Write-Host "WINDOW SMOKE OK"
       - name: Zip
         shell: pwsh
         run: Compress-Archive dist/Retitle Retitle-win64.zip

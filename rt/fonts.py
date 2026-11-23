@@ -51,6 +51,9 @@ FONTS = {
 }
 
 
+HE = {'Heebo': 'סנס נקי ומודרני, כל המשקלים - ברירת מחדל', 'Assistant': 'סנס הומניסטי', 'Rubik': 'סנס עם פינות מעוגלות קלות, ידידותי', 'Varela Round': 'סנס מעוגל ורך', 'Fredoka': 'מעוגל ושמנמן, משחקי - אנימציה וילדים', 'Secular One': 'סנס כבד לכותרות, פוסטר ואקשן', 'Suez One': 'סריף כבד לכותרות, אפי וקלאסי', 'Frank Ruhl Libre': 'סריף קלאסי, דרמה', 'David Libre': 'סריף קלאסי', 'David Libre Bold': 'סריף קלאסי מודגש', 'Bellefair': 'סריף דק ואלגנטי, יוקרה ורומנטיקה', 'Miriam Libre': 'סנס גאומטרי, טכני', 'Alef': 'סנס ניטרלי', 'Alef Bold': 'סנס ניטרלי מודגש', 'Karantina': 'צר וגבוה לכותרות, מתח ואימה', 'Karantina Bold': 'צר וגבוה, מודגש', 'Karantina Light': 'צר וגבוה, דק', 'Amatic SC': 'כתב יד צר בטוש', 'Gveret Levin': 'כתב יד במכחול/טוש, קליל', 'Solitreo': 'כתב רהוט היסטורי', 'Noto Sans Hebrew': 'סנס ניטרלי, רוחבים ומשקלים', 'Noto Serif Hebrew': 'סריף ניטרלי, רוחבים ומשקלים', 'IBM Plex Sans Hebrew Bold': 'סנס תאגידי מודגש', 'Rubik Mono One': 'כבד ורחב מאוד, משחקים וארקייד', 'Rubik Dirt': 'כבד עם מרקם מלוכלך', 'Rubik Glitch': "גליץ' דיגיטלי", 'Rubik Wet Paint': 'צבע נוטף, אימה', 'Rubik Spray Paint': 'גרפיטי בספריי', 'Rubik Bubbles': 'בועות, ילדים', 'Rubik Burned': 'שרוף, אש', 'Rubik Distressed': 'שחוק ומרופט', 'Rubik Moonrocks': 'סלעי, חלל', 'Rubik Iso': 'תלת-ממד איזומטרי', 'Rubik Vinyl': 'רטרו עם פסים', 'Rubik 80s Fade': 'רטרו שנות ה-80', 'Rubik Beastly': 'מפלצתי, שעיר', 'Rubik Gemstones': 'אבני חן', 'Rubik Marker Hatch': 'טוש מקווקו', 'Rubik Scribble': 'שרבוט', 'Rubik Maze': 'מבוך', 'Rubik Microbe': 'אורגני, כתמים', 'Rubik Puddles': 'שלוליות, נוזלי', 'Rubik Broken Fax': 'פקס שבור'}
+
+
 def run(dest):
     os.makedirs(dest, exist_ok=True)
     cat = {}
@@ -68,7 +71,7 @@ def run(dest):
             continue
         if 0x05D0 not in cmap:  # no Hebrew alef
             os.remove(p); print("no hebrew:", name); continue
-        cat[name] = {"file": fn, "tags": tags}
+        cat[name] = {"file": fn, "tags": tags, "he": HE.get(name, tags)}
     with open(os.path.join(dest, "catalog.json"), "w", encoding="utf-8") as f:
         json.dump(cat, f, ensure_ascii=False, indent=1)
     print(len(cat), "fonts")

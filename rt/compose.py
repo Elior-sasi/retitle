@@ -47,7 +47,7 @@ def frame_result(proj, f, frame, T, meta, cache, W, H):
     return _overlay(out, lays)
 
 
-def run(proj, out_name=None, crf=14):
+def run(proj, out_name=None, crf=14, preset="veryfast", scale=None, progress=None):
     P = vio.load_json(os.path.join(proj, "project.json"))
     T = vio.load_json(os.path.join(proj, "titles.json"))
     meta = vio.load_json(os.path.join(proj, "layers", "meta.json"), {})
@@ -59,13 +59,16 @@ def run(proj, out_name=None, crf=14):
     os.makedirs(os.path.join(proj, "out"), exist_ok=True)
     base = os.path.splitext(os.path.basename(P["video"]))[0]
     out = os.path.join(proj, "out", out_name or f"{base}_HEB.mp4")
-    wr = vio.Writer(out, P["video"], info, crf=crf)
+    wr = vio.Writer(out, P["video"], info, crf=crf, preset=preset, scale=scale)
     busy = set()
     for t in T["titles"]:
         if t.get("translate", True):
-            busy.update(range(t.get("cache", [t["in"], t["out"]])[0], t.get("cache", [0, t["out"]])[1] + 1))
+            busy.update(range(min(t["in"], t.get("cache", [t["in"]])[0]), max(t["out"], t.get("cache", [0, t["out"]])[1]) + 1))
     cache = {}
+    n = P.get("n_frames") or 1
     for f, fr in enumerate(vio.frames(P["video"], W, H)):
         wr.write(frame_result(proj, f, fr, T, meta, cache, W, H) if f in busy else fr)
+        if progress and f % 48 == 0:
+            progress(f / n)
     wr.close()
     return out

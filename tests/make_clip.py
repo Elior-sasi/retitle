@@ -2,6 +2,7 @@ import numpy as np, cv2, subprocess, os, sys
 HERE=os.path.dirname(os.path.abspath(__file__))
 FONT=os.path.join(HERE,'..','fonts','Heebo[wght].ttf')
 OUT=sys.argv[1] if len(sys.argv)>1 else 'test.mp4'
+BG=sys.argv[2] if len(sys.argv)>2 else None
 from PIL import Image, ImageDraw, ImageFont
 W,H,FPS=1280,720,24
 rng=np.random.default_rng(1)
@@ -32,9 +33,10 @@ def txt(img,s,font,cx,cy,fill,scale=1,alpha=1,shadow=None,outline=0):
     o=a[...,:3]*a[...,3:]+rgb*(1-a[...,3:])
     return (o[...,::-1]*255).astype(np.uint8)
 p=subprocess.Popen([os.environ.get('FFMPEG','ffmpeg'),'-v','error','-y','-f','rawvideo','-pix_fmt','bgr24','-s',f'{W}x{H}','-r','24','-i','-','-f','lavfi','-i','sine=f=440:d=6','-shortest','-c:v','libx264','-crf','16','-pix_fmt','yuv420p','-c:a','aac',OUT],stdin=subprocess.PIPE)
+bgp=subprocess.Popen([os.environ.get('FFMPEG','ffmpeg'),'-v','error','-y','-f','rawvideo','-pix_fmt','bgr24','-s',f'{W}x{H}','-r','24','-i','-','-c:v','libx264','-crf','16','-pix_fmt','yuv420p',BG],stdin=subprocess.PIPE) if BG else None
 for f in range(144):
     if f<72:
-        x=int(100+f*6); y=int(200+f*1.5); img=A[y:y+H,x:x+W].copy()
+        x=int(100+f*6); y=int(200+f*1.5); img=A[y:y+H,x:x+W].copy(); bg=img.copy()
         if 24<=f<=60:
             k=f-24; sc=min(1,0.6+0.4*k/6)
             img=txt(img,"IT'S TIME",F,640,300,(255,150,20),scale=sc,shadow=6)
@@ -42,8 +44,10 @@ for f in range(144):
             al=min(1,(f-30+1)/8, (66-f+1)/8)
             img=txt(img,"FOR A TRUE HERO",F2,640,470,(255,255,255),alpha=al,outline=3)
     else:
-        x=int(300+(f-72)*3); img=B[300:300+H,x:x+W].copy()
+        x=int(300+(f-72)*3); img=B[300:300+H,x:x+W].copy(); bg=img.copy()
         if 80<=f<=130:
             img=txt(img,"FROM THE STUDIO",F2,640,600,(240,240,240),outline=4)
     p.stdin.write(img.tobytes())
+    if bgp: bgp.stdin.write(bg.tobytes())
 p.stdin.close(); p.wait()
+if bgp: bgp.stdin.close(); bgp.wait()
