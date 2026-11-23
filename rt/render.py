@@ -349,7 +349,7 @@ def build_layers(proj, only=None):
     return meta
 
 
-def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None):
+def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None, shift=(0, 0)):
     """Return premultiplied float RGBA full-frame for frame f, or None.
     Motion: full homography of the original when measured (rotation / perspective), else [dx, dy, scale];
     then the original's reveal matte and light/colour gain (motion.py)."""
@@ -387,7 +387,7 @@ def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None):
         M = np.float32([[k, 0, tx + dx - ax * k], [0, k, ty + dy - ay * k]])
         out = cv2.warpAffine(layer_rgba, M, (W, H), flags=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR,
                              borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
-    out, matted = motion.apply_maps(out, proj, tid, anim, f, W, H) if (proj and tid) else (out, False)
+    out, matted = motion.apply_maps(out, proj, tid, anim, f, W, H, shift) if (proj and tid) else (out, False)
     if not matted:
         if al <= 0.001:
             return None
@@ -408,19 +408,21 @@ def title_layers(proj, t, meta, cache, f, W, H):
     anim = dict(t.get("anim", {"mode": "static"}))
     anim.setdefault("in", t["in"]); anim.setdefault("out", t["out"])
     m = meta[t["id"]]
+    st = t.get("style", {})
+    shift = (st.get("nudge_x", 0), st.get("nudge_y", 0))
     out = []
     if "parts" in m:
         for i, pm in enumerate(m["parts"]):
             key = f"{t['id']}#{i}"
             if key not in cache:
                 cache[key] = load_layer(pm["file"])
-            L = place(cache[key], pm, anim, f, W, H, proj, t["id"], part=i)
+            L = place(cache[key], pm, anim, f, W, H, proj, t["id"], part=i, shift=shift)
             if L is not None:
                 out.append(L)
         return out
     if t["id"] not in cache:
         cache[t["id"]] = load_layer(m["file"])
-    L = place(cache[t["id"]], m, anim, f, W, H, proj, t["id"])
+    L = place(cache[t["id"]], m, anim, f, W, H, proj, t["id"], shift=shift)
     return [L] if L is not None else []
 
 

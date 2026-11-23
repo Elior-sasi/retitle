@@ -730,7 +730,14 @@ def apply_dialog(cues):
         vio.save_json(P("dialog.json"), D)
 
 
-def render_frame(f, mode, width):
+def _checker(H, W, s=16):
+    y, x = np.mgrid[0:H, 0:W]
+    c = (((x // s) + (y // s)) % 2).astype(np.uint8)
+    return np.repeat((40 + c * 22)[..., None], 3, 2)
+
+
+def render_frame(f, mode, width, layers=True, bg=True):
+    """layers=False: the cleaned picture without the Hebrew. bg=False: the Hebrew alone, on a checkerboard."""
     from . import compose, render
     PJ = vio.load_json(P("project.json"))
     info = PJ["info"]; W, H = info["width"], info["height"]
@@ -753,7 +760,14 @@ def render_frame(f, mode, width):
             if LAYERS.get(tid, (None,))[0] != mt:
                 LAYERS[tid] = (mt, render.load_layer(m["file"]))
             cache[tid] = LAYERS[tid][1]
-        fr = compose.frame_result(STATE["proj"], f, fr, T, meta, cache, W, H)
+        if not bg:
+            L = compose.overlay_frame(STATE["proj"], f, T, meta, cache, W, H) if layers else None
+            base = _checker(H, W).astype(np.float32) / 255
+            fr = np.clip(((L[..., :3] + base * (1 - L[..., 3:4])) if L is not None else base) * 255 + 0.5, 0, 255).astype(np.uint8)
+        else:
+            fr = compose.frame_result(STATE["proj"], f, fr, T, meta if layers else {}, cache, W, H)
+    elif not bg:
+        fr = _checker(H, W)
     if width and width < W:
         fr = cv2.resize(fr, (width, int(H * width / W)), interpolation=cv2.INTER_AREA)
     ok, jpg = cv2.imencode(".jpg", fr, [cv2.IMWRITE_JPEG_QUALITY, 90])
@@ -946,7 +960,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/frame":
             f = int(q.get("f", ["0"])[0]); mode = q.get("mode", ["result"])[0]; w = int(q.get("w", ["0"])[0])
             try:
-                jpg = render_frame(f, mode, w)
+                jpg = render_frame(f, mode, w, q.get("lay", ["1"])[0] != "0", q.get("bg", ["1"])[0] != "0")
             except Exception as e:
                 traceback.print_exc()
                 return self._send(500, {"error": str(e)})

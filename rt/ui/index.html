@@ -26,6 +26,7 @@ grid-template-areas:"top top top" "insp vs prog" "hs hs hs" "proj vs2 tl" "statu
 #top{grid-area:top;display:flex;align-items:center;gap:2px;padding:0 4px}
 .brand{font-weight:800;letter-spacing:.04em;margin-inline-end:10px;color:#fff;display:flex;align-items:center;gap:6px}
 .brand img{width:20px;height:20px;display:block}
+#upd-badge{height:26px;margin-inline-end:10px;font-size:.92em}
 #savestate{color:#9fd8a8;font-size:.85em;margin-inline-end:10px;white-space:nowrap}#savestate.busy{color:var(--warn)}
 #welcome .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 #welcome .cta,#welcome .qbtn{height:40px;padding:0 20px;font-size:1.05em}
@@ -196,6 +197,11 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 .tracks{width:140px;flex:none;background:#202020;border-right:1px solid #111;padding-top:30px;overflow:hidden}
 .trk{height:48px;display:flex;align-items:center;gap:6px;padding:0 8px;border-bottom:1px solid #1a1a1a;color:var(--mut);justify-content:space-between}
 .trk b{color:#fff;font-weight:600}
+.trk .eye{width:28px;height:28px;border:1px solid transparent;border-radius:4px;background:none;color:#e6e6e6;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;flex:none}
+.trk .eye:hover,.trk .eye:focus-visible{border-color:#8ec5ff;outline:none}.trk .eye svg{width:18px;height:18px;fill:currentColor}
+.trk .eye[aria-pressed=false]{color:#ff8b8b;background:#3a2222}
+.trk.off b{color:#8a8a8a;text-decoration:line-through}
+.lane.off,.blk.off-trk{opacity:.35}
 .trk .tag{background:#3a3a3a;color:#fff;border-radius:2px;padding:0 5px;font-size:.82em}
 #tlwrap{position:relative;flex:1;overflow:auto}
 #tlinner{position:relative}
@@ -262,7 +268,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 <header id="top">
   <span class="brand"><img alt="" src="data:image/png;base64,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">Retitle</span>
   <div role="menubar" aria-label="תפריט ראשי" id="menubar"></div>
-  <span id="workspace"></span><span id="savestate" role="status" aria-live="polite"></span>
+  <button class="cta" id="upd-badge" hidden>יש עדכון - התקן</button><span id="workspace"></span><span id="savestate" role="status" aria-live="polite"></span>
   <button class="qbtn" id="q-analyze" disabled>נתח כותרות</button>
   <button class="qbtn" id="q-trans" disabled>תמלל</button>
   <button class="qbtn" id="q-build" disabled title="Enter">בנה תצוגה</button>
@@ -350,11 +356,11 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <button class="ib" id="z-in" aria-label="הגדל זום (=)" title="הגדל זום (=)"><svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg></button>
   </div>
   <div class="tlbody">
-    <div class="tracks" aria-hidden="true">
-      <div class="trk" id="trk-t"><span class="tag">T1</span><b>כותרות</b></div>
-      <div class="trk" id="trk-c"><span class="tag">C1</span><b>כתוביות</b></div>
-      <div class="trk" id="trk-v"><span class="tag">V1</span><b>וידאו</b></div>
-      <div class="trk" id="trk-a"><span class="tag">A1</span><b>אודיו</b></div>
+    <div class="tracks" role="group" aria-label="רצועות - הצגה והסתרה">
+      <div class="trk" id="trk-t"><span class="tag" aria-hidden="true">T1</span><button class="eye" data-trk="t" aria-pressed="true"></button><b aria-hidden="true">כותרות</b></div>
+      <div class="trk" id="trk-c"><span class="tag" aria-hidden="true">C1</span><button class="eye" data-trk="c" aria-pressed="true"></button><b aria-hidden="true">כתוביות</b></div>
+      <div class="trk" id="trk-v"><span class="tag" aria-hidden="true">V1</span><button class="eye" data-trk="v" aria-pressed="true"></button><b aria-hidden="true">וידאו</b></div>
+      <div class="trk" id="trk-a"><span class="tag" aria-hidden="true">A1</span><button class="eye" data-trk="a" aria-pressed="true"></button><b aria-hidden="true">אודיו</b></div>
     </div>
     <div id="tlwrap" aria-label="רצועות"><div id="tlinner"></div></div>
   </div>
@@ -706,7 +712,7 @@ function refreshFrameSoon(d=40){clearTimeout(stillTimer);stillTimer=setTimeout(r
 function refreshFrame(){boxSoon(60);const cmp=S.mode==='compare';if(!S.proj||!vid.paused||S.shuttle||(S.mode!=='result'&&!cmp)){still.style.display='none';still2.style.display='none';return}
   if(cmp)still.style.display='none';const target=cmp?still2:still;
   const tok=++frameTok;const w=Math.round((cmp?$('#frame2'):$('#frame')).clientWidth*(devicePixelRatio||1));const img=new Image();
-  img.onload=()=>{if(tok!==frameTok)return;target.src=img.src;target.style.display='block'};img.src=`/api/frame?f=${S.frame}&mode=result&w=${w}&t=${Date.now()}`}
+  img.onload=()=>{if(tok!==frameTok)return;target.src=img.src;target.style.display='block'};img.src=`/api/frame?f=${S.frame}&mode=result&w=${w}&lay=${S.vis.t?1:0}&bg=${S.vis.v?1:0}&t=${Date.now()}`}
 function setMode(m){S.mode=m;$('#m-src').setAttribute('aria-pressed',m==='source');$('#m-res').setAttribute('aria-pressed',m==='result');$('#m-cmp').setAttribute('aria-pressed',m==='compare');
   setCompare(m==='compare');
   const h=$('#hint');if(m==='result'&&S.data&&!S.data.built){h.textContent='עדיין לא נבנתה תצוגה - Enter או "בנה תצוגה".';h.style.display='block'}
@@ -829,9 +835,14 @@ $('#qa-re').onclick=()=>{$('#d-qa').close();openQA()};
 async function checkUpdate(show){let r;try{r=await api('/api/update/check',{})}catch(e){r={error:String(e)}}
   const m=$('#upd-msg'),go=$('#upd-go');go.hidden=true;
   if(r.error){if(!show)return;m.textContent=`לא הצלחתי לבדוק עדכונים. בדוק את החיבור לאינטרנט ונסה שוב.`}
-  else if(r.newer){m.textContent=`יש גרסה חדשה: ${r.latest} (אצלך ${r.current||'לא ידוע'}).`;go.hidden=false;if(!show){say(`יש גרסה חדשה (${r.latest}) - עזרה > בדוק עדכונים`);return}}
+  else if(r.newer){m.textContent=`יש גרסה חדשה: ${r.latest} (אצלך ${r.current||'לא ידוע'}).`;go.hidden=false;
+    const bd=$('#upd-badge');if(bd.hidden){bd.hidden=false;bd.textContent=`יש עדכון (${r.latest}) - התקן`}if(!show)return}
   else{if(!show)return;m.textContent=`הגרסה שלך (${r.current}) היא האחרונה.`}
   openDlg('#d-upd')}
+$('#upd-badge').onclick=()=>checkUpdate(true);
+// while the program is open: look again every 20 minutes, and when you come back to it
+S.lastUpd=Date.now();setInterval(()=>{S.lastUpd=Date.now();checkUpdate(false)},20*60*1000);
+addEventListener('focus',()=>{if(Date.now()-S.lastUpd>5*60*1000){S.lastUpd=Date.now();checkUpdate(false)}});
 $('#upd-go').onclick=async()=>{$('#d-upd').close();await flush();const r=await api('/api/run',{job:'update'});if(!r.started)say('פעולה אחרת רצה',true)};
 
 // ================================================================ menus
@@ -1053,6 +1064,24 @@ function nudgeKey(dx,dy){const t=S.sel&&S.sel.k==='t'&&mt(S.sel.id);if(!t)return
   saveTitle(t.id,300);if(S.box){S.box.polys=S.box.polys.map(P=>P.map(([x,y])=>[x+dx,y+dy]));S.box.nudge=[t.style.nudge_x,t.style.nudge_y];drawBox()}
   renderInsp();say(`X ${t.style.nudge_x}, Y ${t.style.nudge_y}`)}
 addEventListener('resize',()=>boxSoon(100));
+// ---------------------------------------------------------------- show / hide tracks (view only, export is never affected)
+S.vis={t:true,c:true,v:true,a:true};
+const EYE='<svg viewBox="0 0 24 24"><path d="M12 5C6 5 2 12 2 12s4 7 10 7 10-7 10-7-4-7-10-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>',
+  EYE_OFF='<svg viewBox="0 0 24 24"><path d="M3.3 2 2 3.3l3.2 3.2C3.3 8.1 2 12 2 12s4 7 10 7c1.9 0 3.6-.6 5-1.4l3.7 3.7 1.3-1.3zM12 16a4 4 0 0 1-3.9-4.9l4.9 4.8-1 .1zm0-11c-1.3 0-2.6.3-3.7.8l2.2 2.2A4 4 0 0 1 16 13.5l3.1 3.1C21 14.8 22 12 22 12s-4-7-10-7z"/></svg>',
+  SPK='<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4z"/></svg>',
+  SPK_OFF='<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm18.7 6.3-1.4 1.4L17.6 14l-2.7 2.7-1.4-1.4 2.7-2.7-2.7-2.7 1.4-1.4 2.7 2.7 2.7-2.7 1.4 1.4-2.7 2.7z"/></svg>';
+const TRKN={t:'הכותרות בעברית',c:'הכתוביות',v:'התמונה',a:'הקול'};
+function renderEyes(){document.querySelectorAll('.trk .eye').forEach(b=>{const k=b.dataset.trk,on=S.vis[k];
+  b.setAttribute('aria-pressed',String(on));b.innerHTML=k==='a'?(on?SPK:SPK_OFF):(on?EYE:EYE_OFF);
+  const lab=(k==='a'?(on?'השתק את ':'השמע את '):(on?'הסתר את ':'הצג את '))+TRKN[k]+' בתצוגה';b.setAttribute('aria-label',lab);b.title=lab;
+  $('#trk-'+k).classList.toggle('off',!on)})}
+function applyVis(){vid.muted=!S.vis.a;vid.style.opacity=S.vis.v?'1':'0';vid2.style.opacity=S.vis.v?'1':'0';
+  $('#subs').style.visibility=S.vis.c?'visible':'hidden';renderEyes();refreshFrame();
+  const h=$('#hint');if(!S.vis.t&&(S.mode==='result'||S.mode==='compare')){h.textContent='הכותרות בעברית מוסתרות בתצוגה (בניגון הן מוצגות - עצור כדי לראות בלי). הייצוא לא מושפע.';h.style.display='block'}
+  else if(h.textContent.startsWith('הכותרות בעברית מוסתרות'))h.style.display='none'}
+document.querySelectorAll('.trk .eye').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.trk;S.vis[k]=!S.vis[k];applyVis();
+  say(`${TRKN[k]}: ${S.vis[k]?(k==='a'?'מושמע':'מוצג'):(k==='a'?'מושתק':'מוסתר')} בתצוגה`)}));
+renderEyes();
 function setFontRow(t,r){t.style.font=r.font;if(r.weight)t.style.weight=r.weight;else delete t.style.weight;if(r.wdth)t.style.wdth=r.wdth;else delete t.style.wdth}
 function applyFontWide(t,scope){const d=dt(t.id)||{},st=d.style||{};const r={font:t.style.font,weight:t.style.weight,wdth:t.style.wdth};
   const near=(a,b)=>a&&b&&Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2])<40;let n=0,skip=0;beginEdit();

@@ -388,12 +388,23 @@ def _load_map(path, color):
     return im
 
 
-def apply_maps(L, proj, tid, anim, f, W, H):
-    """Matte (alpha) and light/colour gain on a premultiplied full-frame layer. Returns (layer, matte_used)."""
+def _paste(full, m, ox, oy):
+    """Put map m into full at (ox, oy), clipped at every edge (the offset can be negative)."""
+    H, W = full.shape[:2]; h, w = m.shape[:2]
+    x0, y0 = max(0, ox), max(0, oy); x1, y1 = min(W, ox + w), min(H, oy + h)
+    if x1 > x0 and y1 > y0:
+        full[y0:y1, x0:x1] = m[y0 - oy:y1 - oy, x0 - ox:x1 - ox]
+    return full
+
+
+def apply_maps(L, proj, tid, anim, f, W, H, shift=(0, 0)):
+    """Matte (alpha) and light/colour gain on a premultiplied full-frame layer. Returns (layer, matte_used).
+    shift: the manual offset of the Hebrew - the maps go with it, so a moved title is revealed the same way."""
     if not proj or not (anim.get("matte") or anim.get("gain")):
         return L, False
     mr = anim.get("mref") or {}
     ox, oy = mr.get("region", [0, 0]); s = mr.get("scale", MS)
+    ox, oy = int(round(ox + shift[0])), int(round(oy + shift[1]))
     used = False
     d = os.path.join(proj, "motion", tid)
     if f in set(anim.get("matte", [])):
@@ -401,13 +412,12 @@ def apply_maps(L, proj, tid, anim, f, W, H):
         if m is not None:
             full = np.ones((H, W), np.float32)
             mm = cv2.resize(m, (int(round(m.shape[1] / s)), int(round(m.shape[0] / s))), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255
-            hh, ww = min(H - oy, mm.shape[0]), min(W - ox, mm.shape[1])
-            full[oy:oy + hh, ox:ox + ww] = mm[:hh, :ww]
+            _paste(full, mm, ox, oy)
             if anim.get("mirror") and anim.get("center"):
                 # the original was revealed in its reading direction (left to right): Hebrew goes right to left
                 c = np.array([*anim["center"], 1.0])
                 Hm = homography(anim, f)
-                xc = (Hm @ c)[0] / (Hm @ c)[2] if Hm is not None else c[0]
+                xc = ((Hm @ c)[0] / (Hm @ c)[2] if Hm is not None else c[0]) + shift[0]
                 idx = np.clip(np.round(2 * xc - np.arange(W)).astype(int), 0, W - 1)
                 full = full[:, idx]
             L = L * full[..., None]
@@ -416,9 +426,7 @@ def apply_maps(L, proj, tid, anim, f, W, H):
         g = _load_map(os.path.join(d, f"g{f:06d}.png"), True)
         if g is not None:
             gg = (cv2.resize(g, (int(round(g.shape[1] / s)), int(round(g.shape[0] / s))), interpolation=cv2.INTER_LINEAR).astype(np.float32) - 128) / 255
-            full = np.zeros((H, W, 3), np.float32)
-            hh, ww = min(H - oy, gg.shape[0]), min(W - ox, gg.shape[1])
-            full[oy:oy + hh, ox:ox + ww] = gg[:hh, :ww]
+            full = _paste(np.zeros((H, W, 3), np.float32), gg, ox, oy)
             a = L[..., 3:4]
             rgb = L[..., :3] + full * a                                          # light added where the letters are
             L = np.concatenate([np.clip(rgb, 0, a), a], 2)                       # premultiplied: 0 <= colour <= alpha

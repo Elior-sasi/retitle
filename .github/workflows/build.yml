@@ -5,16 +5,20 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+# a newer push replaces a build still running: the newest version reaches the app sooner
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  win:
+  # the engine test and the packaging run side by side; the release waits for both
+  test:
     runs-on: windows-latest
-    env:
-      RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install
         run: |
           python -m pip install --upgrade pip
@@ -38,6 +42,32 @@ jobs:
         run: |
           $env:FFMPEG="$PWD\bin\ffmpeg.exe"; $env:FFPROBE="$PWD\bin\ffprobe.exe"
           python tests/selftest.py
+  win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+      - name: Version
+        shell: pwsh
+        run: Set-Content -Path rt/_version.py -Value "BUILD = ${{ github.run_number }}"
+      - name: Fonts
+        run: python -m rt fonts
+      - name: Inpainting model (LaMa, OpenCV Zoo, checksum-verified)
+        run: python -c "from rt import lama; print(lama.fetch('models'))"
+      - name: FFmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip -OutFile ff.zip
+          Expand-Archive ff.zip -DestinationPath ff
+          New-Item -ItemType Directory -Force bin | Out-Null
+          Get-ChildItem ff -Recurse -Include ffmpeg.exe,ffprobe.exe | Copy-Item -Destination bin
       - name: Package
         run: >
           pyinstaller --noconfirm --windowed --name Retitle --icon assets/icon.ico
@@ -87,6 +117,15 @@ jobs:
           path: |
             Retitle-Setup.exe
             Retitle-win64.zip
+  release:
+    needs: [test, win]
+    runs-on: ubuntu-latest
+    env:
+      RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Retitle-win64
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
