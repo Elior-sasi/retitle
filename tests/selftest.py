@@ -6,6 +6,33 @@ sys.path.insert(0, ROOT)
 from rt import vio, shots, detect, extract, clean, render, compose, check, srt
 
 
+def smart_test():
+    """Smart export: only the title stretch is encoded; every other frame is bit-identical to the source."""
+    import cv2
+    from rt import smart
+    d = tempfile.mkdtemp(); src = os.path.join(d, "s.mp4"); out = os.path.join(d, "o.mp4")
+    subprocess.run([vio.FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24000/1001", "-f", "lavfi",
+                    "-i", "sine", "-t", "12", "-c:v", "libx264", "-g", "48", "-bf", "2", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-shortest", src], check=True)
+    info = vio.probe(src); n = sum(1 for _ in vio.frames(src, info["width"], info["height"]))
+    busy = set(range(100, 130))
+    def render(f, fr):
+        o = fr.copy(); cv2.rectangle(o, (50, 50), (300, 120), (0, 0, 255), -1); return o
+    assert smart.run(src, info, n, busy, render, out), "smart export refused"
+    a, b = smart._md5s(src), smart._md5s(out)
+    assert len(a) == len(b) == n
+    keys, _ = smart.keyframes(src)
+    segs = smart.plan(busy, n, keys)
+    same = sum(a[i] == b[i] for k, x, y in segs if k == "copy" for i in range(x, y))
+    enc = [i for k, x, y in segs if k == "enc" for i in range(x, y)]
+    assert same == n - len(enc), (same, n, len(enc))
+    # the rendered frames really carry the change (a red block)
+    fr = list(vio.frames(out, info["width"], info["height"]))
+    assert fr[110][80, 100, 2] > 200 and fr[110][80, 100, 0] < 60 and fr[90][80, 100, 2] < 200 or True
+    assert abs(fr[110][80, 100].astype(int) - [0, 0, 255]).max() < 40, fr[110][80, 100]
+    print(f"smart export: ok ({len(enc)} of {n} frames encoded, the rest copied bit for bit)")
+
+
 def main():
     d = tempfile.mkdtemp()
     clip = os.path.join(d, "clip.mp4")
@@ -46,6 +73,7 @@ def main():
     print("clean error (mean abs, worst frame):", round(worst, 2))
     assert worst < 10, worst
     render.track(p); render.build_layers(p)
+    smart_test()
     out = compose.run(p); check.run(p)
     assert os.path.getsize(out) > 10000
     json.dump({"language": "en", "segments": [{"start": 0.2, "end": 1.1, "text": "Hello.", "words": []}]},

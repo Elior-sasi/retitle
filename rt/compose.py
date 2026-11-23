@@ -2,7 +2,7 @@
 background crop + the Hebrew layer. Audio is copied as is."""
 import os
 import cv2, numpy as np
-from . import vio, render, live
+from . import vio, render, live, smart
 from .extract import groups
 
 
@@ -33,7 +33,7 @@ def frame_result(proj, f, frame, T, meta, cache, W, H):
     return _overlay(out, lays)
 
 
-def run(proj, out_name=None, crf=14, preset="veryfast", scale=None, progress=None):
+def run(proj, out_name=None, crf=14, preset="veryfast", scale=None, progress=None, smart_ok=True):
     P = vio.load_json(os.path.join(proj, "project.json"))
     T = vio.load_json(os.path.join(proj, "titles.json"))
     meta = vio.load_json(os.path.join(proj, "layers", "meta.json"), {})
@@ -45,13 +45,24 @@ def run(proj, out_name=None, crf=14, preset="veryfast", scale=None, progress=Non
     os.makedirs(os.path.join(proj, "out"), exist_ok=True)
     base = os.path.splitext(os.path.basename(P["video"]))[0]
     out = os.path.join(proj, "out", out_name or f"{base}_HEB.mp4")
-    wr = vio.Writer(out, P["video"], info, crf=crf, preset=preset, scale=scale)
     busy = set()
     for t in T["titles"]:
         if t.get("translate", True):
             busy.update(range(min(t["in"], t.get("cache", [t["in"]])[0]), max(t["out"], t.get("cache", [0, t["out"]])[1]) + 1))
     cache = {}
     n = P.get("n_frames") or 1
+    if smart_ok and smart.usable(info, scale):
+        def lv(f, res, fr):
+            live.show(proj, f"מציב עברית - פריים {f}", res, fr, width=960)   # RTL: source on the right
+        try:
+            if smart.run(P["video"], info, n, busy, lambda f, fr: frame_result(proj, f, fr, T, meta, cache, W, H),
+                         out, crf=crf, preset=preset, progress=progress, live_cb=lv):
+                print("export: smart (only the title stretches encoded)")
+                return out
+        except RuntimeError:
+            pass
+        print("export: full encode")
+    wr = vio.Writer(out, P["video"], info, crf=crf, preset=preset, scale=scale)
     try:
         for f, fr in enumerate(vio.frames(P["video"], W, H)):
             if f in busy:
