@@ -16,6 +16,7 @@ FULL = False
 LOCK = threading.Lock()          # titles.json / dialog.json writes
 FRAMES = {}                      # decoded source frames (small LRU)
 LAYERS = {}                      # id -> (mtime, premultiplied layer)
+INK = {}                         # layer file -> drawn area
 
 
 # settings that travel between computers through the sync folder (secrets and recent files stay local)
@@ -666,7 +667,10 @@ def apply_titles(edits):
                 relayer.add(t["id"])
             st = e.get("style") or {}
             cur = t.setdefault("style", {})
-            ch = {k: v for k, v in st.items() if k in STYLE_KEYS and cur.get(k) != v}
+            for k in [k for k, v in st.items() if k in STYLE_KEYS and v is None and k in cur]:   # undo to "never set"
+                cur.pop(k); relayer.add(t["id"])
+                t["style_locked"] = [x for x in t.get("style_locked", []) if x != k]
+            ch = {k: v for k, v in st.items() if k in STYLE_KEYS and v is not None and cur.get(k) != v}
             if ch:
                 cur.update(ch); relayer.add(t["id"])
                 t["style_locked"] = sorted(set(t.get("style_locked", [])) | set(ch))
@@ -754,6 +758,46 @@ def render_frame(f, mode, width):
         fr = cv2.resize(fr, (width, int(H * width / W)), interpolation=cv2.INTER_AREA)
     ok, jpg = cv2.imencode(".jpg", fr, [cv2.IMWRITE_JPEG_QUALITY, 90])
     return jpg.tobytes()
+
+
+def title_box(tid, f):
+    """Where the Hebrew layer of a title sits at frame f: corner polygons (frame px) of every layer + the
+    position it would have with no manual offset (for snapping)."""
+    from . import motion
+    from PIL import Image
+    T = vio.load_json(P("titles.json")); meta = vio.load_json(P("layers", "meta.json"), {})
+    t = next((x for x in T["titles"] if x["id"] == tid), None)
+    if not t or tid not in meta:
+        return None
+    m = meta[tid]
+    anim = t.get("anim", {"mode": "static"})
+    v = (anim.get("frames") or {}).get(str(f)) if anim.get("mode") == "match" else None
+    dx, dy, sc = (v[0], v[1], v[2]) if v else (0, 0, 1)
+    polys = []
+    for i, pm in enumerate(m.get("parts") or [m]):
+        if not pm.get("file") or not os.path.exists(pm["file"]):
+            continue
+        k_ = (pm["file"], os.path.getmtime(pm["file"]))
+        if k_ not in INK:
+            im_ = Image.open(pm["file"])
+            INK[k_] = (im_.getchannel("A").getbbox() if im_.mode == "RGBA" else None) or (0, 0, im_.width, im_.height)
+        bx0, by0, bx1, by1 = INK[k_]                 # the drawn letters, not the padding around them
+        ss = pm["ss"]; ax, ay = pm["anchor"]; tx, ty = pm["target"]
+        Hm = motion.homography(anim, f, i if "parts" in m else None) if anim.get("mode") == "match" else None
+        pts = []
+        for x, y in ((bx0, by0), (bx1, by0), (bx1, by1), (bx0, by1)):
+            if Hm is not None:
+                X = x / ss + tx - ax / ss; Y = y / ss + ty - ay / ss
+                q = Hm @ np.array([X, Y, 1.0]); pts.append([q[0] / q[2], q[1] / q[2]])
+            else:
+                k = sc / ss
+                pts.append([k * x + tx + dx - ax * k, k * y + ty + dy - ay * k])
+        polys.append(pts)
+    if not polys:
+        return None
+    st = t.get("style", {})
+    return {"polys": polys, "nudge": [st.get("nudge_x", 0), st.get("nudge_y", 0)], "size_ratio": st.get("size_ratio", 0.9 if (t.get("layer") or {}).get("type", "text") == "text" else 1.0),
+            "in": t["in"], "out": t["out"]}
 
 
 # ------------------------------------------------------------------ http
@@ -884,6 +928,12 @@ class H(BaseHTTPRequestHandler):
             if STATE["proj"] not in MEDIA_BUSY:
                 threading.Thread(target=build_media, args=(STATE["proj"],), daemon=True).start()
             return self._send(200, {"ready": False})
+        if u.path == "/api/titlebox":
+            try:
+                return self._send(200, title_box(q.get("id", [""])[0], int(q.get("f", ["0"])[0])) or {})
+            except Exception as e:
+                traceback.print_exc()
+                return self._send(200, {"error": str(e)})
         if u.path == "/api/fontmatch":
             f = P("fontmatch", q.get("id", [""])[0] + ".json")
             return self._send(200, vio.load_json(f, {}) if os.path.exists(f) else {})

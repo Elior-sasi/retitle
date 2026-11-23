@@ -109,6 +109,11 @@ select.sel{background:#141414;border:1px solid var(--line2);border-radius:3px;he
 #frame2{display:none;position:relative;max-width:100%;max-height:100%;aspect-ratio:16/9;width:100%}
 #frame2 video,#frame2 img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
 #still2{display:none}
+#ov{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;overflow:visible}
+#ov .bx{fill:rgba(45,140,235,.06);stroke:#8ec5ff;stroke-width:1.5;vector-effect:non-scaling-stroke;pointer-events:all;cursor:move}
+#ov .hd{fill:#fff;stroke:#2d8ceb;stroke-width:1.5;vector-effect:non-scaling-stroke;pointer-events:all}
+#ov .gd{stroke:#ff4fd8;stroke-width:1;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
+#ov .home{fill:none;stroke:#cfcfcf;stroke-width:1;stroke-dasharray:3 3;vector-effect:non-scaling-stroke;opacity:.7}
 #stage.cmp{gap:6px;padding:0 4px}#stage.cmp #frame,#stage.cmp #frame2{display:block;width:calc(50% - 3px)}
 .plab{display:none;position:absolute;top:6px;inset-inline-start:6px;z-index:3;background:rgba(0,0,0,.75);color:#fff;font-size:.9em;padding:1px 8px;border-radius:3px}
 #stage.cmp .plab{display:block}
@@ -284,6 +289,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <span id="hint" role="note"></span>
       <span id="fsnote" aria-hidden="true">Esc ליציאה ממסך מלא</span>
       <span class="plab">מקור</span>
+      <svg id="ov" aria-hidden="true"><g id="ov-g"></g></svg>
     </div>
     <div id="frame2" aria-label="התוצאה בעברית">
       <video id="vid2" preload="auto" playsinline muted aria-hidden="true"></video>
@@ -449,7 +455,9 @@ const snap=()=>JSON.stringify(S.model);
 function beginEdit(){if(S.editBase===null)S.editBase=snap()}
 function endEdit(){if(S.editBase!==null&&S.editBase!==snap()){S.undo.push(S.editBase);if(S.undo.length>300)S.undo.shift();S.redo=[]}S.editBase=null}
 function oneShot(fn){beginEdit();fn();endEdit()}
-async function restore(str){S.model=JSON.parse(str);await api('/api/titles',{titles:S.model.titles});if(S.model.cues.length)await api('/api/dialog',{cues:S.model.cues});await reloadData(true);renderAll();refreshFrame()}
+async function restore(str){const old=S.model;S.model=JSON.parse(str);
+  const send=S.model.titles.map(t=>{const o=(old.titles||[]).find(x=>x.id===t.id);const st={...t.style};if(o)for(const k of Object.keys(o.style||{}))if(!(k in st))st[k]=null;return{...t,style:st}});
+  await api('/api/titles',{titles:send});if(S.model.cues.length)await api('/api/dialog',{cues:S.model.cues});await reloadData(true);renderAll();refreshFrame()}
 async function undo(){if(!S.undo.length)return say('אין מה לבטל');S.redo.push(snap());await restore(S.undo.pop());say('בוטל')}
 async function redo(){if(!S.redo.length)return say('אין מה לבצע שוב');S.undo.push(snap());await restore(S.redo.pop());say('בוצע שוב')}
 const saveTimers={};
@@ -694,8 +702,8 @@ function seek(f,quiet){stopShuttle();f=clamp(Math.round(f),0,S.n-1);S.frame=f;vi
 function follow(){const wrap=$('#tlwrap'),x=S.frame*pxf();if(x<wrap.scrollLeft+10||x>wrap.scrollLeft+wrap.clientWidth-30)wrap.scrollLeft=x-wrap.clientWidth/3}
 function updSubs(){const t=(S.frame+0.5)/S.fps;const c=S.model.cues.find(c=>t>=c.start&&t<c.end&&c.he);$('#subs').textContent=c?c.he:''}
 function updTime(){updSubs();$('#tc').textContent=tc(S.frame);$('#tc2').textContent=tc(S.frame);const ph=$('#playhead');if(ph)ph.style.left=S.frame*pxf()+'px'}
-function refreshFrameSoon(d=40){clearTimeout(stillTimer);stillTimer=setTimeout(refreshFrame,d)}
-function refreshFrame(){const cmp=S.mode==='compare';if(!S.proj||!vid.paused||S.shuttle||(S.mode!=='result'&&!cmp)){still.style.display='none';still2.style.display='none';return}
+function refreshFrameSoon(d=40){clearTimeout(stillTimer);stillTimer=setTimeout(refreshFrame,d);boxSoon(d+20)}
+function refreshFrame(){boxSoon(60);const cmp=S.mode==='compare';if(!S.proj||!vid.paused||S.shuttle||(S.mode!=='result'&&!cmp)){still.style.display='none';still2.style.display='none';return}
   if(cmp)still.style.display='none';const target=cmp?still2:still;
   const tok=++frameTok;const w=Math.round((cmp?$('#frame2'):$('#frame')).clientWidth*(devicePixelRatio||1));const img=new Image();
   img.onload=()=>{if(tok!==frameTok)return;target.src=img.src;target.style.display='block'};img.src=`/api/frame?f=${S.frame}&mode=result&w=${w}&t=${Date.now()}`}
@@ -719,7 +727,7 @@ setInterval(()=>{if(S.mode==='compare'&&!vid.paused)sync2()},500);
 const PLAY='<path d="M7 4v16l13-8z"/>',PAUSE='<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>';
 function playIcon(p){$('#playico').innerHTML=p?PAUSE:PLAY;$('#t-play').setAttribute('aria-label',p?'עצור (רווח)':'נגן (רווח)')}
 function play(){if(!S.proj)return;if(S.shuttle){stopShuttle();return}if(vid.paused){still.style.display='none';vid.playbackRate=1;vid.play()}else vid.pause()}
-vid.addEventListener('play',()=>{playIcon(true);loop()});
+vid.addEventListener('play',()=>{playIcon(true);$('#ov-g').replaceChildren();loop()});
 vid.addEventListener('pause',()=>{if(S.shuttle<0)return;playIcon(false);S.frame=clamp(Math.floor(vid.currentTime*S.fps+1e-3),0,S.n-1);updTime();refreshFrame()});
 vid.addEventListener('ended',()=>{S.shuttle=0;playIcon(false)});
 function loop(){if(vid.paused)return;S.frame=clamp(Math.floor(vid.currentTime*S.fps+1e-3),0,S.n-1);updTime();follow();requestAnimationFrame(loop)}
@@ -734,7 +742,7 @@ function editPoints(){const s=new Set((S.data&&S.data.cuts)||[]);for(const t of 
 function gotoEdit(dir){const p=editPoints();const f=dir>0?p.find(x=>x>S.frame):[...p].reverse().find(x=>x<S.frame);if(f!=null)seek(f)}
 
 // ================================================================ selection
-function select(k,id,jump){S.sel={k,id};S.tab=k;renderList();renderInsp();renderTimeline();
+function select(k,id,jump){S.sel={k,id};S.tab=k;boxSoon(80);renderList();renderInsp();renderTimeline();
   if(jump){const it=k==='t'?mt(id):mc(id);if(it)seek(k==='t'?it.in:Math.round(it.start*S.fps))}}
 function selectAtPlayhead(){const t=S.model.titles.find(t=>S.frame>=t.in&&S.frame<=t.out);if(t)return select('t',t.id,false);
   const tt=(S.frame+0.5)/S.fps;const c=S.model.cues.find(c=>tt>=c.start&&tt<c.end);if(c)return select('c',c.n,false);say('אין פריט במיקום הנגן')}
@@ -860,7 +868,7 @@ const KEYS=[
  ['← / →','פריים אחורה / קדימה'],['Shift+← / Shift+→','5 פריימים'],['↑ / ↓','נקודת עריכה קודמת / הבאה (חיתוכים, כניסות ויציאות)'],['Home / End','התחלה / סוף'],
  ['סימון'],['I / O','כניסה / יציאה של הפריט הנבחר = מיקום הנגן'],['Shift+I / Shift+O','עבור לכניסה / ליציאה'],['D','בחר את הפריט שבמיקום הנגן'],
  ['ציר זמן'],['= / -','הגדל / הקטן זום'],['\\','התאם לחלון'],['Alt+גלגלת','זום'],['Enter','בנה תצוגה (רינדור)'],
- ['Retitle'],['T','מעבר בין מקור לתוצאה'],['Shift+T','מקור ותוצאה זה לצד זה'],['Ctrl+` / לחיצה כפולה','מסך מלא (Esc ליציאה)'],['[ / ]','פריט קודם / הבא'],['F2','עבור לשדה העברית'],['Esc','יציאה משדה טקסט / סגירת תפריט']];
+ ['Retitle'],['T','מעבר בין מקור לתוצאה'],['Shift+T','מקור ותוצאה זה לצד זה'],['Alt+חיצים / Alt+Shift+חיצים','הזזת הכותרת העברית בפיקסל / ב-10 פיקסלים'],['גרירה בתצוגה','הזזה (נצמד למרכז ולמקום המקורי, Alt בלי הצמדה), פינות - גודל'],['Ctrl+` / לחיצה כפולה','מסך מלא (Esc ליציאה)'],['[ / ]','פריט קודם / הבא'],['F2','עבור לשדה העברית'],['Esc','יציאה משדה טקסט / סגירת תפריט']];
 $('#keys').replaceChildren(...KEYS.map(r=>r.length===1?el('tr',{},el('th',{colspan:'2',text:r[0]})):el('tr',{},el('td',{text:r[0]}),el('td',{text:r[1]}))));
 document.addEventListener('keyup',e=>{if(e.code==='KeyK')S.kDown=false});
 document.addEventListener('keydown',e=>{
@@ -881,6 +889,8 @@ document.addEventListener('keydown',e=>{
   }
   if(ctrl&&alt&&c==='KeyK'){e.preventDefault();openDlg('#d-help');return}
   if(ctrl&&!alt&&c==='Backquote'){e.preventDefault();toggleFS();return}
+  if(alt&&!ctrl&&!typing&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(c)){e.preventDefault();const st=sh?10:1;
+    nudgeKey(c==='ArrowLeft'?-st:c==='ArrowRight'?st:0,c==='ArrowUp'?-st:c==='ArrowDown'?st:0);return}
   if(typing||ctrl||alt)return;
   if(t.closest('button,[role=button],[role=menuitem],[role=tab]')&&(c==='Space'||c==='Enter'||c==='NumpadEnter'))return;
   const ok=()=>e.preventDefault();
@@ -999,6 +1009,50 @@ function fmPanel(t,d){const R=S.fm&&S.fm[t.id];if(!R)return null;const box=el('d
     el('button',{class:'mini',text:'החל על כל הכותרות בסגנון הזה',onclick:()=>applyFontWide(t,'style')}),
     Object.values(S.fonts).some(v=>v.source==='google'&&v.installed===false)?el('button',{class:'mini',text:'בדוק גם גופני Google שלא הורדו',onclick:()=>findFont(t.id,true)}):null));
   return box}
+// ---------------------------------------------------------------- move / resize the Hebrew on the picture (like Motion in Premiere)
+let boxTok=0,boxT=null;
+function boxSoon(d=60){clearTimeout(boxT);boxT=setTimeout(loadBox,d)}
+async function loadBox(){const g=$('#ov-g');const sel=S.sel;
+  const show=S.proj&&sel&&sel.k==='t'&&vid.paused&&!S.shuttle&&(S.mode==='result'||S.mode==='compare')&&!S.drag;
+  if(!show){if(!S.drag)g.replaceChildren();S.box=null;return}
+  const t=mt(sel.id);if(!t||!t.translate||t.mode==='remove'||S.frame<t.in||S.frame>t.out){g.replaceChildren();S.box=null;return}
+  const tok=++boxTok;let r;try{r=await api(`/api/titlebox?id=${encodeURIComponent(sel.id)}&f=${S.frame}`)}catch(e){return}
+  if(tok!==boxTok||S.drag)return;S.box=r&&r.polys?r:null;drawBox()}
+function frameGeom(){const fr=S.mode==='compare'?$('#frame2'):$('#frame');const info=S.data.project.info;
+  const W=info.width,H=info.height,fw=fr.clientWidth,fh=fr.clientHeight,k=Math.min(fw/W,fh/H);return{fr,W,H,k,ox:(fw-W*k)/2,oy:(fh-H*k)/2}}
+function drawBox(dx=0,dy=0,sc=1,guides=null){const g=$('#ov-g');g.replaceChildren();const B=S.box;if(!B)return;
+  const G=frameGeom();if(G.fr.id!=='frame')G.fr.append($('#ov'));else if($('#ov').parentNode.id!=='frame')$('#frame').append($('#ov'));
+  const sv=$('#ov');sv.setAttribute('viewBox',`0 0 ${G.fr.clientWidth} ${G.fr.clientHeight}`);
+  const all=B.polys.flat();const cx0=(Math.min(...all.map(p=>p[0]))+Math.max(...all.map(p=>p[0])))/2,cy0=(Math.min(...all.map(p=>p[1]))+Math.max(...all.map(p=>p[1])))/2;
+  const tr=([x,y])=>[G.ox+(cx0+(x-cx0)*sc+dx)*G.k,G.oy+(cy0+(y-cy0)*sc+dy)*G.k];
+  const NS='http://www.w3.org/2000/svg',mk=(n,a)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);return e};
+  // where it would be with no manual offset
+  if(B.nudge[0]||B.nudge[1]){for(const P of B.polys)g.append(mk('polygon',{class:'home',points:P.map(p=>[G.ox+(p[0]-B.nudge[0])*G.k,G.oy+(p[1]-B.nudge[1])*G.k].join(',')).join(' ')}))}
+  for(const P of B.polys)g.append(mk('polygon',{class:'bx',points:P.map(tr).map(p=>p.join(',')).join(' '),'data-act':'move'}));
+  const xs=all.map(p=>tr(p)[0]),ys=all.map(p=>tr(p)[1]);const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  for(const[x,y]of[[x0,y0],[x1,y0],[x1,y1],[x0,y1]])g.append(mk('rect',{class:'hd',x:x-5,y:y-5,width:10,height:10,'data-act':'size',style:'cursor:nwse-resize'}));
+  if(guides){if(guides.v!=null)g.append(mk('line',{class:'gd',x1:G.ox+guides.v*G.k,x2:G.ox+guides.v*G.k,y1:0,y2:G.fr.clientHeight}));
+    if(guides.h!=null)g.append(mk('line',{class:'gd',y1:G.oy+guides.h*G.k,y2:G.oy+guides.h*G.k,x1:0,x2:G.fr.clientWidth}))}
+  S.boxC=[cx0,cy0]}
+$('#ov').addEventListener('pointerdown',e=>{const act=e.target.dataset&&e.target.dataset.act;if(!act||!S.box||!S.sel)return;e.preventDefault();e.stopPropagation();
+  const t=mt(S.sel.id);if(!t)return;const G=frameGeom();const B=S.box;const [cx0,cy0]=S.boxC;const p0=[e.clientX,e.clientY];
+  const n0=[t.style.nudge_x||0,t.style.nudge_y||0],r0=t.style.size_ratio??B.size_ratio;const rect=G.fr.getBoundingClientRect();
+  const fx=ev=>(ev.clientX-rect.left-G.ox)/G.k,fy=ev=>(ev.clientY-rect.top-G.oy)/G.k;const d0=Math.hypot(fx(e)-cx0,fy(e)-cy0)||1;
+  const home=[cx0-n0[0],cy0-n0[1]],snap=8/G.k;S.drag=true;beginEdit();let st={dx:0,dy:0,sc:1};
+  const mv=ev=>{if(act==='move'){let dx=(ev.clientX-p0[0])/G.k,dy=(ev.clientY-p0[1])/G.k;const gd={v:null,h:null};
+      const cx=cx0+dx,cy=cy0+dy;
+      if(!ev.altKey){for(const v of[G.W/2,home[0]])if(Math.abs(cx-v)<snap){dx=v-cx0;gd.v=v;break}
+        for(const h of[G.H/2,home[1]])if(Math.abs(cy-h)<snap){dy=h-cy0;gd.h=h;break}}
+      st={dx,dy,sc:1};drawBox(dx,dy,1,gd)}
+    else{const sc=clamp(Math.hypot(fx(ev)-cx0,fy(ev)-cy0)/d0,0.2,5);st={dx:0,dy:0,sc};drawBox(0,0,sc)}};
+  const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up);S.drag=false;
+    if(act==='move'){t.style.nudge_x=Math.round(n0[0]+st.dx);t.style.nudge_y=Math.round(n0[1]+st.dy)}else t.style.size_ratio=Math.round(r0*st.sc*100)/100;
+    endEdit();saveTitle(t.id,0);renderInsp();say(act==='move'?`הוזז: X ${t.style.nudge_x}, Y ${t.style.nudge_y}. Ctrl+Z מבטל`:`גודל: ${Math.round(t.style.size_ratio*100)}%. Ctrl+Z מבטל`);setTimeout(()=>boxSoon(0),700)};
+  addEventListener('pointermove',mv);addEventListener('pointerup',up)});
+function nudgeKey(dx,dy){const t=S.sel&&S.sel.k==='t'&&mt(S.sel.id);if(!t)return say('בחר כותרת קודם');oneShot(()=>{t.style.nudge_x=(t.style.nudge_x||0)+dx;t.style.nudge_y=(t.style.nudge_y||0)+dy});
+  saveTitle(t.id,300);if(S.box){S.box.polys=S.box.polys.map(P=>P.map(([x,y])=>[x+dx,y+dy]));S.box.nudge=[t.style.nudge_x,t.style.nudge_y];drawBox()}
+  renderInsp();say(`X ${t.style.nudge_x}, Y ${t.style.nudge_y}`)}
+addEventListener('resize',()=>boxSoon(100));
 function setFontRow(t,r){t.style.font=r.font;if(r.weight)t.style.weight=r.weight;else delete t.style.weight;if(r.wdth)t.style.wdth=r.wdth;else delete t.style.wdth}
 function applyFontWide(t,scope){const d=dt(t.id)||{},st=d.style||{};const r={font:t.style.font,weight:t.style.weight,wdth:t.style.wdth};
   const near=(a,b)=>a&&b&&Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2])<40;let n=0,skip=0;beginEdit();
