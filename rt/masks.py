@@ -38,6 +38,7 @@ def estimate(crop, words, stroke_hint=None):
         ring = np.zeros_like(lbl, bool)
         ring[:2] = ring[-2:] = True; ring[:, :2] = ring[:, -2:] = True
         best = None
+        cands = []
         for c in range(k):
             sel = lbl == c
             fi = (sel & inner).sum() / max(1, inner.sum())
@@ -45,6 +46,22 @@ def estimate(crop, words, stroke_hint=None):
             sc = fi - 3 * fb
             if fi > 0.08 and (best is None or sc > best[0]):
                 best = (sc, c)
+            if fi > 0.08 and fb < 0.15:
+                cands.append(c)
+        if len(cands) >= 2:
+            # outlined text: the fill is the cluster wrapped by another text cluster (the outline)
+            covers = []
+            for c in cands:
+                m = (lbl == c).astype(np.uint8)
+                rg = (cv2.dilate(m, np.ones((3, 3), np.uint8)) > 0) & (m == 0) & inner
+                if rg.sum() < 10:
+                    continue
+                other = np.isin(lbl, [o for o in cands if o != c])
+                covers.append(((other & rg).sum() / rg.sum(), c))
+            if covers:
+                cv_, cc = max(covers)
+                if cv_ > 0.5:
+                    best = (1.0, cc)
         if best is None:
             continue
         tm = (lbl == best[1]) & inner

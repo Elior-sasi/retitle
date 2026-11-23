@@ -79,7 +79,7 @@ textarea.he:focus{border-color:var(--blue);outline:none}
 select.sel{background:#141414;border:1px solid var(--line2);border-radius:3px;height:28px;padding:0 6px;max-width:100%;min-width:0;flex:1}
 .swatch{width:40px;height:24px;border:1px solid var(--line2);border-radius:3px;padding:0;background:none;cursor:pointer}
 .seg{display:inline-flex;border:1px solid var(--line2);border-radius:3px;overflow:hidden}
-.seg button{background:#1b1b1b;border:0;height:26px;min-width:44px;padding:0 8px;cursor:pointer;color:var(--fg)}
+.seg button{white-space:nowrap;background:#1b1b1b;border:0;height:26px;min-width:44px;padding:0 8px;cursor:pointer;color:var(--fg)}
 .seg button+button{border-inline-start:1px solid var(--line2)}
 .seg button[aria-pressed=true]{background:var(--cta);color:#fff}
 .mini{background:#1b1b1b;border:1px solid var(--line2);border-radius:3px;height:26px;min-width:30px;padding:0 7px;cursor:pointer;color:var(--fg);direction:ltr}
@@ -144,6 +144,7 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 .cut{position:absolute;top:30px;bottom:0;width:0;border-left:1px dashed #555;pointer-events:none}
 .blk{position:absolute;height:40px;border-radius:2px;color:#fff;font-size:.85em;overflow:hidden;white-space:nowrap;padding:3px 10px;display:flex;align-items:flex-start;cursor:pointer;border:1px solid rgba(0,0,0,.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
 .blk.t{background:var(--clipT)}.blk.c{background:var(--clipC)}
+.blk.rm{background:repeating-linear-gradient(-45deg,#6a3a3a,#6a3a3a 6px,#5a3030 6px,#5a3030 12px)}
 .blk.off{background:repeating-linear-gradient(45deg,#4a4a4a,#4a4a4a 6px,#404040 6px,#404040 12px);color:#ccc}
 .blk[aria-current=true]{outline:2px solid #fff;outline-offset:-2px;filter:brightness(1.12)}
 .blk .h{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize}
@@ -178,6 +179,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 .kt td:first-child{direction:ltr;text-align:left;white-space:nowrap;color:var(--hot);width:40%}
 .kt th{text-align:start;padding:12px 8px 4px;color:#fff}
 #logbox{white-space:pre-wrap;background:#141414;border-radius:3px;padding:8px;font-size:.92em}
+.qa td:first-child{color:inherit;direction:rtl;text-align:start;width:auto;white-space:normal}
+.qa .sev{font-weight:700}.qa .sev.err{color:var(--bad)}.qa .sev.warn{color:var(--warn)}
 .checks img{max-width:100%;border-radius:3px;margin:6px 0}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
@@ -293,6 +296,9 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-key">מפתח API של Anthropic<br><span class="unit">לתרגום אוטומטי, לא חובה</span></label>
     <div><input type="password" id="s-key" dir="ltr" autocomplete="off" aria-describedby="keyset" style="width:100%"><div id="keyset" class="unit"></div></div>
     <label for="s-model">מודל תרגום</label><input type="text" id="s-model" dir="ltr">
+    <label for="s-rle">SRT</label><label class="chk"><input type="checkbox" id="s-rle"> תו RLE בתחילת כל שורה (לתצוגת עברית תקינה)</label>
+    <label for="s-gh">טוקן GitHub לעדכונים<br><span class="unit">לריפו פרטי, קריאה בלבד</span></label>
+    <div><input type="password" id="s-gh" dir="ltr" autocomplete="off" aria-describedby="ghset" style="width:100%"><div id="ghset" class="unit"></div></div>
     <label for="s-fs">גודל טקסט בממשק</label>
     <select id="s-fs"><option value="13">קטן (כמו Adobe)</option><option value="14">רגיל</option><option value="16">גדול</option><option value="18">גדול מאוד</option></select>
   </div></div>
@@ -305,6 +311,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <table class="kt"><tbody id="keys"></tbody></table></div>
   <div class="df"><button class="cta" data-close>סגור</button></div>
 </dialog>
+<dialog id="d-qa" aria-labelledby="dq-h"><h2 class="dh" id="dq-h">בדיקת QA</h2><div class="db"><p class="note" id="qa-sum" style="padding:0 0 6px" role="status"></p><table class="kt qa"><tbody id="qa-list"></tbody></table></div><div class="df"><button class="qbtn" id="qa-re">בדוק שוב</button><button class="cta" data-close>סגור</button></div></dialog>
+<dialog id="d-upd" aria-labelledby="du-h"><h2 class="dh" id="du-h">עדכונים</h2><div class="db"><p id="upd-msg" role="status"></p></div><div class="df"><button class="qbtn" data-close>סגור</button><button class="cta" id="upd-go" hidden>עדכן עכשיו</button></div></dialog>
 <dialog id="d-log" aria-labelledby="dl-h"><h2 class="dh" id="dl-h">יומן פעולות</h2><div class="db"><div id="logbox" tabindex="0"></div></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
 <dialog id="d-checks" aria-labelledby="dc-h"><h2 class="dh" id="dc-h">בדיקה: מקור מול תוצאה</h2><div class="db"><p class="note" style="padding:0">בכל תמונה: משמאל המקור, מימין התוצאה, מהפריים שלפני הכניסה עד שאחרי היציאה.</p><div class="checks" id="checks"></div></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
 
@@ -329,7 +337,7 @@ const NIQ=/[֑-ׇֽֿׁׂׅׄ]/g;
 
 // ================================================================ model / undo
 function modelFromData(){const T=(S.data.titles||{}).titles||[];
-  S.model.titles=T.map(t=>({id:t.id,he:t.he||'',translate:t.translate!==false,in:t.in,out:t.out,
+  S.model.titles=T.map(t=>({id:t.id,he:t.he||'',translate:t.translate!==false,mode:t.mode||'replace',layer:t.layer||null,in:t.in,out:t.out,
     style:Object.fromEntries(STYLE.map(k=>[k,(t.style||{})[k]]).filter(([k,v])=>v!==undefined))}));
   S.model.cues=((S.data.dialog||{}).cues||[]).map(c=>({n:c.n,he:c.he||'',start:c.start,end:c.end}))}
 const snap=()=>JSON.stringify(S.model);
@@ -373,7 +381,9 @@ function renderList(){const ul=$('#items');ul.replaceChildren();
   if(S.tab==='t'){
     if(!S.model.titles.length){ul.append(el('li',{class:'note',style:'padding:14px;text-align:center',text:S.proj?'אין עדיין כותרות. "נתח כותרות" מזהה את הטקסט על המסך.':'ייבא סרטון כדי להתחיל.'}));return}
     for(const t of S.model.titles){const d=dt(t.id)||{};if(q&&!((d.src||'')+' '+t.he).toLowerCase().includes(q))continue;const chips=[];
-      if(!t.translate)chips.push(el('span',{class:'chip off',text:'לא מוחלף'}));else if(!t.he)chips.push(el('span',{class:'chip warn',text:'חסר תרגום'}));
+      if(d.kind==='sub')chips.push(el('span',{class:'chip off',text:'כתובית צרובה'}));
+      if(!t.translate)chips.push(el('span',{class:'chip off',text:'נשאר'}));else if(t.mode==='remove')chips.push(el('span',{class:'chip off',text:'מחיקה בלבד'}));
+      else if(t.layer&&t.layer.type==='image')chips.push(el('span',{class:'chip off',text:'תמונה'}));else if(!t.he)chips.push(el('span',{class:'chip warn',text:'חסר תרגום'}));
       if(t.translate&&dirty.has(d.group))chips.push(el('span',{class:'chip warn',text:'דורש בנייה'}));
       ul.append(el('li',{},el('button',{class:'item','aria-current':isSel('t',t.id)?'true':'false',onclick:()=>select('t',t.id,true),
         'aria-label':`${d.src||''}. ${t.he?'עברית: '+t.he:'בלי תרגום'}. ${tc(t.in)} עד ${tc(t.out)}${chips.length?'. '+chips.map(c=>c.textContent).join(', '):''}`},
@@ -416,17 +426,27 @@ function renderInsp(){const box=$('#ec');box.replaceChildren();$('#insp-name').t
 function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;const st=d.style||{};$('#insp-name').textContent=t.id;
   box.append(el('div',{class:'ec-head'},el('img',{src:`/api/file?p=thumbs/${t.id}.jpg`,alt:`הכותרת במקור: ${d.src}`}),
     el('div',{style:'min-width:0'},el('div',{class:'src',lang:'und',text:d.src}),el('div',{class:'sub',text:`${tc(t.in)} - ${tc(t.out)}`}))));
-  const tg=el('input',{type:'checkbox',id:'i-tr'});tg.checked=t.translate;
-  tg.addEventListener('change',()=>{oneShot(()=>t.translate=tg.checked);saveTitle(t.id,0);renderList();renderTimeline()});
+  const curMode=!t.translate?'keep':(t.mode==='remove'?'remove':'replace');
+  const md=el('div',{class:'seg',role:'group','aria-label':'מה לעשות עם הטקסט במקור'});
+  for(const[v,n]of[['replace','עברית'],['remove','מחיקה'],['keep','להשאיר']]){const bb=el('button',{text:n,'aria-pressed':curMode===v?'true':'false',
+    onclick:()=>{oneShot(()=>{t.translate=v!=='keep';t.mode=v==='remove'?'remove':'replace'});saveTitle(t.id,0);renderAll();refreshFrameSoon(300)}});md.append(bb)}
+  const isImg=t.layer&&t.layer.type==='image';
+  const logo=el('span',{class:'v'},
+    el('button',{class:'mini',text:isImg?'החלף תמונה...':'תמונה (PNG) במקום טקסט...',onclick:async()=>{const r=await api('/api/logo',{id:t.id});if(r.ok){await reloadData(false);renderAll();refreshFrame();say('התמונה הוצבה')}}}),
+    isImg?el('button',{class:'mini',text:'חזור לטקסט',onclick:async()=>{await api('/api/logo',{id:t.id,clear:true});await reloadData(false);renderAll();refreshFrame()}}):null);
   const he=el('textarea',{class:'he',id:'i-he',rows:'2',dir:'rtl',lang:'he','aria-label':'טקסט בעברית'});he.value=t.he;
   he.addEventListener('focus',beginEdit);he.addEventListener('blur',endEdit);
   he.addEventListener('input',()=>{beginEdit();const p=he.selectionStart;const v=he.value.replace(NIQ,'');if(v!==he.value){he.value=v;he.selectionStart=he.selectionEnd=Math.max(0,p-1)}t.he=v;softRender();saveTitle(t.id,450)});
-  box.append(group('טקסט',true,el('div',{class:'prop'},el('label',{class:'chk',for:'i-tr',style:'grid-column:1/-1;padding-inline-start:16px'},tg,el('span',{text:'להחליף לעברית'}))),he,
-    el('p',{class:'note',text:'לא להחליף: קרדיטים, לוגואים, סמלי דירוג, שמות באנגלית.'})));
+  box.append(group('טקסט',true,prop('מקור',null,el('span',{class:'v'},md)),
+    el('p',{class:'note',text:curMode==='remove'?'הטקסט במקור יימחק בלי להוסיף עברית (למשל כתוביות צרובות - העברית תהיה ב-SRT).':'להשאיר: קרדיטים, לוגואים של אולפנים, סמלי דירוג, שמות באנגלית.'}),
+    curMode==='replace'&&!isImg?he:null,curMode==='replace'?prop('לוגו',null,logo):null,
+    isImg?el('p',{class:'note',text:'במקום הטקסט מוצגת תמונה שקופה, ברוחב הטקסט המקורי ועם אותה אנימציה. "גודל" משנה את הרוחב.'}):null));
   const fs=el('select',{class:'sel',id:'i-font'});for(const[n,v]of Object.entries(S.fonts))fs.append(el('option',{value:n,text:`${n} - ${v.he||v.tags}`}));fs.value=t.style.font||'Heebo';
   fs.addEventListener('change',()=>{oneShot(()=>t.style.font=fs.value);saveTitle(t.id,0)});
   const col=el('input',{type:'color',class:'swatch',id:'i-col',value:hex(t.style.fill||st.fill)});
   col.addEventListener('focus',beginEdit);col.addEventListener('input',()=>{beginEdit();t.style.fill=bgr(col.value);saveTitle(t.id,250)});col.addEventListener('change',endEdit);
+  if(curMode!=='replace'){box.append(group('תזמון',true,...timingRows(()=>t.in,()=>t.out,
+    v=>{t.in=clamp(v,0,t.out);saveTitle(t.id,0);softRender()},v=>{t.out=clamp(v,t.in,S.n-1);saveTitle(t.id,0);softRender()})));return}
   box.append(group('גופן ומראה',true,
     prop('גופן','i-font',el('span',{class:'v'},fs)),
     prop('משקל','i-w',hot('i-w',t.style.weight??400,100,100,900,v=>{t.style.weight=v;saveTitle(t.id,350)},'משקל גופן')),
@@ -481,8 +501,9 @@ function renderTimeline(){const inner=$('#tlinner');inner.replaceChildren();if(!
   $('#trk-t').style.height=(nT*LANE)+'px';$('#trk-c').style.height=(nC*LANE)+'px';
   for(let i=0;i<nT+nC;i++)inner.append(el('div',{class:'lane',style:`top:${RULER+i*LANE}px;width:${W}px;background:${i<nT?'#262626':'#242424'}`}));
   const dirty=new Set(S.data.dirty||[]);
-  for(const{t,l}of tl){const d=dt(t.id)||{};inner.append(block('t',t.id,t.in,t.out,RULER+l*LANE,t.he||d.src||t.id,!t.translate,t.translate&&dirty.has(d.group),
-    `כותרת ${t.id}: ${t.he||d.src||''}, ${tc(t.in)} עד ${tc(t.out)}`))}
+  for(const{t,l}of tl){const d=dt(t.id)||{};const rm=t.translate&&t.mode==='remove';
+    const lab=rm?'מחיקה: '+(d.src||''):(t.layer&&t.layer.type==='image'?'תמונה':(t.he||d.src||t.id));
+    const b=block('t',t.id,t.in,t.out,RULER+l*LANE,lab,!t.translate,t.translate&&dirty.has(d.group),`כותרת ${t.id}: ${lab}, ${tc(t.in)} עד ${tc(t.out)}${rm?', מחיקה בלבד':''}`);if(rm)b.classList.add('rm');inner.append(b)}
   for(const{c,a,b,l}of cl)inner.append(block('c',c.n,a,b,RULER+(nT+l)*LANE,c.he||(dc(c.n)||{}).src||'#'+c.n,false,false,`כתובית ${c.n}: ${c.he||''}, ${tc(a)} עד ${tc(b)}`));
   inner.append(el('div',{id:'playhead',style:`left:${S.frame*pxf()}px`}))}
 function block(k,id,a,b,top,label,off,dirty,aria){
@@ -552,7 +573,7 @@ function gotoEdge(which){if(!S.sel)return say('לא נבחר פריט');const it
 function step(dir){const L=items();if(!L.length)return;let i=S.sel?L.findIndex(x=>x.k===S.sel.k&&x.id===S.sel.id):-1;i=clamp(i+dir,0,L.length-1);select(L[i].k,L[i].id,true)}
 
 // ================================================================ jobs / status
-const JOBN={analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
+const JOBN={update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
 async function run(job){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt'].includes(job))await flush();const r=await api('/api/run',{job});if(!r.started)say('פעולה אחרת עדיין רצה',true)}
 let wasRunning=false;
 async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
@@ -570,24 +591,44 @@ function renderAll(){renderList();renderInsp();renderTimeline();updTime();$('#we
 function openDlg(id){closeMenu(true);const d=$(id);if(d.open)return;d.showModal();const f=d.querySelector('input,select,textarea,button');if(f)f.focus()}
 document.querySelectorAll('dialog [data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog').close()));
 async function loadSettings(){const s=await api('/api/settings');$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
-  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
+  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
-  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),ui_fs:+$('#s-fs').value});$('#s-key').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
+  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
 function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
+
+// ================================================================ import / hardsubs / QA / update
+async function importSrt(heb){closeMenu(true);if(S.model.cues.length&&!confirm('ייבוא יחליף את הכתוביות הקיימות. להמשיך?'))return;
+  const r=await api('/api/import_srt',{hebrew:heb});if(!r.ok)return say('לא נבחר קובץ');S.undo=[];S.redo=[];await reloadData(false);S.tab='c';renderAll();say(`יובאו ${r.n} כתוביות`)}
+async function hardsubs(){if(S.model.cues.length&&!confirm('הפעולה תחליף את הכתוביות הקיימות. להמשיך?'))return;const r=await api('/api/hardsubs',{});await reloadData(false);S.tab='c';renderAll();say(`${r.n} כתוביות צרובות הועברו לרשימת הכתוביות. מקלידים עברית, וה-SRT ייצא בייצוא.`)}
+async function openQA(){await flush();const r=await api('/api/qa',{});const L=r.issues||[];const errs=L.filter(i=>i.sev==='err').length;
+  $('#qa-sum').textContent=L.length?`${errs} שגיאות, ${L.length-errs} אזהרות.`:'לא נמצאו בעיות.';
+  $('#qa-list').replaceChildren(...L.map(i=>el('tr',{},el('td',{},el('span',{class:'sev '+i.sev,text:i.sev==='err'?'שגיאה':'אזהרה'})),
+    el('td',{text:(i.k==='t'?'כותרת '+i.id:'כתובית '+i.id)+': '+i.msg}),
+    el('td',{},el('button',{class:'mini',text:'עבור','aria-label':`עבור אל ${i.k==='t'?'כותרת '+i.id:'כתובית '+i.id}`,onclick:()=>{$('#d-qa').close();select(i.k,i.id,true);const f=$('#i-he')||$('#i-che');if(f)f.focus()}})))));
+  openDlg('#d-qa')}
+$('#qa-re').onclick=()=>{$('#d-qa').close();openQA()};
+async function checkUpdate(show){let r;try{r=await api('/api/update/check',{})}catch(e){r={error:String(e)}}
+  const m=$('#upd-msg'),go=$('#upd-go');go.hidden=true;
+  if(r.error){if(!show)return;m.textContent=`לא הצלחתי לבדוק עדכונים (${r.error}). אם הריפו פרטי, צריך טוקן GitHub בהעדפות.`}
+  else if(r.newer){m.textContent=`יש גרסה חדשה: ${r.latest} (אצלך ${r.current||'לא ידוע'}).`;go.hidden=false;if(!show){say(`יש גרסה חדשה (${r.latest}) - עזרה > בדוק עדכונים`);return}}
+  else{if(!show)return;m.textContent=`הגרסה שלך (${r.current}) היא האחרונה.`}
+  openDlg('#d-upd')}
+$('#upd-go').onclick=async()=>{$('#d-upd').close();await flush();const r=await api('/api/run',{job:'update'});if(!r.started)say('פעולה אחרת רצה',true)};
 
 // ================================================================ menus
 const MENUS=[
- ['קובץ',[['ייבוא סרטון...','Ctrl+I',()=>openVideo()],['-'],['ייצוא מדיה (סרטון + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks'],['-'],['שמור','Ctrl+S',()=>flush().then(()=>say('נשמר')),'proj']]],
+ ['קובץ',[['ייבוא סרטון...','Ctrl+I',()=>openVideo()],['ייבוא SRT מקור (לתרגום)...','',()=>importSrt(false),'proj'],['ייבוא SRT בעברית...','',()=>importSrt(true),'proj'],['-'],['ייצוא מדיה (סרטון + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks'],['-'],['שמור','Ctrl+S',()=>flush().then(()=>say('נשמר')),'proj']]],
  ['עריכה',[['בטל','Ctrl+Z',()=>undo(),'undo'],['בצע שוב','Ctrl+Shift+Z',()=>redo(),'redo'],['-'],['בחר פריט במיקום הנגן','D',()=>selectAtPlayhead(),'proj'],['סמן כניסה','I',()=>setEdge('in'),'sel'],['סמן יציאה','O',()=>setEdge('out'),'sel'],['-'],['להחליף את כל הכותרות','',()=>bulk(true),'proj'],['לא להחליף אף כותרת','',()=>bulk(false),'proj'],['-'],['העדפות...','Ctrl+,',()=>openDlg('#d-settings')]]],
- ['סרטון',[['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
+ ['סרטון',[['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['בדיקת QA','',()=>openQA(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
  ['תצוגה',[['מקור','',()=>setMode('source'),'proj'],['תוצאה','T',()=>setMode('result'),'proj'],['-'],['הגדל זום','=',()=>zoomTo(S.zoom*1.5),'proj'],['הקטן זום','-',()=>zoomTo(S.zoom/1.5),'proj'],['התאם לחלון','\\',()=>fit(),'proj'],['-'],['יומן פעולות','',()=>openDlg('#d-log')]]],
- ['עזרה',[['קיצורי מקלדת','Ctrl+Alt+K',()=>openDlg('#d-help')]]]];
+ ['עזרה',[['קיצורי מקלדת','Ctrl+Alt+K',()=>openDlg('#d-help')],['-'],['בדוק עדכונים...','',()=>checkUpdate(true)]]]];
 const MB=$('#menubar'),MENU=$('#menu');let openIdx=-1;
 MENUS.forEach(([name],i)=>MB.append(el('button',{class:'mbtn',role:'menuitem','aria-haspopup':'true','aria-expanded':'false',id:'mb'+i,text:name,
   onclick:()=>openIdx===i?closeMenu():openMenu(i,false),onmouseenter:()=>{if(openIdx>=0&&openIdx!==i)openMenu(i,false)},
   onkeydown:e=>{if(e.key==='ArrowDown'||e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();openMenu(i,true)}else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();const j=(i+(e.key==='ArrowLeft'?1:-1)+MENUS.length)%MENUS.length;$('#mb'+j).focus()}}})));
-function enabledFor(req){if(!req)return true;if(req==='proj')return !!S.proj&&!S.running;if(req==='undo')return S.undo.length>0;if(req==='redo')return S.redo.length>0;if(req==='sel')return !!S.sel;if(req==='checks')return !!(S.data&&S.data.checks&&S.data.checks.length);return true}
+function enabledFor(req){if(!req)return true;if(req==='proj')return !!S.proj&&!S.running;if(req==='undo')return S.undo.length>0;if(req==='redo')return S.redo.length>0;if(req==='sel')return !!S.sel;if(req==='checks')return !!(S.data&&S.data.checks&&S.data.checks.length);
+  if(req==='subs')return !!S.proj&&!S.running&&S.data&&((S.data.titles||{}).titles||[]).some(t=>t.kind==='sub');return true}
 function openMenu(i,focus){closeMenu(true);openIdx=i;const b=$('#mb'+i);b.setAttribute('aria-expanded','true');MENU.replaceChildren();MENU.setAttribute('aria-labelledby','mb'+i);
   for(const it of MENUS[i][1]){if(it[0]==='-'){MENU.append(el('div',{role:'separator'}));continue}const[lab,k,fn,req]=it;
     MENU.append(el('button',{role:'menuitem',disabled:!enabledFor(req),onclick:()=>{closeMenu();fn()}},el('span',{text:lab}),el('span',{class:'k',text:k})))}
@@ -679,7 +720,7 @@ $('#tlwrap').addEventListener('wheel',e=>{if(e.altKey||e.ctrlKey){e.preventDefau
 addEventListener('resize',()=>{renderTimeline();refreshFrameSoon(200)});
 (async()=>{S.fonts=await api('/api/fonts');await loadSettings();const s=await api('/api/status');
   if(s.proj){S.proj=s.proj;await reloadData(false);setSrc();say('פרויקט פתוח: '+S.data.project.video.split(/[\\/]/).pop())}
-  renderAll();if(S.proj)fit();setMode('source');setInterval(poll,800);poll()})();
+  renderAll();if(S.proj)fit();setMode('source');setInterval(poll,800);poll();setTimeout(()=>checkUpdate(false),4000)})();
 </script>
 </body>
 </html>

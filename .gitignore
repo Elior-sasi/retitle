@@ -6,3 +6,4 @@ build/
 dist/
 bin/
 *_retitle/
+rt/_version.py

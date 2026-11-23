@@ -119,11 +119,18 @@ def refine(proj, t, gid, S, n):
     base = float(np.median(outside)) if outside else 0.0
     cbase = [v for f, v in cor.items() if far(f)]
     cb = float(np.percentile(cbase, 90)) if cbase else 0.1
+    # another title at the same place (consecutive subtitles / cards): colour alone cannot tell
+    # them apart, so the boundary is decided by the shape of this text only
+    from .detect import iou
+    T = vio.load_json(os.path.join(proj, "titles.json"))
+    shared = any(o["id"] != t["id"] and iou(o["box"], t["box"]) > 0.3 and lo <= o["sample_in"] <= hi + 1 or
+                 (o["id"] != t["id"] and iou(o["box"], t["box"]) > 0.3 and lo - 1 <= o["sample_out"] <= hi)
+                 for o in T["titles"])
     rel = {}
     for f, v in pres.items():
         a = (v - base) / max(1.0, refc - base)
         c = (cor[f] - cb) / max(0.05, 1 - cb)
-        rel[f] = max(a, c)
+        rel[f] = c if shared else max(a, c)
     t["presence"] = {str(f): round(v, 3) for f, v in rel.items()}
     if "in_override" in t:
         t["in"] = t["in_override"]

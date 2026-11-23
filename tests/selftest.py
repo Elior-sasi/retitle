@@ -56,7 +56,37 @@ def main():
     sp, w = srt.build(p)
     print(open(sp, encoding="utf-8").read())
     static_test(d)
+    hardsub_test(d)
+    qa_test()
     print("SELFTEST OK")
+
+
+def hardsub_test(d):
+    """English hardsubs at the bottom: found as 6 separate subtitles with exact timing, marked
+    for removal, importable as dialogue cues."""
+    clip = os.path.join(d, "hs.mp4")
+    subprocess.run([sys.executable, os.path.join(ROOT, "tests", "make_hardsubs.py"), clip], check=True)
+    p = os.path.join(d, "hs"); os.makedirs(p)
+    vio.save_json(os.path.join(p, "project.json"), {"video": clip, "info": vio.probe(clip)})
+    shots.run(p); detect.run(p, "eng"); extract.run(p)
+    T = vio.load_json(os.path.join(p, "titles.json"))
+    got = sorted((t["in"], t["out"], t.get("kind"), t.get("mode")) for t in T["titles"])
+    print("hardsubs:", got)
+    assert len(got) == 6, got
+    for k, (a, b, kind, mode) in enumerate(got):
+        assert abs(a - 48 * k) <= 1 and abs(b - (48 * k + 43)) <= 1 and kind == "sub" and mode == "remove", got[k]
+    cues = srt.from_hardsubs(p)
+    assert len(cues) == 6 and "find her" in cues[1]["src"], cues
+
+
+def qa_test():
+    from rt.qa import text_issues
+    assert text_issues("מה?\n-טוב", True) == []
+    assert any("ניקוד" in m for _, m in text_issues("שָׁלוֹם", True))
+    assert any("עם רווח" in m for _, m in text_issues("מה?\n- טוב", True))
+    assert any("פיסוק" in m for _, m in text_issues("זה - לא", True))
+    assert any("אנגלית" in m for _, m in text_issues("GPS שלי", True))
+    print("qa: ok")
 
 
 def static_test(d):

@@ -17,6 +17,7 @@ LAYERS = {}                      # id -> (mtime, premultiplied layer)
 
 def settings():
     s = {"api_key": "", "model": "claude-sonnet-5-5", "glossary": "", "src_lang": "eng", "content": "trailer",
+         "srt_rle": True, "gh_token": "",
          "whisper_model": "large-v3", "whisper_lang": ""}
     s.update(vio.load_json(CFG, {}))
     return s
@@ -135,10 +136,15 @@ def job_export():
     check.run(STATE["proj"])
     D = vio.load_json(P("dialog.json"), {"cues": []})
     if any(c.get("he") for c in D["cues"]):
-        p, w = srt.build(STATE["proj"])
+        p, w = srt.build(STATE["proj"], rle=settings().get("srt_rle", True))
         for x in w:
             log("אזהרת כתוביות: " + x)
         log(f"SRT: {p}")
+    from . import qa
+    issues = qa.run(STATE["proj"])
+    errs = sum(1 for i in issues if i["sev"] == "err")
+    if issues:
+        log(f"בדיקת QA: {errs} שגיאות, {len(issues) - errs} אזהרות (תפריט סרטון > בדיקת QA)")
     log(f"הסרטון מוכן: {out}")
 
 
@@ -154,7 +160,7 @@ def job_transcribe():
 
 def job_srt():
     from . import srt
-    p, w = srt.build(STATE["proj"])
+    p, w = srt.build(STATE["proj"], rle=settings().get("srt_rle", True))
     for x in w:
         log("אזהרה: " + x)
     log(f"SRT מוכן: {p}")
@@ -199,7 +205,18 @@ def job_translate(kind):
     log("התרגום הושלם. עבור ותקן.")
 
 
-JOBS = {"analyze": job_analyze, "build": job_build, "export": job_export,
+UPDATE = {}
+
+
+def job_update():
+    from . import update
+    log("מוריד את הגרסה החדשה...")
+    update.apply(UPDATE, settings().get("gh_token", ""), progress=prog)
+    log("הגרסה החדשה תיפתח עכשיו.")
+    threading.Timer(1.0, lambda: os._exit(0)).start()
+
+
+JOBS = {"analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
@@ -223,16 +240,21 @@ def start(name):
     return True
 
 
-def pick_file():
+PICK = {"video": ("Video (*.mp4;*.mov;*.mkv;*.m4v;*.avi;*.webm)", "Video", "*.mp4 *.mov *.mkv *.m4v *.avi *.webm"),
+        "srt": ("Subtitles (*.srt)", "SRT", "*.srt"),
+        "png": ("PNG image (*.png)", "PNG", "*.png")}
+
+
+def pick_file(kind="video"):
+    wv, tkname, tkpat = PICK[kind]
     if WINDOW is not None:
         import webview
-        r = WINDOW.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=False,
-                                      file_types=("Video (*.mp4;*.mov;*.mkv;*.m4v;*.avi;*.webm)", "All files (*.*)"))
-        return r[0] if r else ""
+        r = WINDOW.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=False, file_types=(wv, "All files (*.*)"))
+        return (r[0] if isinstance(r, (list, tuple)) else r) if r else ""
     import tkinter as tk
     from tkinter import filedialog
     r = tk.Tk(); r.withdraw(); r.attributes("-topmost", True)
-    p = filedialog.askopenfilename(title="בחר סרטון", filetypes=[("Video", "*.mp4 *.mov *.mkv *.m4v *.avi *.webm"), ("All", "*.*")])
+    p = filedialog.askopenfilename(filetypes=[(tkname, tkpat), ("All", "*.*")])
     r.destroy()
     return p
 
@@ -267,6 +289,14 @@ def apply_titles(edits):
                 t["he"] = e["he"]; relayer.add(t["id"])
             if "translate" in e and bool(e["translate"]) != t.get("translate", True):
                 t["translate"] = bool(e["translate"]); relayer.add(t["id"])
+            if "mode" in e and e["mode"] in ("replace", "remove") and e["mode"] != t.get("mode", "replace"):
+                t["mode"] = e["mode"]; relayer.add(t["id"])
+            if "layer" in e and e["layer"] != t.get("layer"):
+                if e["layer"]:
+                    t["layer"] = e["layer"]
+                else:
+                    t.pop("layer", None)
+                relayer.add(t["id"])
             st = e.get("style") or {}
             cur = t.setdefault("style", {})
             ch = {k: v for k, v in st.items() if k in STYLE_KEYS and cur.get(k) != v}
@@ -396,6 +426,7 @@ class H(BaseHTTPRequestHandler):
                                     "error": STATE["error"], "log": STATE["log"], "progress": STATE["progress"]})
         if u.path == "/api/settings":
             s = settings(); s["api_key_set"] = bool(s.get("api_key")); s["api_key"] = ""
+            s["gh_token_set"] = bool(s.get("gh_token")); s["gh_token"] = ""
             return self._send(200, s)
         if u.path == "/api/fonts":
             from . import render
@@ -454,7 +485,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/settings":
             s = settings()
             for k, v in b.items():
-                if k == "api_key" and not v:
+                if k in ("api_key", "gh_token") and not v:
                     continue
                 s[k] = v
             os.makedirs(CFG_DIR, exist_ok=True)
@@ -462,6 +493,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True})
         if u.path == "/api/run":
             return self._send(200, {"started": start(b["job"])})
+        if u.path == "/api/update/check":
+            from . import update
+            try:
+                r = update.check(settings().get("gh_token", ""))
+            except Exception as e:
+                return self._send(200, {"error": str(e), "current": update.BUILD})
+            UPDATE.clear(); UPDATE.update(r)
+            return self._send(200, r)
         if not STATE["proj"]:
             return self._send(400, {"error": "no project"})
         if u.path == "/api/titles":
@@ -474,6 +513,37 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/dialog":
             apply_dialog(b.get("cues", []))
             return self._send(200, {"ok": True})
+        if u.path == "/api/import_srt":
+            from . import srt
+            p = pick_file("srt")
+            if not p:
+                return self._send(200, {"ok": False})
+            with LOCK:
+                cues = srt.import_srt(STATE["proj"], p, bool(b.get("hebrew")))
+            log(f"יובאו {len(cues)} כתוביות מ-{os.path.basename(p)}")
+            return self._send(200, {"ok": True, "n": len(cues)})
+        if u.path == "/api/hardsubs":
+            from . import srt
+            with LOCK:
+                cues = srt.from_hardsubs(STATE["proj"])
+            log(f"{len(cues)} כתוביות צרובות הועברו לרשימת הכתוביות")
+            return self._send(200, {"ok": True, "n": len(cues)})
+        if u.path == "/api/logo":
+            import shutil
+            tid = b["id"]
+            if b.get("clear"):
+                apply_titles([{"id": tid, "layer": None}])
+                return self._send(200, {"ok": True})
+            p = pick_file("png")
+            if not p:
+                return self._send(200, {"ok": False})
+            os.makedirs(P("logos"), exist_ok=True)
+            shutil.copyfile(p, P("logos", f"{tid}.png"))
+            apply_titles([{"id": tid, "layer": {"type": "image", "path": f"logos/{tid}.png", "t": time.time()}}])
+            return self._send(200, {"ok": True})
+        if u.path == "/api/qa":
+            from . import qa
+            return self._send(200, {"issues": qa.run(STATE["proj"])})
         if u.path == "/api/reveal":
             target = P("out") if os.path.isdir(P("out")) else STATE["proj"]
             if sys.platform.startswith("win"):

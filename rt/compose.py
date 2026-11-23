@@ -29,7 +29,7 @@ def frame_result(proj, f, frame, T, meta, cache, W, H):
     for t in T["titles"]:
         if not t.get("translate", True) or t["id"] not in meta:
             continue
-        lay = t.get("layer", {"type": "text"})
+        lay = t.get("layer") or {"type": "text"}
         if lay["type"] == "sequence":
             p = os.path.join(proj, lay["dir"], f"{f:06d}.png")
             if os.path.exists(p):

@@ -145,6 +145,16 @@ def norm(t):
     return re.sub(r"\W+", "", t.lower())
 
 
+def tsim(a, b):
+    """Text similarity tolerant to OCR noise and to text that is still being revealed."""
+    a, b = norm(a), norm(b)
+    if not a or not b:
+        return 0.0
+    sm = SequenceMatcher(None, a, b)
+    m = sum(x.size for x in sm.get_matching_blocks())
+    return max(sm.ratio(), m / min(len(a), len(b)) if min(len(a), len(b)) >= 4 else 0)
+
+
 def run(proj, langs="eng", workers=None, scale=None, progress=None):
     P = vio.load_json(os.path.join(proj, "project.json"))
     S = vio.load_json(os.path.join(proj, "shots.json"))
@@ -176,9 +186,10 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None):
             last = e["dets"][-1]
             if sidx[d["frame"]] - sidx[last["frame"]] > 3 or d["frame"] == last["frame"]:
                 continue
-            sim = SequenceMatcher(None, norm(d["text"]), norm(last["text"])).ratio()
+            sim = tsim(d["text"], last["text"])
             ov = iou(d["box"], last["box"])
-            if (sim > 0.55 and ov > 0.15) or ov > 0.6:
+            # same place but different words = a new title (e.g. consecutive subtitles)
+            if sim > 0.6 and ov > 0.15:
                 sc = sim + ov
                 if best is None or sc > best[0]:
                     best = (sc, e)
@@ -199,7 +210,8 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None):
                     continue
                 ba = [min(d["box"][0] for d in A), min(d["box"][1] for d in A), max(d["box"][2] for d in A), max(d["box"][3] for d in A)]
                 bb = [min(d["box"][0] for d in B), min(d["box"][1] for d in B), max(d["box"][2] for d in B), max(d["box"][3] for d in B)]
-                if _ib(ba, bb) > 0.5:
+                ta = max((x["text"] for x in A), key=len); tb = max((x["text"] for x in B), key=len)
+                if _ib(ba, bb) > 0.5 and tsim(ta, tb) > 0.6:
                     events[i]["dets"] = sorted(A + B, key=lambda d: d["frame"])
                     del events[j]; merged = True; break
             if merged:
@@ -242,9 +254,28 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None):
                 h = a["ref_box"][3] - a["ref_box"][1]
                 if abs(b["ref_box"][1] - a["ref_box"][3]) < 3 * h or abs(a["ref_box"][1] - b["ref_box"][3]) < 3 * h:
                     b["group"] = a["group"]
+    classify_hardsubs(titles, P)
     vio.save_json(os.path.join(proj, "titles.json"), {"titles": titles})
     sheet(proj, titles, P)
     return titles
+
+
+def classify_hardsubs(titles, P):
+    """Burned-in dialogue subtitles of the source (e.g. English hardsubs on anime): many short
+    lines, centred, in the bottom part of the frame. They are erased (mode "remove") instead of
+    replaced - the Hebrew goes to the SRT - and can be imported as dialogue cues."""
+    W, H, fps = P["info"]["width"], P["info"]["height"], P["info"]["fps"]
+    cand = []
+    for t in titles:
+        x0, y0, x1, y1 = t["box"]
+        cx = (x0 + x1) / 2
+        dur = (t["sample_out"] - t["sample_in"]) / fps
+        if abs(cx - W / 2) < 0.12 * W and y1 > 0.70 * H and y0 > 0.55 * H and dur <= 9:
+            cand.append(t)
+    if len(cand) >= 4:
+        for t in cand:
+            t["kind"] = "sub"; t["mode"] = "remove"
+    return cand
 
 
 def sheet(proj, titles, P, name="detect_sheet.jpg"):

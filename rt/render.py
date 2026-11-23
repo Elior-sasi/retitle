@@ -271,15 +271,13 @@ def build_layers(proj, only=None):
     for t in T["titles"]:
         if only is not None and t["id"] not in only:
             continue
-        if not t.get("translate", True) or not t.get("he"):
+        lay = t.get("layer") or {"type": "text"}
+        if (not t.get("translate", True) or t.get("mode") == "remove"
+                or (lay["type"] == "text" and not t.get("he"))):
             meta.pop(t["id"], None)
-        if not t.get("translate", True):
             continue
-        lay = t.get("layer", {"type": "text"})
         ss = 2
         if lay["type"] == "text":
-            if not t.get("he"):
-                continue
             st = t.get("style", {})
             img, anc, ink = text_layer(t["he"], st, ss)
             # keep inside safe width
@@ -291,8 +289,13 @@ def build_layers(proj, only=None):
             else:
                 t.pop("warn_shrunk", None)
         elif lay["type"] == "image":
+            # a designed logo (transparent PNG): fitted to the width of the source text block
             img = Image.open(os.path.join(proj, lay["path"])).convert("RGBA")
-            ss = lay.get("ss", 1)
+            bb = img.getbbox() or (0, 0, img.width, img.height)
+            img = img.crop(bb)
+            rb = t.get("ref_box", t["box"])
+            tw = max(8.0, (rb[2] - rb[0]) * t.get("style", {}).get("size_ratio", 1.0))
+            ss = img.width / tw
             anc = (img.width / 2, img.height / 2); ink = (0, 0, img.width, img.height)
         else:
             continue

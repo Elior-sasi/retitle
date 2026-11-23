@@ -70,6 +70,11 @@ def _align(tgt_g, src_g, valid, scale=0.5):
     return warp, 0.0
 
 
+def _grad(im):
+    g = cv2.cvtColor(im.astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)
+    return cv2.magnitude(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3), cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3))
+
+
 def _fit(img, ci, Mc, M, warp, W, H):
     """Warp candidate ci onto img, colour-match it on a thin ring around the text.
     Returns (residual, warped+matched image, warped candidate mask, inside, gain, offset) or None."""
@@ -101,7 +106,26 @@ def _fit(img, ci, Mc, M, warp, W, H):
     return res, wi, wm, inside, G, O
 
 
-def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, second=True):
+def _others_mask(c, others, reg, shape, ci=None):
+    """Text of other titles (other cards at the same place, e.g. the previous subtitle) on screen
+    at frame c - it must not leak into this card's rebuilt background. Letter-exact when the
+    other title has a colour model (the gaps between its letters stay usable), else its box."""
+    m = np.zeros(shape, np.uint8)
+    for o in others:
+        if o["in"] - 2 <= c <= o["out"] + 2:
+            if ci is not None and "mask" in o:
+                m |= cv2.dilate(line_mask(ci, o, reg), np.ones((5, 5), np.uint8))
+                continue
+            x0, y0, x1, y1 = o["box"]
+            p = int((y1 - y0) * 0.45) + 6
+            X0, Y0 = max(0, x0 - reg[0] - p), max(0, y0 - reg[1] - p)
+            X1, Y1 = min(shape[1], x1 - reg[0] + p), min(shape[0], y1 - reg[1] + p)
+            if X1 > X0 and Y1 > Y0:
+                m[Y0:Y1, X0:X1] = 255
+    return m
+
+
+def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, second=True, others=()):
     img = _load(proj, gid, f)
     H, W = img.shape[:2]
     M0 = frame_mask(img, f, lines, reg)
@@ -122,7 +146,8 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
     cands = [c for c in range(max(lo, s0), min(hi, s1 - 1) + 1) if c != f]
     # prefer clean frames (text absent) then nearest
     def key(c):
-        busy = any(t.get("translate", True) and t["in"] <= c <= t["out"] for t in lines)
+        busy = any(t.get("translate", True) and t["in"] <= c <= t["out"] for t in lines) or \
+            any(o["in"] - 2 <= c <= o["out"] + 2 for o in others)
         return (busy, abs(c - f))
     cands.sort(key=key)
     tg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
@@ -139,7 +164,16 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
     # nearest clean frames first, but never more than 2K of them: when they all fail the colour
     # match (e.g. a graphic box appears with the text) fall through to frames with the text
     clean_c = [c for c in cands if not key(c)[0]][:2 * K]
-    busy_c = [c for c in cands if key(c)[0]][:2 * K]
+    busy_all = [c for c in cands if key(c)[0]]
+    # frames with text: a few nearest, then spread over the whole range - on a moving
+    # background the far ones show what is behind the letters, the near ones do not
+    near = busy_all[:4]
+    rest = sorted(busy_all[4:])
+    if len(rest) > 2 * K - 4:
+        idx = np.linspace(0, len(rest) - 1, 2 * K - 4).round().astype(int)
+        rest = [rest[i] for i in sorted(set(idx))]
+    rest.sort(key=lambda c: -abs(c - f))
+    busy_c = near + rest
     tries = 0
     for c in clean_c + busy_c:
         if used >= K or tries >= 3 * K:
@@ -148,7 +182,7 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
         ci = _load(proj, gid, c)
         if ci is None:
             continue
-        Mc = frame_mask(ci, c, lines, reg, margin=2)
+        Mc = frame_mask(ci, c, lines, reg, margin=2) | _others_mask(c, others, reg, ci.shape[:2], ci)
         for t in lines:
             if t["id"] in refm and t["in"] - 2 <= c <= t["out"] + 2:
                 Mc |= refm[t["id"]]
@@ -162,7 +196,12 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
             r = _fit(img, ci, Mc, M, wp, W, H)
             if r is not None and (best is None or r[0] < best[0]):
                 best = r
-        if best is None or best[0] > thr_res:
+        if best is None:
+            continue
+        # a strong colour remap (semi-transparent box) is only trusted when it fits very well;
+        # on flat areas a wrong warp can otherwise be "repaired" by the colour fit
+        gdev = float(np.abs(np.log(np.maximum(best[4], 1e-3))).max())
+        if best[0] > (thr_res if gdev < 0.3 else 6.0):
             continue
         res, wi, wm, inside, G, O = best
         stack.append(wi)
@@ -184,14 +223,21 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
     else:
         hole_left = hole.copy()
     plate = plate.astype(np.uint8)
-    if hole_left.any():
-        plate = synth(plate, hole_left)
+    # synthesise only around the letters themselves; the wider fade envelope is used only
+    # where real background was found
+    core = cv2.dilate(M0, np.ones((7, 7), np.uint8)) > 0
+    need = hole_left & core
+    if need.any():
+        plate = synth(plate, need)
+    unknown = hole_left & ~core
     frac = float((hole_left & (M0 > 0)).sum()) / max(1, (M0 > 0).sum())
     if second:
         d = np.abs(img.astype(np.int16) - plate.astype(np.int16)).max(2)
-        extra = (env > 0) & (d > 14) & (M0 == 0)
+        extra = (env > 0) & (d > 14) & (M0 == 0) & ~unknown
         extra = cv2.morphologyEx(extra.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
-        M = M0 | (cv2.dilate(extra, np.ones((5, 5), np.uint8)) * 255)
+        M = M0 | ((cv2.dilate(extra, np.ones((5, 5), np.uint8)) > 0) & ~unknown).astype(np.uint8) * 255
+    else:
+        M = M0
     a = cv2.GaussianBlur((M > 0).astype(np.float32), (0, 0), 1.2)[..., None]
     a = np.maximum(a, (M > 0)[..., None].astype(np.float32))
     out = (img.astype(np.float32) * (1 - a) + plate.astype(np.float32) * a).astype(np.uint8)
@@ -227,9 +273,12 @@ def run(proj, only=None):
         shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
         _IMG.clear(); _MSK.clear()
         a = min(t["in"] for t in act); b = max(t["out"] for t in act)
+        ids = {t["id"] for t in lines}
+        others = [o for o in T["titles"] if o["id"] not in ids and
+                  not (o["box"][2] < reg[0] or o["box"][0] > reg[2] or o["box"][3] < reg[1] or o["box"][1] > reg[3])]
         fr = []
         for f in range(a, b + 1):
-            out, frac, M = clean_frame(proj, gid, f, lines, reg, S["cuts"], n, lo, hi)
+            out, frac, M = clean_frame(proj, gid, f, lines, reg, S["cuts"], n, lo, hi, others=others)
             cv2.imwrite(os.path.join(d, f"{f:06d}.png"), out)
             cv2.imwrite(os.path.join(d, f"m{f:06d}.png"), M)
             fr.append(frac)
