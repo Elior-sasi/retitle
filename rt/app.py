@@ -8,8 +8,11 @@ from . import vio
 UI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), "Retitle")
 CFG = os.path.join(CFG_DIR, "settings.json")
-STATE = {"proj": None, "job": None, "log": [], "running": False, "error": None, "progress": None}
+STATE = {"proj": None, "job": None, "log": [], "running": False, "error": None, "progress": None,
+         "stage": "", "step": 0, "steps": 0, "t0": 0, "cancel": False, "cancelled": False}
+RANGE = [0.0, 1.0]               # current stage's share of the whole job
 WINDOW = None
+FULL = False
 LOCK = threading.Lock()          # titles.json / dialog.json writes
 FRAMES = {}                      # decoded source frames (small LRU)
 LAYERS = {}                      # id -> (mtime, premultiplied layer)
@@ -32,8 +35,34 @@ def P(*a):
     return os.path.join(STATE["proj"], *a)
 
 
+class Cancelled(Exception):
+    pass
+
+
 def prog(x):
-    STATE["progress"] = None if x is None else round(float(x), 3)
+    """Stage progress 0..1, mapped onto the whole job. Also the cancel point for long loops."""
+    if STATE["cancel"]:
+        raise Cancelled()
+    if x is None:
+        return
+    a, b = RANGE
+    STATE["progress"] = round(a + (b - a) * min(1.0, max(0.0, float(x))), 3)
+
+
+def run_steps(steps):
+    """steps: (name, weight, fn). Shows 'step i of n', one overall percentage, and checks cancel between steps."""
+    steps = [x for x in steps if x]
+    tot = sum(w for _, w, _ in steps) or 1
+    acc = 0.0
+    for i, (name, w, fn) in enumerate(steps):
+        STATE.update(stage=name, step=i + 1, steps=len(steps))
+        RANGE[:] = [acc / tot, (acc + w) / tot]
+        prog(0)
+        log(name + "...")
+        fn()
+        acc += w
+    RANGE[:] = [1.0, 1.0]
+    STATE["progress"] = 1.0
 
 
 # ------------------------------------------------------------------ helpers
@@ -86,66 +115,88 @@ def needs_extract(T):
 def job_analyze():
     from . import shots, detect, extract
     s = settings()
-    log("מחפש חיתוכי שוטים...")
-    c = shots.run(STATE["proj"], progress=prog)
-    prog(None)
-    log(f"{len(c)} שוטים")
-    log("מזהה טקסט על המסך...")
-    ts = detect.run(STATE["proj"], s.get("src_lang") or "eng", progress=prog)
-    prog(None)
-    log(f"נמצאו {len(ts)} שורות טקסט")
-    log("מודד צבע, צל ותזמון מדויק...")
-    extract.run(STATE["proj"])
-    thumbs()
+    proj = STATE["proj"]
+
+    def a():
+        c = shots.run(proj, progress=prog)
+        log(f"{len(c)} שוטים")
+
+    def b():
+        ts = detect.run(proj, s.get("src_lang") or "eng", progress=prog)
+        log(f"נמצאו {len(ts)} שורות טקסט")
+
+    def c():
+        extract.run(proj, progress=prog)
+        prog(0.9)
+        thumbs()
+    run_steps([("מחפש חיתוכי שוטים", 0.3, a), ("מזהה טקסט על המסך", 0.55, b), ("מודד צבע, צל ותזמון מדויק", 0.15, c)])
     log("הניתוח הסתיים. בחר כותרת ברשימה והקלד עברית.")
 
 
-def job_build(proxy=True):
+def build_steps(proxy=True):
     from . import clean, render, extract, compose
     proj = STATE["proj"]
     T = vio.load_json(P("titles.json"))
-    if needs_extract(T):
-        log("התזמון השתנה מעבר לטווח שנשמר - שומר פריימים מחדש...")
-        extract.run(proj)
+    ext = needs_extract(T)
+    dirty = set() if ext else dirty_groups(T)
+    st = {}
+
+    def do_extract():
+        extract.run(proj, progress=prog)
         thumbs()
-        T = vio.load_json(P("titles.json"))
-    dirty = dirty_groups(T)
-    if dirty:
-        log(f"מוחק את המקור ומשחזר רקע ({len(dirty)} כרטיסים)...")
-        clean.run(proj, sorted(dirty))
-        log("מודד את אנימציית המקור...")
-        render.track(proj, only=dirty)
-    log("מרנדר עברית...")
-    render.build_layers(proj)
+        st["dirty"] = dirty_groups(vio.load_json(P("titles.json")))
+
+    def do_clean():
+        d = st.get("dirty", dirty)
+        if d:
+            log(f"{len(d)} כרטיסים")
+            clean.run(proj, sorted(d), progress=prog)
+
+    def do_track():
+        d = st.get("dirty", dirty)
+        if d:
+            render.track(proj, only=d)
+    steps = [("התזמון השתנה - שומר פריימים מחדש", 0.15, do_extract) if ext else None,
+             ("מוחק את המקור ומשחזר רקע", 0.5, do_clean) if (ext or dirty) else None,
+             ("מודד את אנימציית המקור", 0.08, do_track) if (ext or dirty) else None,
+             ("מרנדר עברית", 0.05, lambda: render.build_layers(proj))]
     if proxy:
-        log("מכין תצוגת ניגון...")
-        compose.run(proj, out_name="../proxy.mp4", crf=30, preset="ultrafast", scale=960, progress=prog)
-        prog(None)
+        steps.append(("מכין תצוגת ניגון", 0.22, lambda: compose.run(proj, out_name="../proxy.mp4", crf=30,
+                                                                   preset="ultrafast", scale=960, progress=prog)))
+    return steps
+
+
+def job_build():
+    run_steps(build_steps(True))
     log("מוכן. אפשר לנגן במצב תוצאה.")
 
 
 def job_export():
-    from . import compose, check, srt
+    from . import compose, check, srt, qa
     T = vio.load_json(P("titles.json"))
-    if dirty_groups(T) or needs_extract(T) or not os.path.exists(P("layers", "meta.json")):
-        job_build(proxy=False)
-    log("מקודד את הסרטון הסופי...")
-    out = compose.run(STATE["proj"], progress=prog)
-    prog(None)
-    log("בודק כל כותרת לפני ואחרי...")
-    check.run(STATE["proj"])
-    D = vio.load_json(P("dialog.json"), {"cues": []})
-    if any(c.get("he") for c in D["cues"]):
-        p, w = srt.build(STATE["proj"], rle=settings().get("srt_rle", True))
-        for x in w:
-            log("אזהרת כתוביות: " + x)
-        log(f"SRT: {p}")
-    from . import qa
-    issues = qa.run(STATE["proj"])
-    errs = sum(1 for i in issues if i["sev"] == "err")
-    if issues:
-        log(f"בדיקת QA: {errs} שגיאות, {len(issues) - errs} אזהרות (תפריט סרטון > בדיקת QA)")
-    log(f"הסרטון מוכן: {out}")
+    pre = build_steps(False) if (dirty_groups(T) or needs_extract(T) or not os.path.exists(P("layers", "meta.json"))) else []
+    res = {}
+
+    def enc():
+        res["out"] = compose.run(STATE["proj"], progress=prog)
+
+    def chk():
+        check.run(STATE["proj"])
+
+    def subs():
+        D = vio.load_json(P("dialog.json"), {"cues": []})
+        if any(c.get("he") for c in D["cues"]):
+            p, w = srt.build(STATE["proj"], rle=settings().get("srt_rle", True))
+            for x in w:
+                log("אזהרת כתוביות: " + x)
+            log(f"SRT: {p}")
+        issues = qa.run(STATE["proj"])
+        errs = sum(1 for i in issues if i["sev"] == "err")
+        if issues:
+            log(f"בדיקת QA: {errs} שגיאות, {len(issues) - errs} אזהרות (תפריט סרטון > בדיקת QA)")
+    run_steps(pre + [("מקודד את הסרטון הסופי", 0.5, enc), ("בודק כל כותרת לפני ואחרי", 0.05, chk),
+                     ("כתוביות ובדיקת QA", 0.02, subs)])
+    log(f"הסרטון מוכן: {res['out']}")
 
 
 def job_transcribe():
@@ -224,16 +275,22 @@ JOBS = {"analyze": job_analyze, "update": job_update, "build": job_build, "expor
 def start(name):
     if STATE["running"]:
         return False
-    STATE.update(running=True, job=name, error=None, progress=None)
+    STATE.update(running=True, job=name, error=None, progress=None, stage="", step=0, steps=0,
+                 t0=time.time(), cancel=False, cancelled=False)
+    RANGE[:] = [0.0, 1.0]
 
     def run():
         try:
             JOBS[name]()
+        except Cancelled:
+            STATE["cancelled"] = True
+            log("בוטל.")
         except Exception as e:
             STATE["error"] = str(e)
             log("שגיאה: " + str(e))
             traceback.print_exc()
         finally:
+            STATE["t1"] = time.time()
             STATE["running"] = False
             STATE["progress"] = None
     threading.Thread(target=run, daemon=True).start()
@@ -268,7 +325,45 @@ def open_project(video):
         vio.save_json(P("project.json"), {"video": os.path.abspath(video), "info": vio.probe(video)})
     STATE["log"] = []
     log(f"פרויקט: {proj}")
+    threading.Thread(target=build_media, args=(proj,), daemon=True).start()
     return proj
+
+
+# ------------------------------------------------------------------ timeline media (video thumbnails + audio waveform)
+MEDIA_BUSY = set()
+
+
+def build_media(proj):
+    """media/thumbs/NNNNN.jpg every `step` s and media/meta.json with audio peaks (100 per second)."""
+    if proj in MEDIA_BUSY or os.path.exists(os.path.join(proj, "media", "meta.json")):
+        return
+    MEDIA_BUSY.add(proj)
+    try:
+        PJ = vio.load_json(os.path.join(proj, "project.json"))
+        src, dur = PJ["video"], float(PJ["info"]["duration"])
+        d = os.path.join(proj, "media", "thumbs")
+        os.makedirs(d, exist_ok=True)
+        step = max(0.5, dur / 400)
+        subprocess.run([vio.FFMPEG, "-v", "error", "-y", "-i", src, "-map", "0:v:0",
+                        "-vf", f"fps=1/{step:.4f}:round=near,scale=-2:90", "-q:v", "6",
+                        os.path.join(d, "%05d.jpg")], **vio.NOWIN)
+        count = len(glob.glob(os.path.join(d, "*.jpg")))
+        PPS, SR = 100, 8000
+        r = subprocess.run([vio.FFMPEG, "-v", "error", "-i", src, "-map", "0:a:0?", "-ac", "1", "-ar", str(SR),
+                            "-f", "s16le", "-"], capture_output=True, **vio.NOWIN)
+        a = np.frombuffer(r.stdout, np.int16).astype(np.float32) / 32768.0
+        peaks = []
+        if a.size:
+            per = SR // PPS
+            a = a[:a.size // per * per].reshape(-1, per)
+            pk = np.sqrt(np.abs(a).max(1))          # sqrt: quiet passages stay visible, like Premiere's log view
+            peaks = np.clip(pk * 255, 0, 255).astype(int).tolist()
+        vio.save_json(os.path.join(proj, "media", "meta.json"),
+                      {"step": step, "count": count, "pps": PPS, "audio": bool(peaks), "peaks": peaks})
+    except Exception:
+        traceback.print_exc()
+    finally:
+        MEDIA_BUSY.discard(proj)
 
 
 # ------------------------------------------------------------------ live edits
@@ -423,7 +518,10 @@ class H(BaseHTTPRequestHandler):
             return self._send(204, b"", "image/x-icon")
         if u.path == "/api/status":
             return self._send(200, {"proj": STATE["proj"], "running": STATE["running"], "job": STATE["job"],
-                                    "error": STATE["error"], "log": STATE["log"], "progress": STATE["progress"]})
+                                    "error": STATE["error"], "log": STATE["log"], "progress": STATE["progress"],
+                                    "stage": STATE["stage"], "step": STATE["step"], "steps": STATE["steps"],
+                                    "elapsed": round((time.time() if STATE["running"] else STATE.get("t1", time.time())) - STATE["t0"], 1) if STATE["t0"] else 0,
+                                    "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"]})
         if u.path == "/api/settings":
             s = settings(); s["api_key_set"] = bool(s.get("api_key")); s["api_key"] = ""
             s["gh_token_set"] = bool(s.get("gh_token")); s["gh_token"] = ""
@@ -448,6 +546,14 @@ class H(BaseHTTPRequestHandler):
                 "outputs": sorted(glob.glob(P("out", "*"))),
                 "checks": sorted(os.path.basename(x) for x in glob.glob(P("check", "*.jpg"))),
                 "stats": vio.load_json(P("clean_stats.json"), {})})
+        if u.path == "/api/media":
+            m = P("media", "meta.json")
+            if os.path.exists(m):
+                with open(m, "rb") as f:
+                    return self._send(200, f.read())
+            if STATE["proj"] not in MEDIA_BUSY:
+                threading.Thread(target=build_media, args=(STATE["proj"],), daemon=True).start()
+            return self._send(200, {"ready": False})
         if u.path == "/api/video":
             which = q.get("which", ["src"])[0]
             path = P("proxy.mp4") if which == "proxy" else vio.load_json(P("project.json"))["video"]
@@ -490,6 +596,20 @@ class H(BaseHTTPRequestHandler):
                 s[k] = v
             os.makedirs(CFG_DIR, exist_ok=True)
             vio.save_json(CFG, s)
+            return self._send(200, {"ok": True})
+        if u.path == "/api/fullscreen":
+            global FULL
+            on = bool(b.get("on"))
+            if WINDOW is not None and on != FULL:
+                try:
+                    WINDOW.toggle_fullscreen(); FULL = on
+                except Exception:
+                    traceback.print_exc()
+            return self._send(200, {"ok": True})
+        if u.path == "/api/cancel":
+            if STATE["running"]:
+                STATE["cancel"] = True
+                log("מבטל...")
             return self._send(200, {"ok": True})
         if u.path == "/api/run":
             return self._send(200, {"started": start(b["job"])})

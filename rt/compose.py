@@ -66,9 +66,13 @@ def run(proj, out_name=None, crf=14, preset="veryfast", scale=None, progress=Non
             busy.update(range(min(t["in"], t.get("cache", [t["in"]])[0]), max(t["out"], t.get("cache", [0, t["out"]])[1]) + 1))
     cache = {}
     n = P.get("n_frames") or 1
-    for f, fr in enumerate(vio.frames(P["video"], W, H)):
-        wr.write(frame_result(proj, f, fr, T, meta, cache, W, H) if f in busy else fr)
-        if progress and f % 48 == 0:
-            progress(f / n)
+    try:
+        for f, fr in enumerate(vio.frames(P["video"], W, H)):
+            wr.write(frame_result(proj, f, fr, T, meta, cache, W, H) if f in busy else fr)
+            if progress and f % 48 == 0:
+                progress(f / n)
+    except BaseException:
+        wr.abort()
+        raise
     wr.close()
     return out

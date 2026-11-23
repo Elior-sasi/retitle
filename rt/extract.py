@@ -20,7 +20,7 @@ def _region(lines, W, H):
     return [int(max(0, x0 - m)), int(max(0, y0 - m)), int(min(W, x1 + m)), int(min(H, y1 + m))]
 
 
-def run(proj, pad=48):
+def run(proj, pad=48, progress=None):
     P = vio.load_json(os.path.join(proj, "project.json"))
     S = vio.load_json(os.path.join(proj, "shots.json"))
     T = vio.load_json(os.path.join(proj, "titles.json"))
@@ -61,11 +61,15 @@ def run(proj, pad=48):
             break
         if i < first:
             continue
+        if progress and i % 24 == 0:
+            progress(0.8 * (i - first) / max(1, last - first))
         for gid, (lo, hi, (x0, y0, x1, y1)) in jobs.items():
             if lo <= i <= hi:
                 cv2.imwrite(os.path.join(proj, "cache", gid, f"{i:06d}.png"), f[y0:y1, x0:x1])
     # estimate mask + style per line at its reference frame, then refine in/out
-    for gid, lines in groups(T).items():
+    for k, (gid, lines) in enumerate(groups(T).items()):
+        if progress:
+            progress(0.8 + 0.2 * k / max(1, len(jobs)))
         if gid not in jobs:
             continue
         lo, hi, reg = jobs[gid]

@@ -96,10 +96,25 @@ select.sel{background:#141414;border:1px solid var(--line2);border-radius:3px;he
 #frame{position:relative;max-width:100%;max-height:100%;aspect-ratio:16/9;width:100%}
 #frame video,#frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
 #still{display:none}
+#stage:fullscreen{background:#000}#stage:fullscreen #frame{max-height:100vh}
+#stage:fullscreen #subs{font-size:clamp(20px,3.2vw,56px)}
+#fsnote{position:absolute;top:14px;inset-inline:0;margin:auto;width:max-content;background:rgba(0,0,0,.75);color:#fff;padding:6px 14px;border-radius:4px;font-size:1.05em;display:none;z-index:6}
+#stage:fullscreen #fsnote.show{display:block}
 #subs{position:absolute;left:8%;right:8%;bottom:6%;text-align:center;font-weight:700;font-size:clamp(13px,2.4vw,32px);line-height:1.25;color:#fff;white-space:pre-line;direction:rtl;
 text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2px 2px #000,-2px 2px 2px #000;pointer-events:none}
 #hint{position:absolute;top:8px;left:8px;right:8px;text-align:center;color:var(--warn);background:rgba(0,0,0,.72);border-radius:3px;padding:2px 8px;display:none;font-size:.92em}
 #welcome{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px;background:#0d0d0d}
+#busy{position:absolute;inset-inline:0;bottom:14px;margin:auto;width:min(560px,calc(100% - 28px));background:rgba(24,24,28,.94);border:1px solid #3a3a44;border-radius:8px;padding:14px 18px;box-shadow:0 8px 28px rgba(0,0,0,.55);z-index:5;color:#fff}
+#busy[hidden]{display:none}
+#busy h3{margin:0;font-size:1.15em;display:flex;align-items:baseline;gap:10px}
+#busy h3 .left{margin-inline-start:auto;font-size:1.25em;font-variant-numeric:tabular-nums;color:#fff;font-weight:600}
+#busy h3 .pct{font-size:1.6em;font-variant-numeric:tabular-nums;color:#8ec5ff}
+#busy .stg{margin:4px 0 10px;color:#e6e6e6;font-size:1.05em}
+#busy progress{width:100%;height:14px;accent-color:#2d8ceb;display:block}
+#busy .row{display:flex;align-items:center;gap:10px;margin-top:10px;color:#cfcfcf;font-variant-numeric:tabular-nums}
+#busy .row .sp{flex:1}
+#busy button{min-height:40px;padding:0 18px;font-size:1em;border-radius:4px;border:1px solid #777;background:#2a2a2a;color:#fff;cursor:pointer}
+#busy button:hover{background:#3a3a3a}#busy button:focus-visible{outline:3px solid #8ec5ff;outline-offset:2px}
 #welcome h2{margin:0;font-size:1.5em;color:#fff}
 #welcome p{color:var(--mut);margin:0}
 .mbar{display:flex;align-items:center;gap:10px;padding:4px 10px;direction:ltr;flex:none}
@@ -144,6 +159,12 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 .lane{position:absolute;left:0;height:48px;border-bottom:1px solid #1a1a1a}
 .cut{position:absolute;top:30px;bottom:0;width:0;border-left:1px dashed #555;pointer-events:none}
 .blk{position:absolute;height:40px;border-radius:2px;color:#fff;font-size:.85em;overflow:hidden;white-space:nowrap;padding:3px 10px;display:flex;align-items:flex-start;cursor:pointer;border:1px solid rgba(0,0,0,.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
+.vclip{position:absolute;left:0;border-radius:2px;overflow:hidden;background:#2b3f6b;border:1px solid rgba(0,0,0,.55)}
+.vclip .th{position:absolute;top:0;height:100%;object-fit:cover;border-right:1px solid rgba(0,0,0,.45)}
+.vclip .nm,.aclab{position:absolute;top:2px;left:6px;font-size:.8em;color:#fff;background:rgba(20,30,60,.75);padding:0 6px;border-radius:2px;white-space:nowrap;z-index:1}
+.aclab{background:rgba(15,50,35,.8)}
+.acv{position:absolute;pointer-events:none}
+.empty-hint{position:absolute;left:12px;color:#bdbdbd;font-size:.92em;pointer-events:none;white-space:nowrap}
 .blk.t{background:var(--clipT)}.blk.c{background:var(--clipC)}
 .blk.rm{background:repeating-linear-gradient(-45deg,#6a3a3a,#6a3a3a 6px,#5a3030 6px,#5a3030 12px)}
 .blk.off{background:repeating-linear-gradient(45deg,#4a4a4a,#4a4a4a 6px,#404040 6px,#404040 12px);color:#ccc}
@@ -218,6 +239,13 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <img id="still" alt="">
       <div id="subs" aria-hidden="true"></div>
       <span id="hint" role="note"></span>
+      <span id="fsnote" aria-hidden="true">Esc ליציאה ממסך מלא</span>
+    </div>
+    <div id="busy" role="region" aria-labelledby="busy-h" hidden>
+      <h3><span id="busy-h">ניתוח</span><span class="left" id="busy-left"></span><span class="pct" id="busy-pct" aria-hidden="true"></span></h3>
+      <p class="stg" id="busy-stg" aria-live="polite"></p>
+      <progress id="busy-bar" max="1" aria-labelledby="busy-h"></progress>
+      <div class="row"><span id="busy-time"></span><span class="sp"></span><button id="busy-cancel">ביטול</button></div>
     </div>
     <div id="welcome">
       <h2>לוקליזציה של וידאו לעברית</h2>
@@ -238,6 +266,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <span class="tsep"></span>
     <button class="ib" id="t-prevedit" aria-label="נקודת עריכה קודמת (חץ למעלה)" title="נקודת עריכה קודמת (↑)"><svg viewBox="0 0 24 24"><path d="M11 6v12l-8-6zm9 0v12l-8-6z"/></svg></button>
     <button class="ib" id="t-nextedit" aria-label="נקודת עריכה הבאה (חץ למטה)" title="נקודת עריכה הבאה (↓)"><svg viewBox="0 0 24 24"><path d="M4 6v12l8-6zm9 0v12l8-6z"/></svg></button>
+    <span class="tsep"></span>
+    <button class="ib" id="t-fs" aria-pressed="false" aria-label="מסך מלא (Ctrl+`)" title="מסך מלא (Ctrl+` או לחיצה כפולה על התמונה)"><svg viewBox="0 0 24 24" id="fsico"><path d="M3 9V3h6v2H5v4zm12-6h6v6h-2V5h-4zM3 15h2v4h4v2H3zm16 4v-4h2v6h-6v-2z"/></svg></button>
   </div>
 </section>
 
@@ -268,6 +298,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <div class="tracks" aria-hidden="true">
       <div class="trk" id="trk-t"><span class="tag">T1</span><b>כותרות</b></div>
       <div class="trk" id="trk-c"><span class="tag">C1</span><b>כתוביות</b></div>
+      <div class="trk" id="trk-v"><span class="tag">V1</span><b>וידאו</b></div>
+      <div class="trk" id="trk-a"><span class="tag">A1</span><b>אודיו</b></div>
     </div>
     <div id="tlwrap" aria-label="רצועות"><div id="tlinner"></div></div>
   </div>
@@ -366,6 +398,7 @@ async function reloadData(keepModel){const d=await api('/api/project');if(d.erro
   $('#frame').style.aspectRatio=`${d.project.info.width}/${d.project.info.height}`;
   $('#dur').textContent=tc(S.n);
   $('#dirtynote').style.display=d.dirty.length?'inline':'none';
+  if(!S.media||S.mediaFor!==d.project.video){S.mediaFor=d.project.video;S.media=null;loadMedia()}
   if(d.proxy&&d.proxy_mtime!==S.proxyStamp){S.proxyStamp=d.proxy_mtime;if(S.mode==='result')setSrc()}}
 function setSrc(){if(!S.proj)return;const v=$('#vid');const want=(S.mode==='result'&&S.data&&S.data.proxy)?`/api/video?which=proxy&t=${S.proxyStamp}`:'/api/video?which=src';
   if(v.dataset.src===want)return;const t=v.currentTime||0;const playing=!v.paused;v.dataset.src=want;v.src=want;
@@ -498,15 +531,43 @@ function renderTimeline(){const inner=$('#tlinner');inner.replaceChildren();if(!
   const lt=[],lc=[];const tl=S.model.titles.map(t=>({t,l:place(t.in,t.out,lt)}));
   const cl=S.model.cues.map(c=>{const a=Math.round(c.start*S.fps),b=Math.round(c.end*S.fps)-1;return{c,a,b,l:place(a,b,lc)}});
   const nT=Math.max(1,lt.length),nC=Math.max(1,lc.length);
-  inner.style.height=(RULER+(nT+nC)*LANE+10)+'px';
-  $('#trk-t').style.height=(nT*LANE)+'px';$('#trk-c').style.height=(nC*LANE)+'px';
+  const topV=RULER+(nT+nC)*LANE,topA=topV+VLANE;S.tlTop={v:topV,a:topA};
+  inner.style.height=(topA+LANE+10)+'px';
+  $('#trk-t').style.height=(nT*LANE)+'px';$('#trk-c').style.height=(nC*LANE)+'px';$('#trk-v').style.height=VLANE+'px';$('#trk-a').style.height=LANE+'px';
   for(let i=0;i<nT+nC;i++)inner.append(el('div',{class:'lane',style:`top:${RULER+i*LANE}px;width:${W}px;background:${i<nT?'#262626':'#242424'}`}));
+  inner.append(el('div',{class:'lane',style:`top:${topV}px;height:${VLANE}px;width:${W}px;background:#222`}),el('div',{class:'lane',style:`top:${topA}px;width:${W}px;background:#202020`}));
+  if(!S.model.titles.length)inner.append(el('div',{class:'empty-hint',dir:'rtl',style:`top:${RULER+15}px`,text:S.running&&S.job==='analyze'?'מחפש כותרות...':'אין עדיין כותרות - סרטון > נתח כותרות'}));
+  if(!S.model.cues.length)inner.append(el('div',{class:'empty-hint',dir:'rtl',style:`top:${RULER+nT*LANE+15}px`,text:'אין עדיין כתוביות - סרטון > תמלול דיאלוג, או קובץ > ייבוא SRT'}));
+  const vc=el('div',{class:'vclip',id:'vclip',style:`top:${topV+3}px;height:${VLANE-6}px;width:${S.n*pxf()}px`,'aria-hidden':'true'});
+  vc.append(el('span',{class:'nm',dir:'ltr',text:(S.data.project.video||'').split(/[\\/]/).pop()}));inner.append(vc);
+  inner.append(el('canvas',{class:'acv',id:'acv','aria-hidden':'true'}),el('span',{class:'aclab',id:'aclab',style:`top:${topA+5}px`,text:'אודיו'}));
   const dirty=new Set(S.data.dirty||[]);
   for(const{t,l}of tl){const d=dt(t.id)||{};const rm=t.translate&&t.mode==='remove';
     const lab=rm?'מחיקה: '+(d.src||''):(t.layer&&t.layer.type==='image'?'תמונה':(t.he||d.src||t.id));
     const b=block('t',t.id,t.in,t.out,RULER+l*LANE,lab,!t.translate,t.translate&&dirty.has(d.group),`כותרת ${t.id}: ${lab}, ${tc(t.in)} עד ${tc(t.out)}${rm?', מחיקה בלבד':''}`);if(rm)b.classList.add('rm');inner.append(b)}
   for(const{c,a,b,l}of cl)inner.append(block('c',c.n,a,b,RULER+(nT+l)*LANE,c.he||(dc(c.n)||{}).src||'#'+c.n,false,false,`כתובית ${c.n}: ${c.he||''}, ${tc(a)} עד ${tc(b)}`));
-  inner.append(el('div',{id:'playhead',style:`left:${S.frame*pxf()}px`}))}
+  inner.append(el('div',{id:'playhead',style:`left:${S.frame*pxf()}px`}));renderMedia()}
+// video thumbnails and audio waveform: drawn only for the visible part, redrawn on scroll/zoom
+const VLANE=58;
+let mediaRaf=0;function mediaSoon(){if(!mediaRaf)mediaRaf=requestAnimationFrame(()=>{mediaRaf=0;renderMedia()})}
+function renderMedia(){const vc=$('#vclip'),cv=$('#acv');if(!vc||!S.data)return;const wrap=$('#tlwrap');
+  const x0=wrap.scrollLeft,vw=wrap.clientWidth,x1=x0+vw,full=S.n*pxf(),M=S.media;
+  vc.querySelectorAll('img').forEach(e=>e.remove());
+  if(M&&M.count){const info=S.data.project.info,h=VLANE-6,tw=Math.max(24,Math.round(h*info.width/info.height));
+    for(let x=Math.floor(x0/tw)*tw;x<Math.min(x1,full);x+=tw){const sec=x/pxf()/S.fps;const k=clamp(Math.round(sec/M.step)+1,1,M.count);
+      vc.append(el('img',{class:'th',alt:'',loading:'lazy',src:`/api/file?p=media/thumbs/${String(k).padStart(5,'0')}.jpg`,style:`left:${x}px;width:${tw}px`}))}}
+  const top=S.tlTop.a+3,h=LANE-6,dpr=window.devicePixelRatio||1;
+  const w=Math.max(0,Math.min(vw,full-x0));cv.style.left=x0+'px';cv.style.top=top+'px';cv.style.width=w+'px';cv.style.height=h+'px';
+  cv.width=Math.max(1,Math.round(w*dpr));cv.height=Math.round(h*dpr);const g=cv.getContext('2d');g.scale(dpr,dpr);
+  g.fillStyle='#1f5a43';g.fillRect(0,0,w,h);g.strokeStyle='rgba(0,0,0,.5)';g.strokeRect(.5,.5,w-1,h-1);
+  $('#aclab').style.left=(x0+6)+'px';
+  if(!M){$('#aclab').textContent='אודיו - מכין גל קול...';return}
+  if(!M.audio){$('#aclab').textContent='אין פסקול';return}
+  $('#aclab').textContent='אודיו';const pk=M.peaks,pps=M.pps,mid=h/2+6,amp=(h-14)/2;g.fillStyle='#7fe0b0';
+  for(let px=0;px<w;px++){const s0=(x0+px)/pxf()/S.fps,s1=(x0+px+1)/pxf()/S.fps;let a=Math.floor(s0*pps),b=Math.max(a+1,Math.ceil(s1*pps)),m=0;
+    for(let i=a;i<b&&i<pk.length;i++)if(pk[i]>m)m=pk[i];const y=m/255*amp;g.fillRect(px,mid-y,1,Math.max(1,2*y))}}
+async function loadMedia(){if(!S.proj)return;let m;try{m=await api('/api/media')}catch(e){return}
+  if(m&&m.ready===false){S.media=null;setTimeout(loadMedia,2000);return}S.media=m;renderMedia()}
 function block(k,id,a,b,top,label,off,dirty,aria){
   const x=a*pxf(),w=Math.max(4,(b-a+1)*pxf());
   const e=el('div',{class:`blk ${k}${off?' off':''}${dirty?' dirty':''}`,style:`left:${x}px;width:${w}px;top:${top+4}px`,role:'button',tabindex:'0',
@@ -581,11 +642,35 @@ async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
   $('#logbox').textContent=s.log.join('\n');S.running=s.running;S.proj=s.proj;
   for(const id of['q-analyze','q-trans','q-build','q-export'])$('#'+id).disabled=!s.proj||s.running;
   const pb=$('#pbar');if(s.running){pb.style.display='inline-block';if(s.progress!=null)pb.value=s.progress;else pb.removeAttribute('value')}else pb.style.display='none';
-  if(s.running){const last=s.log.length?s.log[s.log.length-1].slice(10):'';say(`${JOBN[s.job]||s.job}: ${last}${s.progress!=null?` ${Math.round(s.progress*100)}%`:''}`)}
+  S.job=s.job;showBusy(s);
+  if(s.running){const last=s.log.length?s.log[s.log.length-1].slice(10):'';say(`${JOBN[s.job]||s.job}: ${s.stage||last}${s.progress!=null?` ${Math.round(s.progress*100)}%`:''}`)}
+  else if(wasRunning&&s.cancelled){await reloadData(false);renderAll();say(`${JOBN[s.job]||''} בוטל`)}
   else if(wasRunning){await reloadData(false);renderAll();setMode(S.mode);
     if(s.error)say(`שגיאה ב${JOBN[s.job]||''}: ${s.error}`,true);else say(`${JOBN[s.job]||''} הסתיים. ${s.log.length?s.log[s.log.length-1].slice(10):''}`);
     if(s.job==='export'&&!s.error&&S.data.checks.length)openChecks()}
   wasRunning=s.running}
+const mmss=t=>{t=Math.max(0,Math.round(t));const h=Math.floor(t/3600),m=String(Math.floor(t%3600/60)).padStart(2,'0'),x=String(t%60).padStart(2,'0');return h?`${h}:${m}:${x}`:`${m}:${x}`};
+function showBusy(s){const b=$('#busy');if(!s.running){b.hidden=true;S.busyStg='';return}
+  const first=b.hidden;b.hidden=false;$('#busy-h').textContent=JOBN[s.job]||s.job;
+  const stg=s.cancelling?'מבטל...':s.steps>1?`שלב ${s.step} מתוך ${s.steps}: ${s.stage}`:(s.stage||'פועל...');
+  if(stg!==S.busyStg){$('#busy-stg').textContent=stg;S.busyStg=stg}
+  const bar=$('#busy-bar'),p=s.progress;
+  if(p!=null){bar.value=p;$('#busy-pct').textContent=Math.floor(p*100)+'%'}else{bar.removeAttribute('value');$('#busy-pct').textContent=''}
+  // time left: elapsed/progress, smoothed so it does not jump between stages
+  let left='';if(first)S.eta=null;
+  if(p!=null&&p>0.01&&s.elapsed>3&&p<1){const raw=s.elapsed*(1-p)/p;S.eta=S.eta==null?raw:S.eta*0.8+raw*0.2;S.eta=Math.max(0,S.eta-0)}
+  if(p!=null&&p<1)left=S.eta!=null?mmss(S.eta):'מחשב...';
+  $('#busy-left').textContent=!left?'':S.eta!=null?'נותרו '+left:'מחשב זמן...';$('#busy-time').textContent='עברו '+mmss(s.elapsed);
+  $('#busy-cancel').disabled=!!s.cancelling;if(first&&!s.cancelling)renderTimeline()}
+function toggleFS(){if(!S.proj)return say('פתח סרטון קודם');
+  if(document.fullscreenElement)document.exitFullscreen();else $('#stage').requestFullscreen().catch(()=>say('מסך מלא לא זמין',true))}
+document.addEventListener('fullscreenchange',()=>{const on=!!document.fullscreenElement;$('#t-fs').setAttribute('aria-pressed',String(on));
+  $('#t-fs').setAttribute('aria-label',on?'יציאה ממסך מלא (Esc)':'מסך מלא (Ctrl+`)');
+  $('#fsico').innerHTML=on?'<path d="M9 3v6H3V7h4V3zm6 0h2v4h4v2h-6zM3 15h6v6H7v-4H3zm12 0h6v2h-4v4h-2z"/>':'<path d="M3 9V3h6v2H5v4zm12-6h6v6h-2V5h-4zM3 15h2v4h4v2H3zm16 4v-4h2v6h-6v-2z"/>';
+  api('/api/fullscreen',{on}).catch(()=>{});const n=$('#fsnote');n.classList.toggle('show',on);if(on)setTimeout(()=>n.classList.remove('show'),2500);
+  say(on?'מסך מלא. Esc ליציאה':'יצאת ממסך מלא')});
+$('#t-fs').onclick=toggleFS;$('#frame').addEventListener('dblclick',toggleFS);
+$('#busy-cancel').onclick=()=>api('/api/cancel',{});
 function renderAll(){renderList();renderInsp();renderTimeline();updTime();$('#welcome').style.display=S.proj?'none':'flex'}
 
 // ================================================================ dialogs
@@ -622,8 +707,9 @@ const MENUS=[
  ['קובץ',[['ייבוא סרטון...','Ctrl+I',()=>openVideo()],['ייבוא SRT מקור (לתרגום)...','',()=>importSrt(false),'proj'],['ייבוא SRT בעברית...','',()=>importSrt(true),'proj'],['-'],['ייצוא מדיה (סרטון + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks'],['-'],['שמור','Ctrl+S',()=>flush().then(()=>say('נשמר')),'proj']]],
  ['עריכה',[['בטל','Ctrl+Z',()=>undo(),'undo'],['בצע שוב','Ctrl+Shift+Z',()=>redo(),'redo'],['-'],['בחר פריט במיקום הנגן','D',()=>selectAtPlayhead(),'proj'],['סמן כניסה','I',()=>setEdge('in'),'sel'],['סמן יציאה','O',()=>setEdge('out'),'sel'],['-'],['להחליף את כל הכותרות','',()=>bulk(true),'proj'],['לא להחליף אף כותרת','',()=>bulk(false),'proj'],['-'],['העדפות...','Ctrl+,',()=>openDlg('#d-settings')]]],
  ['סרטון',[['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['בדיקת QA','',()=>openQA(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
- ['תצוגה',[['מקור','',()=>setMode('source'),'proj'],['תוצאה','T',()=>setMode('result'),'proj'],['-'],['הגדל זום','=',()=>zoomTo(S.zoom*1.5),'proj'],['הקטן זום','-',()=>zoomTo(S.zoom/1.5),'proj'],['התאם לחלון','\\',()=>fit(),'proj'],['-'],['יומן פעולות','',()=>openDlg('#d-log')]]],
+ ['תצוגה',[['מקור','',()=>setMode('source'),'proj'],['תוצאה','T',()=>setMode('result'),'proj'],['מסך מלא','Ctrl+`',()=>toggleFS(),'proj'],['-'],['הגדל זום','=',()=>zoomTo(S.zoom*1.5),'proj'],['הקטן זום','-',()=>zoomTo(S.zoom/1.5),'proj'],['התאם לחלון','\\',()=>fit(),'proj'],['-'],['יומן פעולות','',()=>openDlg('#d-log')]]],
  ['עזרה',[['קיצורי מקלדת','Ctrl+Alt+K',()=>openDlg('#d-help')],['-'],['בדוק עדכונים...','',()=>checkUpdate(true)]]]];
+const WHY={proj:'פתח סרטון קודם',undo:'אין מה לבטל',redo:'אין מה לשחזר',sel:'בחר פריט קודם',checks:'זמין אחרי ייצוא',subs:'לא זוהו כתוביות צרובות'};
 const MB=$('#menubar'),MENU=$('#menu');let openIdx=-1;
 MENUS.forEach(([name],i)=>MB.append(el('button',{class:'mbtn',role:'menuitem','aria-haspopup':'true','aria-expanded':'false',id:'mb'+i,text:name,
   onclick:()=>openIdx===i?closeMenu():openMenu(i,false),onmouseenter:()=>{if(openIdx>=0&&openIdx!==i)openMenu(i,false)},
@@ -632,7 +718,8 @@ function enabledFor(req){if(!req)return true;if(req==='proj')return !!S.proj&&!S
   if(req==='subs')return !!S.proj&&!S.running&&S.data&&((S.data.titles||{}).titles||[]).some(t=>t.kind==='sub');return true}
 function openMenu(i,focus){closeMenu(true);openIdx=i;const b=$('#mb'+i);b.setAttribute('aria-expanded','true');MENU.replaceChildren();MENU.setAttribute('aria-labelledby','mb'+i);
   for(const it of MENUS[i][1]){if(it[0]==='-'){MENU.append(el('div',{role:'separator'}));continue}const[lab,k,fn,req]=it;
-    MENU.append(el('button',{role:'menuitem',disabled:!enabledFor(req),onclick:()=>{closeMenu();fn()}},el('span',{text:lab}),el('span',{class:'k',text:k})))}
+    const on=enabledFor(req),why=on?'':(WHY[req]||'');
+    MENU.append(el('button',{role:'menuitem',disabled:!on,title:why,onclick:()=>{closeMenu();fn()}},el('span',{text:lab}),el('span',{class:'k',dir:on?'ltr':'rtl',text:on?k:why})))}
   const r=b.getBoundingClientRect();MENU.style.top=(r.bottom+2)+'px';MENU.style.right=(innerWidth-r.right)+'px';MENU.classList.add('open');
   if(focus){const f=MENU.querySelector('[role=menuitem]:not(:disabled)');if(f)f.focus()}}
 function closeMenu(keep){if(openIdx<0)return;const b=$('#mb'+openIdx);b.setAttribute('aria-expanded','false');MENU.classList.remove('open');if(!keep&&MENU.contains(document.activeElement))b.focus();openIdx=-1}
@@ -649,11 +736,12 @@ const KEYS=[
  ['← / →','פריים אחורה / קדימה'],['Shift+← / Shift+→','5 פריימים'],['↑ / ↓','נקודת עריכה קודמת / הבאה (חיתוכים, כניסות ויציאות)'],['Home / End','התחלה / סוף'],
  ['סימון'],['I / O','כניסה / יציאה של הפריט הנבחר = מיקום הנגן'],['Shift+I / Shift+O','עבור לכניסה / ליציאה'],['D','בחר את הפריט שבמיקום הנגן'],
  ['ציר זמן'],['= / -','הגדל / הקטן זום'],['\\','התאם לחלון'],['Alt+גלגלת','זום'],['Enter','בנה תצוגה (רינדור)'],
- ['Retitle'],['T','מעבר בין מקור לתוצאה'],['[ / ]','פריט קודם / הבא'],['F2','עבור לשדה העברית'],['Esc','יציאה משדה טקסט / סגירת תפריט']];
+ ['Retitle'],['T','מעבר בין מקור לתוצאה'],['Ctrl+` / לחיצה כפולה','מסך מלא (Esc ליציאה)'],['[ / ]','פריט קודם / הבא'],['F2','עבור לשדה העברית'],['Esc','יציאה משדה טקסט / סגירת תפריט']];
 $('#keys').replaceChildren(...KEYS.map(r=>r.length===1?el('tr',{},el('th',{colspan:'2',text:r[0]})):el('tr',{},el('td',{text:r[0]}),el('td',{text:r[1]}))));
 document.addEventListener('keyup',e=>{if(e.code==='KeyK')S.kDown=false});
 document.addEventListener('keydown',e=>{
   const t=e.target;const typing=!!t.closest('textarea,select,[contenteditable]')||(t.tagName==='INPUT'&&(!t.classList.contains('hot')||document.activeElement===t));
+  if(e.key==='Escape'&&document.fullscreenElement&&!document.querySelector('dialog[open]')){e.preventDefault();document.exitFullscreen();return}
   if(e.key==='Escape'){if(openIdx>=0){closeMenu();return}if(typing){t.blur();return}}
   if(document.querySelector('dialog[open]'))return;
   const c=e.code,ctrl=e.ctrlKey||e.metaKey,sh=e.shiftKey,alt=e.altKey;
@@ -666,6 +754,7 @@ document.addEventListener('keydown',e=>{
     if(!typing&&((c==='KeyZ'&&sh)||c==='KeyY')){e.preventDefault();redo();return}
   }
   if(ctrl&&alt&&c==='KeyK'){e.preventDefault();openDlg('#d-help');return}
+  if(ctrl&&!alt&&c==='Backquote'){e.preventDefault();toggleFS();return}
   if(typing||ctrl||alt)return;
   if(t.closest('button,[role=button],[role=menuitem],[role=tab]')&&(c==='Space'||c==='Enter'||c==='NumpadEnter'))return;
   const ok=()=>e.preventDefault();
@@ -717,6 +806,7 @@ $('#t-markin').onclick=()=>setEdge('in');$('#t-markout').onclick=()=>setEdge('ou
 $('#t-prevedit').onclick=()=>gotoEdit(-1);$('#t-nextedit').onclick=()=>gotoEdit(1);
 $('#m-src').onclick=()=>setMode('source');$('#m-res').onclick=()=>setMode('result');
 $('#z-in').onclick=()=>zoomTo(S.zoom*1.5);$('#z-out').onclick=()=>zoomTo(S.zoom/1.5);$('#z-fit').onclick=fit;
+$('#tlwrap').addEventListener('scroll',mediaSoon,{passive:true});addEventListener('resize',mediaSoon);
 $('#tlwrap').addEventListener('wheel',e=>{if(e.altKey||e.ctrlKey){e.preventDefault();zoomTo(S.zoom*(e.deltaY<0?1.25:0.8))}},{passive:false});
 addEventListener('resize',()=>{renderTimeline();refreshFrameSoon(200)});
 (async()=>{S.fonts=await api('/api/fonts');await loadSettings();const s=await api('/api/status');

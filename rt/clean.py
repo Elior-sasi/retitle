@@ -315,16 +315,22 @@ def synth_cached(gid, f, img, hole, motion):
     return out
 
 
-def run(proj, only=None):
+def run(proj, only=None, progress=None):
     P = vio.load_json(os.path.join(proj, "project.json"))
     S = vio.load_json(os.path.join(proj, "shots.json"))
     T = vio.load_json(os.path.join(proj, "titles.json"))
     n = P["n_frames"]
     stats = vio.load_json(os.path.join(proj, "clean_stats.json"), {})
     built = {}
+    todo = {}
     for gid, lines in groups(T).items():
         act = [t for t in lines if t.get("translate", True) and "mask" in t]
-        if not act or (only and gid not in only):
+        if act and not (only and gid not in only):
+            todo[gid] = max(t["out"] for t in act) - min(t["in"] for t in act) + 1
+    total, done = max(1, sum(todo.values())), 0
+    for gid, lines in groups(T).items():
+        act = [t for t in lines if t.get("translate", True) and "mask" in t]
+        if gid not in todo:
             continue
         reg = act[0]["region"]; lo, hi = act[0]["cache"]
         d = os.path.join(proj, "clean", gid)
@@ -341,6 +347,9 @@ def run(proj, only=None):
             cv2.imwrite(os.path.join(d, f"{f:06d}.png"), out)
             cv2.imwrite(os.path.join(d, f"m{f:06d}.png"), M)
             fr.append(frac)
+            done += 1
+            if progress and done % 4 == 0:
+                progress(done / total)
         stats[gid] = {"frames": [a, b], "synth_mean": round(float(np.mean(fr)), 3),
                       "synth_max": round(float(np.max(fr)), 3)}
         for t in lines:

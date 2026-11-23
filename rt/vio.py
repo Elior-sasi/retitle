@@ -55,10 +55,21 @@ class Writer:
                "-i", src, "-map", "0:v", "-map", "1:a?", "-c:a", "copy",
                *vf, "-c:v", "libx264", "-crf", str(crf), "-preset", preset,
                "-pix_fmt", "yuv420p", "-movflags", "+faststart", out]
+        self.out = out
         self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, **NOWIN)
 
     def write(self, f):
         self.p.stdin.write(np.ascontiguousarray(f).tobytes())
+
+    def abort(self):
+        try:
+            self.p.kill(); self.p.wait()
+        except Exception:
+            pass
+        try:
+            os.remove(self.out)
+        except OSError:
+            pass
 
     def close(self):
         self.p.stdin.close()
