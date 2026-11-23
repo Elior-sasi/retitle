@@ -6,6 +6,18 @@ sys.path.insert(0, ROOT)
 from rt import vio, shots, detect, extract, clean, render, compose, check, srt
 
 
+def vocals_test():
+    """Speech separation: the STFT pair is exact, and (when the model is here) the output keeps the length."""
+    import numpy as np
+    from rt import vocals
+    x = np.random.RandomState(1).randn(2, 200000).astype(np.float32)
+    assert float(np.abs(vocals._istft(vocals._stft(x), x.shape[1]) - x).max()) < 1e-4
+    if vocals.ready():
+        y = vocals.separate(x[:, :150000] * 0.1)
+        assert y.shape == (2, 150000), y.shape
+    print("vocals: ok" + ("" if vocals.ready() else " (model not downloaded - STFT only)"))
+
+
 def smart_test():
     """Smart export: only the title stretch is encoded; every other frame is bit-identical to the source."""
     import cv2
@@ -73,7 +85,7 @@ def main():
     print("clean error (mean abs, worst frame):", round(worst, 2))
     assert worst < 10, worst
     render.track(p); render.build_layers(p)
-    smart_test()
+    smart_test(); vocals_test()
     out = compose.run(p); check.run(p)
     assert os.path.getsize(out) > 10000
     json.dump({"language": "en", "segments": [{"start": 0.2, "end": 1.1, "text": "Hello.", "words": []}]},

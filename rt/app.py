@@ -20,7 +20,7 @@ INK = {}                         # layer file -> drawn area
 
 
 # settings that travel between computers through the sync folder (secrets and recent files stay local)
-SHARED = ("open_maximized", "glossary", "content", "src_lang", "model", "srt_rle", "whisper_model", "whisper_lang", "ui_fs")
+SHARED = ("open_maximized", "glossary", "content", "src_lang", "model", "srt_rle", "sep_vocals", "whisper_model", "whisper_lang", "ui_fs")
 
 
 def sync_root():
@@ -69,7 +69,7 @@ def enable_sync(d):
 
 def settings():
     s = {"api_key": "", "model": "claude-sonnet-5-5", "glossary": "", "src_lang": "eng", "content": "trailer",
-         "srt_rle": True, "gh_token": "", "open_maximized": True,
+         "srt_rle": True, "sep_vocals": True, "gh_token": "", "open_maximized": True,
          "whisper_model": "large-v3", "whisper_lang": ""}
     s.update(vio.load_json(CFG, {}))
     if not s.get("asr_v3"):                    # one-time: back to large-v3, the most accurate (undoes the turbo switch of build ~20)
@@ -360,9 +360,27 @@ def job_transcribe():
         STATE.update(stage="מוריד את מנוע התמלול (פעם אחת)", step=1, steps=2)
         log("מוריד את מנוע התמלול (פעם אחת)...")
         asr.wait(name, progress=lambda x: STATE.update(progress=round(0.5 * x, 3)) if not STATE["cancel"] else prog(0))
+    audio = PJ["video"]
+    if s.get("sep_vocals", True) and PJ.get("info", {}).get("has_audio", True):
+        from . import vocals
+        RANGE[:] = [0.5 if STATE["steps"] == 2 else 0.0, 0.75]
+        STATE.update(stage="מפריד את הדיבור מהמוזיקה", step=STATE.get("step") or 1, steps=STATE["steps"] or 1)
+        try:
+            if not vocals.ready():
+                log("מוריד את מודל הפרדת הדיבור (פעם אחת)...")
+                vocals.fetch(progress=lambda x: prog(0.2 * x))
+            log("מפריד את הדיבור מהמוזיקה...")
+            audio = vocals.speech_wav(PJ["video"], P("speech.wav"), progress=lambda x: prog(0.2 + 0.8 * x))
+        except Cancelled:
+            raise
+        except Exception as e:
+            traceback.print_exc()
+            log(f"הפרדת הדיבור לא הצליחה ({e}) - מתמלל מהפסקול המלא")
+            audio = PJ["video"]
+        RANGE[:] = [0.75, 1.0]
     STATE.update(stage="מתמלל", step=2 if STATE["steps"] == 2 else 1, steps=STATE["steps"] or 1)
     log("מתמלל עם Whisper" + (" על כרטיס המסך..." if asr.has_nvidia() and asr.gpu_ready() else " על המעבד..."))
-    srt.transcribe(PJ["video"], P("whisper.json"), s.get("whisper_lang") or None, name)
+    srt.transcribe(audio, P("whisper.json"), s.get("whisper_lang") or None, name)
     srt.prep(STATE["proj"], P("whisper.json"))
     log("התמלול מוכן. בחר כתובית והקלד עברית.")
 
@@ -1338,6 +1356,12 @@ def main():
             from . import asr
             if "--server" not in sys.argv:
                 asr.prepare(settings().get("whisper_model", "large-v3"))
+        except Exception:
+            traceback.print_exc()
+        try:                                   # speech/music separation model: fetched once too
+            from . import vocals
+            if "--server" not in sys.argv and settings().get("sep_vocals", True) and not vocals.ready():
+                vocals.fetch()
         except Exception:
             traceback.print_exc()
     threading.Thread(target=_warm, daemon=True).start()

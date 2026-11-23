@@ -402,6 +402,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-key">מפתח API של Anthropic<br><span class="unit">לתרגום אוטומטי, לא חובה</span></label>
     <div><input type="password" id="s-key" dir="ltr" autocomplete="off" aria-describedby="keyset" style="width:100%"><div id="keyset" class="unit"></div></div>
     <label for="s-model">מודל תרגום</label><input type="text" id="s-model" dir="ltr">
+    <label for="s-sep">תמלול</label><label class="chk"><input type="checkbox" id="s-sep"> להפריד את הדיבור מהמוזיקה לפני התמלול (מדויק יותר בטריילרים ובסצנות עם מוזיקה)</label>
     <label for="s-rle">SRT</label><label class="chk"><input type="checkbox" id="s-rle"> תו RLE בתחילת כל שורה (לתצוגת עברית תקינה)</label>
     <label for="s-gh">טוקן GitHub לעדכונים<br><span class="unit">לריפו פרטי, קריאה בלבד</span></label>
     <div><input type="password" id="s-gh" dir="ltr" autocomplete="off" aria-describedby="ghset" style="width:100%"><div id="ghset" class="unit"></div></div>
@@ -875,10 +876,10 @@ function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren
   bx.append(el('button',{class:'mini',text:'בחר תיקייה מסונכרנת...',onclick:()=>go('pick')}));
   if(s.sync_dir)bx.append(el('button',{class:'mini',text:'בטל סנכרון',onclick:()=>go('')}))}
 async function loadSettings(){const s=await api('/api/settings');renderSync(s);renderGoogle();$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
-  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
+  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
-  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
+  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
 function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
 
 // ================================================================ import / hardsubs / QA / update
