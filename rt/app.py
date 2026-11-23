@@ -1,4 +1,4 @@
-"""Retitle desktop app: editor UI (native window via pywebview, browser fallback) over the rt engine."""
+"""Retitle desktop app (Hebrew video localization): editor UI (native window via pywebview, browser fallback) over the rt engine."""
 import os, sys, json, threading, traceback, webbrowser, socket, subprocess, glob, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
@@ -16,7 +16,7 @@ LAYERS = {}                      # id -> (mtime, premultiplied layer)
 
 
 def settings():
-    s = {"api_key": "", "model": "claude-sonnet-5-5", "glossary": "", "src_lang": "eng",
+    s = {"api_key": "", "model": "claude-sonnet-5-5", "glossary": "", "src_lang": "eng", "content": "trailer",
          "whisper_model": "large-v3", "whisper_lang": ""}
     s.update(vio.load_json(CFG, {}))
     return s
@@ -86,10 +86,12 @@ def job_analyze():
     from . import shots, detect, extract
     s = settings()
     log("מחפש חיתוכי שוטים...")
-    c = shots.run(STATE["proj"])
+    c = shots.run(STATE["proj"], progress=prog)
+    prog(None)
     log(f"{len(c)} שוטים")
     log("מזהה טקסט על המסך...")
-    ts = detect.run(STATE["proj"], s.get("src_lang") or "eng")
+    ts = detect.run(STATE["proj"], s.get("src_lang") or "eng", progress=prog)
+    prog(None)
     log(f"נמצאו {len(ts)} שורות טקסט")
     log("מודד צבע, צל ותזמון מדויק...")
     extract.run(STATE["proj"])
@@ -169,8 +171,8 @@ def job_translate(kind):
                  if t.get("translate", True) and not t.get("he")]
         log(f"מתרגם {len(items)} כותרות...")
         imgs = {it["id"]: P("thumbs", f"{it['id']}.jpg") for it in items if os.path.exists(P("thumbs", f"{it['id']}.jpg"))}
-        res = translate.translate(items, s["api_key"], s.get("glossary", ""), "on-screen trailer titles (taglines, title cards)",
-                                  s.get("model"), images=imgs)
+        res = translate.translate(items, s["api_key"], s.get("glossary", ""),
+                                  translate.context(s.get("content"), "titles"), s.get("model"), images=imgs)
         with LOCK:
             T = vio.load_json(P("titles.json"))
             for t in T["titles"]:
@@ -187,7 +189,7 @@ def job_translate(kind):
         res = {}
         for i in range(0, len(items), 60):
             res.update(translate.translate(items[i:i + 60], s["api_key"], s.get("glossary", ""),
-                                           "trailer dialogue subtitles, max 2 lines of 42 chars", s.get("model")))
+                                           translate.context(s.get("content"), "dialog"), s.get("model")))
         with LOCK:
             D = vio.load_json(P("dialog.json"))
             for c in D["cues"]:

@@ -145,13 +145,23 @@ def norm(t):
     return re.sub(r"\W+", "", t.lower())
 
 
-def run(proj, langs="eng", workers=2, scale=1.0):
+def run(proj, langs="eng", workers=None, scale=None, progress=None):
     P = vio.load_json(os.path.join(proj, "project.json"))
     S = vio.load_json(os.path.join(proj, "shots.json"))
     files = sorted(glob.glob(os.path.join(proj, "samples", "*.jpg")))
+    W = P["info"]["width"]
+    if scale is None:  # detection works well at ~1280 px; faster for 4K / long material
+        scale = min(1.0, 1280 / W)
+    workers = workers or max(1, min(4, (os.cpu_count() or 2) - 1))
+    res = {}
     with Pool(workers) as pool:
-        res = dict(pool.map(_ocr, [(f, langs, scale) for f in files]))
+        for k, (f, r) in enumerate(pool.imap_unordered(_ocr, [(f, langs, scale) for f in files], chunksize=4)):
+            res[f] = r
+            if progress and k % 10 == 0:
+                progress(k / max(1, len(files)))
     every = S["every"]
+    order = S.get("samples") or sorted(int(os.path.basename(f)[:-4]) for f in files)
+    sidx = {fr: k for k, fr in enumerate(order)}
     dets = []
     for f in files:
         fr = int(os.path.basename(f)[:-4])
@@ -164,7 +174,7 @@ def run(proj, langs="eng", workers=2, scale=1.0):
         best = None
         for e in events:
             last = e["dets"][-1]
-            if d["frame"] - last["frame"] > every * 3 or d["frame"] == last["frame"]:
+            if sidx[d["frame"]] - sidx[last["frame"]] > 3 or d["frame"] == last["frame"]:
                 continue
             sim = SequenceMatcher(None, norm(d["text"]), norm(last["text"])).ratio()
             ov = iou(d["box"], last["box"])
@@ -185,7 +195,7 @@ def run(proj, langs="eng", workers=2, scale=1.0):
         for i in range(len(events)):
             for j in range(i + 1, len(events)):
                 A, B = events[i]["dets"], events[j]["dets"]
-                if B[0]["frame"] > A[-1]["frame"] + every * 3 or A[0]["frame"] > B[-1]["frame"] + every * 3:
+                if sidx[B[0]["frame"]] > sidx[A[-1]["frame"]] + 3 or sidx[A[0]["frame"]] > sidx[B[-1]["frame"]] + 3:
                     continue
                 ba = [min(d["box"][0] for d in A), min(d["box"][1] for d in A), max(d["box"][2] for d in A), max(d["box"][3] for d in A)]
                 bb = [min(d["box"][0] for d in B), min(d["box"][1] for d in B), max(d["box"][2] for d in B), max(d["box"][3] for d in B)]
@@ -209,6 +219,9 @@ def run(proj, langs="eng", workers=2, scale=1.0):
         titles.append({
             "id": f"t{len(titles) + 1:02d}", "src": text,
             "sample_in": ds[0]["frame"], "sample_out": ds[-1]["frame"],
+            # neighbouring samples without this text: the exact in/out lies between them
+            "prev_sample": order[sidx[ds[0]["frame"]] - 1] if sidx[ds[0]["frame"]] > 0 else 0,
+            "next_sample": order[sidx[ds[-1]["frame"]] + 1] if sidx[ds[-1]["frame"]] + 1 < len(order) else P.get("n_frames", ds[-1]["frame"] + every) - 1,
             "in": ds[0]["frame"], "out": ds[-1]["frame"], "ref": mid["frame"],
             "box": [int(boxes[:, 0].min()), int(boxes[:, 1].min()),
                     int(boxes[:, 2].max()), int(boxes[:, 3].max())],

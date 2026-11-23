@@ -7,6 +7,14 @@ def _shift(m, dx, dy):
     return cv2.warpAffine(m, M, (m.shape[1], m.shape[0]), flags=cv2.INTER_NEAREST)
 
 
+CHROMA_W = 0.35  # video is 4:2:0 - thin strokes lose saturation; weigh lightness over colour
+
+
+def _wdist(lab, ref):
+    d = lab - np.asarray(ref, np.float32)
+    return np.sqrt(d[..., 0] ** 2 + CHROMA_W * (d[..., 1] ** 2 + d[..., 2] ** 2))
+
+
 def estimate(crop, words, stroke_hint=None):
     """crop: BGR image of the region at the reference frame.
     words: word boxes in crop coords. Returns mask params + style guesses."""
@@ -46,8 +54,8 @@ def estimate(crop, words, stroke_hint=None):
     # erode a little so the colour sample is the fill, not the antialias edge
     inner = cv2.erode(core, np.ones((3, 3), np.uint8)) if core.sum() > 400 else core
     fill_lab = np.median(lab[inner > 0], axis=0)
-    dist = np.linalg.norm(lab[inner > 0] - fill_lab, axis=1)
-    tol = float(np.clip(np.percentile(dist, 90) * 1.6 + 8, 18, 70))
+    dist = _wdist(lab[inner > 0], fill_lab)
+    tol = float(np.clip(np.percentile(dist, 90) * 1.6 + 12, 22, 70))
     fill_bgr = np.median(crop[inner > 0], axis=0)
     hgt = float(np.median([y1 - y0 for x0, y0, x1, y1 in words]))
     # stroke width via distance transform of the core
@@ -99,7 +107,7 @@ def estimate(crop, words, stroke_hint=None):
                   "opacity": float(np.clip(best[0] / max(bgmean, 1), 0.2, 0.95)), "blur": 2}
     return {
         "mask": {"fill_lab": [float(v) for v in fill_lab], "tol": tol,
-                 "grow": int(max(2, round(stroke * 0.35))) + (outline["width"] if outline else 0),
+                 "grow": int(max(3, round(stroke * 0.35), round(hgt * 0.05))) + (outline["width"] if outline else 0),
                  "shadow": [shadow["dx"], shadow["dy"]] if shadow else None,
                  "shadow_grow": int(max(2, round(stroke * 0.4)))},
         "style": {"fill": [int(v) for v in fill_bgr], "outline": outline, "shadow": shadow,
@@ -111,7 +119,7 @@ def make(crop, params, box=None, structure=True):
     """Binary mask (uint8 0/255) of text pixels to remove, in crop coords.
     box limits the search (crop coords, already expanded by caller)."""
     lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).astype(np.float32)
-    d = np.linalg.norm(lab - np.array(params["fill_lab"], np.float32), axis=2)
+    d = _wdist(lab, params["fill_lab"])
     m = (d < params["tol"]).astype(np.uint8)
     if structure:
         # keep only thin, text-like structures: remove big flat blobs of the same colour

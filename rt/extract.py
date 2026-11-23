@@ -31,8 +31,8 @@ def run(proj, pad=48):
         if not any(t.get("translate", True) for t in lines):
             continue
         reg = lines[0].get("region") or _region(lines, W, H)
-        a = min(t.get("in_override", t["sample_in"]) for t in lines) - every - 2
-        b = max(t.get("out_override", t["sample_out"]) for t in lines) + every + 2
+        a = min(min(t.get("in_override", t["sample_in"]), t.get("prev_sample", t["sample_in"] - every)) for t in lines) - 2
+        b = max(max(t.get("out_override", t["sample_out"]), t.get("next_sample", t["sample_out"] + every)) for t in lines) + 2
         a, b = max(0, a), min(n - 1, b)
         sa, _ = shot_of(S["cuts"], n, a)
         _, eb = shot_of(S["cuts"], n, b)
@@ -114,7 +114,7 @@ def refine(proj, t, gid, S, n):
     fr = list(range(lo, hi + 1))
     pres, cor = _presence(proj, t, gid, fr)
     refc = pres.get(t["ref"], 0) or max(pres.values())
-    far = lambda f: f < t["sample_in"] - every or f > t["sample_out"] + every
+    far = lambda f: f < t.get("prev_sample", t["sample_in"] - every) or f > t.get("next_sample", t["sample_out"] + every)
     outside = [v for f, v in pres.items() if far(f)]
     base = float(np.median(outside)) if outside else 0.0
     cbase = [v for f, v in cor.items() if far(f)]

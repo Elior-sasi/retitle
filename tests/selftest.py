@@ -55,7 +55,44 @@ def main():
     vio.save_json(os.path.join(p, "dialog.json"), D)
     sp, w = srt.build(p)
     print(open(sp, encoding="utf-8").read())
+    static_test(d)
     print("SELFTEST OK")
+
+
+def static_test(d):
+    """Locked-off interview shot, 20 s, fading lower third on a semi-transparent box:
+    few samples, exact in/out, text removed with the true background seen through the box."""
+    import cv2, numpy as np
+    clip = os.path.join(d, "st.mp4"); bgv = os.path.join(d, "st_bg.mp4")
+    subprocess.run([sys.executable, os.path.join(ROOT, "tests", "make_static.py"), clip, bgv], check=True)
+    p = os.path.join(d, "sp"); os.makedirs(p)
+    vio.save_json(os.path.join(p, "project.json"), {"video": clip, "info": vio.probe(clip)})
+    shots.run(p)
+    S = vio.load_json(os.path.join(p, "shots.json"))
+    print("static: samples", len(S["samples"]), "of", S["n_frames"], "frames")
+    assert len(S["samples"]) < 20, len(S["samples"])
+    ts = detect.run(p, "eng")
+    assert len(ts) == 2, [t["src"] for t in ts]
+    extract.run(p)
+    T = vio.load_json(os.path.join(p, "titles.json"))
+    for t in T["titles"]:
+        print("static:", t["src"], t["in"], t["out"])
+        assert abs(t["in"] - 125) <= 1 and abs(t["out"] - 312) <= 1, (t["in"], t["out"])
+    clean.run(p)
+    T = vio.load_json(os.path.join(p, "titles.json"))
+    info = vio.probe(bgv)
+    x0, y0, x1, y1 = T["titles"][0]["region"]
+    C = np.array([80, 30, 10], np.float32)
+    worst = 0
+    for f in (126, 140, 200, 300, 311):
+        bg = vio.grab(bgv, f, info).astype(np.float32)
+        al = min(1, (f - 125 + 1) / 6, (312 - f + 1) / 6) * 200 / 255
+        bg[540:651, 60:561] = bg[540:651, 60:561] * (1 - al) + C * al
+        out = cv2.imread(os.path.join(p, "clean", T["titles"][0]["group"], f"{f:06d}.png")).astype(np.float32)
+        err = np.abs(out - bg[y0:y1, x0:x1]).max(2)[530 - y0:660 - y0, 50 - x0:570 - x0]
+        print("static: frame", f, "mean", round(float(err.mean()), 2), "p99", round(float(np.percentile(err, 99)), 1))
+        worst = max(worst, float(err.mean()))
+    assert worst < 5, worst
 
 
 if __name__ == "__main__":

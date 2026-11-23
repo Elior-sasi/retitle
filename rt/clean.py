@@ -55,6 +55,8 @@ def _align(tgt_g, src_g, valid, scale=0.5):
         win = cv2.createHanningWindow((ts.shape[1], ts.shape[0]), cv2.CV_32F)
         (dx, dy), resp = cv2.phaseCorrelate(ts, ss, win)
         if resp > 0.05:
+            if abs(dx) < 0.15 and abs(dy) < 0.15 and resp > 0.3:
+                return np.eye(2, 3, dtype=np.float32), 0.0   # locked-off camera: no warp needed
             warp[0, 2], warp[1, 2] = dx, dy
     except cv2.error:
         pass
@@ -66,6 +68,37 @@ def _align(tgt_g, src_g, valid, scale=0.5):
         return None, float("inf")
     warp[:, 2] /= scale
     return warp, 0.0
+
+
+def _fit(img, ci, Mc, M, warp, W, H):
+    """Warp candidate ci onto img, colour-match it on a thin ring around the text.
+    Returns (residual, warped+matched image, warped candidate mask, inside, gain, offset) or None."""
+    IM = cv2.WARP_INVERSE_MAP
+    wi = cv2.warpAffine(ci, warp, (W, H), flags=cv2.INTER_LINEAR | IM, borderMode=cv2.BORDER_REFLECT)
+    inside = cv2.warpAffine(np.full((H, W), 255, np.uint8), warp, (W, H), flags=cv2.INTER_NEAREST | IM)
+    wm = cv2.warpAffine(Mc, warp, (W, H), flags=cv2.INTER_NEAREST | IM)
+    ring = (cv2.dilate(M, np.ones((11, 11), np.uint8)) > 0) & (M == 0) & (wm == 0) & (inside > 0)
+    if ring.sum() < 50:
+        return None
+    a = img[ring].astype(np.float32); b = wi[ring].astype(np.float32)
+    # per-channel affine colour match (gain*x+offset), robust: exposure / flicker, and a
+    # semi-transparent box or vignette present here but not in the candidate. Ring pixels that
+    # do not follow the same mapping (outside the box edge) are rejected and the fit repeated.
+    inl = np.ones(len(a), bool)
+    G = np.ones(3, np.float32); O = np.zeros(3, np.float32)
+    for it in range(3):
+        for ch in range(3):
+            x = b[inl, ch]; y = a[inl, ch]
+            vx = x.var()
+            G[ch] = float(np.clip(((x - x.mean()) * (y - y.mean())).mean() / vx, 0.05, 3)) if vx > 4 else 1.0
+            O[ch] = float(y.mean() - G[ch] * x.mean())
+        r = np.abs(b * G + O - a).mean(1)
+        inl = r < max(6.0, 2.5 * float(np.median(r)))
+    if inl.mean() < 0.5:
+        return None
+    wi = np.clip(wi.astype(np.float32) * G + O, 0, 255)
+    res = float(np.abs(wi[ring][inl] - a[inl]).mean())
+    return res, wi, wm, inside, G, O
 
 
 def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, second=True):
@@ -81,7 +114,7 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
                 gi = _load(proj, gid, g)
                 env |= frame_mask(gi, g, lines, reg, margin=0) if any(
                     t["in"] <= g <= t["out"] for t in lines) else 0
-        env = cv2.dilate(env, np.ones((7, 7), np.uint8))
+        env = cv2.dilate(env, np.ones((15, 15), np.uint8))
     M = M0 | env
     if not M.any():
         return img, 0.0, M
@@ -103,9 +136,15 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
                 refm[t["id"]] = cv2.dilate(line_mask(ri, t, reg), np.ones((5, 5), np.uint8))
     stack, okm = [], []
     used = 0
-    for c in cands:
-        if used >= K:
+    # nearest clean frames first, but never more than 2K of them: when they all fail the colour
+    # match (e.g. a graphic box appears with the text) fall through to frames with the text
+    clean_c = [c for c in cands if not key(c)[0]][:2 * K]
+    busy_c = [c for c in cands if key(c)[0]][:2 * K]
+    tries = 0
+    for c in clean_c + busy_c:
+        if used >= K or tries >= 3 * K:
             break
+        tries += 1
         ci = _load(proj, gid, c)
         if ci is None:
             continue
@@ -115,21 +154,17 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
                 Mc |= refm[t["id"]]
         valid_t = ((cv2.dilate(M | Mc, np.ones((9, 9), np.uint8)) == 0)).astype(np.uint8)
         warp, _ = _align(tg, cv2.cvtColor(ci, cv2.COLOR_BGR2GRAY).astype(np.float32), valid_t)
-        if warp is None:
+        tries_w = [np.eye(2, 3, dtype=np.float32)]
+        if warp is not None and np.abs(warp - tries_w[0]).max() > 1e-3:
+            tries_w.insert(0, warp)
+        best = None
+        for wp in tries_w:   # ECC can be pulled by graphics that appear with the text: keep identity as a rival
+            r = _fit(img, ci, Mc, M, wp, W, H)
+            if r is not None and (best is None or r[0] < best[0]):
+                best = r
+        if best is None or best[0] > thr_res:
             continue
-        IM = cv2.WARP_INVERSE_MAP
-        wi = cv2.warpAffine(ci, warp, (W, H), flags=cv2.INTER_LINEAR | IM, borderMode=cv2.BORDER_REFLECT)
-        inside = cv2.warpAffine(np.full((H, W), 255, np.uint8), warp, (W, H), flags=cv2.INTER_NEAREST | IM)
-        wm = cv2.warpAffine(Mc, warp, (W, H), flags=cv2.INTER_NEAREST | IM)
-        ring = (cv2.dilate(M, np.ones((25, 25), np.uint8)) > 0) & (M == 0) & (wm == 0) & (inside > 0)
-        if ring.sum() < 50:
-            continue
-        a = img[ring].astype(np.float32); b = wi[ring].astype(np.float32)
-        gain = (a.mean(0) + 1) / (b.mean(0) + 1)
-        wi = np.clip(wi.astype(np.float32) * gain, 0, 255)
-        res = float(np.abs(wi[ring] - a).mean())
-        if res > thr_res:
-            continue
+        res, wi, wm, inside, G, O = best
         stack.append(wi)
         okm.append((wm == 0) & (inside > 0))
         used += 1

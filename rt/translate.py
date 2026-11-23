@@ -3,12 +3,29 @@ import json, re, urllib.request
 
 NIQQUD = re.compile("[" + chr(0x0591) + "-" + chr(0x05BD) + chr(0x05BF) + chr(0x05C1) + chr(0x05C2) + chr(0x05C4) + chr(0x05C5) + chr(0x05C7) + "]")
 
-RULES = """You are a professional Hebrew localizer for film trailers.
-Translate each item into natural, idiomatic Hebrew suited to a theatrical trailer.
+CONTENT = {
+    "trailer": "a film/series trailer - punchy, theatrical",
+    "anime": "an anime film or series - keep honorific-free natural Hebrew, character names per glossary",
+    "series": "a scripted TV series episode",
+    "documentary": "a documentary - neutral, precise, on-screen text is often names/titles (lower thirds), places and dates",
+    "reality": "a reality TV show - casual spoken Hebrew, on-screen text is often names and captions",
+    "other": "a video",
+}
+
+
+def context(kind, what):
+    base = CONTENT.get(kind or "other", CONTENT["other"])
+    if what == "titles":
+        return f"On-screen text (titles, captions, lower thirds, signs) in {base}."
+    return f"Dialogue subtitles for {base}. Max 2 lines of 42 characters per item, condense like a subtitler."
+
+
+RULES = """You are a professional Hebrew audiovisual localizer (subtitles and on-screen text).
+Translate each item into natural, idiomatic Hebrew suited to the content described in the context.
 Rules:
 - No niqqud at all.
 - Use plain double quotes (") and a regular hyphen (-), never an em dash.
-- Keep the meaning and tone; on-screen taglines should be short and punchy.
+- Keep the meaning and tone; on-screen text must be short enough to fit where the source was.
 - Keep the split across items: each item is one line/caption and its Hebrew must stand on its own
   but read naturally together with its neighbours (items with the same "group" are one sentence).
 - Names: use the glossary spellings exactly. Names not in the glossary: standard Hebrew transliteration.

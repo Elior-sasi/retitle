@@ -3,13 +3,22 @@ import os, cv2, numpy as np
 from . import vio
 
 
-def run(proj, every=4):
+def run(proj, every=None, progress=None):
+    """Samples for OCR are taken every `every` frames (default ~1/6 s) but only written when the
+    picture changed since the last written sample - long static stretches (interviews, still
+    shots) cost one sample, which keeps hour-long episodes practical."""
+    import shutil
     P = vio.load_json(os.path.join(proj, "project.json"))
     info = P["info"]
     w, h = info["width"], info["height"]
+    fps = info["fps"]
+    every = every or max(3, int(round(fps / 6)))
+    total = max(1, int(info.get("duration", 0) * fps))
     sdir = os.path.join(proj, "samples")
+    shutil.rmtree(sdir, ignore_errors=True)
     os.makedirs(sdir, exist_ok=True)
     feats, diffs, prev, prevh = [], [], None, None
+    samples, last_s, last_f = [], None, -10 ** 9
     n = 0
     for i, f in enumerate(vio.frames(P["video"], w, h)):
         small = cv2.resize(f, (192, 108), interpolation=cv2.INTER_AREA)
@@ -26,8 +35,15 @@ def run(proj, every=4):
         feats.append(float(g.mean()))
         prev, prevh = g, hist
         if i % every == 0:
-            cv2.imwrite(os.path.join(sdir, f"{i:06d}.jpg"), f, [cv2.IMWRITE_JPEG_QUALITY, 92])
+            # change test on a 64x36 block grid: any block that changed means new content
+            sm = cv2.resize(g, (64, 36), interpolation=cv2.INTER_AREA)
+            changed = last_s is None or float(np.abs(sm - last_s).max()) > 6 or i - last_f >= 10 * fps
+            if changed:
+                cv2.imwrite(os.path.join(sdir, f"{i:06d}.jpg"), f, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                samples.append(i); last_s = sm; last_f = i
         n = i + 1
+        if progress and i % 200 == 0:
+            progress(min(1.0, i / total))
     d = np.array(diffs)
     score = d[:, 0] * 0.7 + d[:, 1] * 2.0
     cuts = [0]
@@ -41,7 +57,7 @@ def run(proj, every=4):
     P["n_frames"] = n
     vio.save_json(os.path.join(proj, "project.json"), P)
     vio.save_json(os.path.join(proj, "shots.json"), {"cuts": cuts, "n_frames": n,
-                  "score": [round(float(s), 4) for s in score], "every": every})
+                  "score": [round(float(s), 4) for s in score], "every": every, "samples": samples})
     return cuts
 
 
