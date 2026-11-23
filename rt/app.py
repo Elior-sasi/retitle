@@ -1330,11 +1330,21 @@ def _handoff(path):
     return False
 
 
+def close_splash():
+    """The start-up picture (PyInstaller splash) goes away once the window is ready."""
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except Exception:
+        pass
+
+
 def main():
     global WINDOW
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     if args and os.path.isfile(args[0]):
         if _handoff(os.path.abspath(args[0])):
+            close_splash()
             return
         try:
             open_file(os.path.abspath(args[0]))
@@ -1371,6 +1381,7 @@ def main():
     url = f"http://127.0.0.1:{port}/"
     print("Retitle:", url)
     if "--server" in sys.argv or "--no-browser" in sys.argv:
+        close_splash()
         srv.serve_forever(); return
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     if "--browser" not in sys.argv:
@@ -1382,12 +1393,15 @@ def main():
             except TypeError:                 # older pywebview without `maximized`
                 WINDOW = webview.create_window("Retitle", url, **kw)
             print("window: pywebview", flush=True)
+            WINDOW.events.loaded += lambda *a: close_splash()       # the page is drawn: swap picture for window
+            threading.Timer(25, close_splash).start()                # never keep it longer than that
             webview.start()
             return
         except Exception:
             traceback.print_exc()
             print("window: fallback to browser", flush=True)
             WINDOW = None
+    close_splash()
     webbrowser.open(url)
     while True:
         time.sleep(3600)
