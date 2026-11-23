@@ -18,11 +18,63 @@ FRAMES = {}                      # decoded source frames (small LRU)
 LAYERS = {}                      # id -> (mtime, premultiplied layer)
 
 
+# settings that travel between computers through the sync folder (secrets and recent files stay local)
+SHARED = ("glossary", "content", "src_lang", "model", "srt_rle", "whisper_model", "whisper_lang", "ui_fs")
+
+
+def sync_root():
+    d = vio.load_json(CFG, {}).get("sync_dir", "")
+    return os.path.join(d, "Retitle") if d and os.path.isdir(d) else ""
+
+
+def detect_sync_dirs():
+    """Folders that a cloud client already syncs on this computer (free OneDrive / Google Drive / Dropbox)."""
+    home = os.path.expanduser("~")
+    c = [os.environ.get("OneDrive"), os.environ.get("OneDriveConsumer"), os.path.join(home, "OneDrive"),
+         os.path.join(home, "Google Drive"), "G:\\My Drive", "G:\\האחסון שלי", os.path.join(home, "Dropbox")]
+    out = []
+    for x in c:
+        if x and os.path.isdir(x) and os.path.normcase(x) not in [os.path.normcase(y) for y in out]:
+            out.append(x)
+    return out
+
+
+def enable_sync(d):
+    """Use folder d for series + shared settings. Local series are copied in (newer file wins)."""
+    import shutil
+    from . import series
+    s = vio.load_json(CFG, {})
+    old_series = series.root()
+    s["sync_dir"] = d
+    os.makedirs(CFG_DIR, exist_ok=True)
+    vio.save_json(CFG, s)
+    if not d:
+        return
+    root = os.path.join(d, "Retitle")
+    os.makedirs(root, exist_ok=True)
+    new_series = series.root()
+    if os.path.isdir(old_series) and os.path.normcase(old_series) != os.path.normcase(new_series):
+        for dirpath, _, files in os.walk(old_series):
+            rel = os.path.relpath(dirpath, old_series)
+            os.makedirs(os.path.join(new_series, rel), exist_ok=True)
+            for f in files:
+                a, b = os.path.join(dirpath, f), os.path.join(new_series, rel, f)
+                if not os.path.exists(b) or os.path.getmtime(a) > os.path.getmtime(b):
+                    shutil.copy2(a, b)
+    sh = os.path.join(root, "settings.json")
+    if not os.path.exists(sh):                     # first computer: publish its settings
+        vio.save_json(sh, {k: s[k] for k in SHARED if k in s})
+
+
 def settings():
     s = {"api_key": "", "model": "claude-sonnet-5-5", "glossary": "", "src_lang": "eng", "content": "trailer",
          "srt_rle": True, "gh_token": "",
          "whisper_model": "large-v3", "whisper_lang": ""}
     s.update(vio.load_json(CFG, {}))
+    r = sync_root()
+    if r:
+        sh = vio.load_json(os.path.join(r, "settings.json"), {})
+        s.update({k: v for k, v in sh.items() if k in SHARED})
     return s
 
 
@@ -318,6 +370,19 @@ PICK = {"video": ("Video (*.mp4;*.mov;*.mkv;*.m4v;*.avi;*.webm)", "Video", "*.mp
         "srt": ("Subtitles (*.srt)", "SRT", "*.srt"),
         "png": ("PNG image (*.png)", "PNG", "*.png"),
         "retitle": ("Retitle project (*.retitle)", "Retitle", "*.retitle")}
+
+
+def pick_folder():
+    if WINDOW is not None:
+        import webview
+        r = WINDOW.create_file_dialog(webview.FOLDER_DIALOG)
+        return (r[0] if isinstance(r, (list, tuple)) else r) if r else ""
+    import tkinter as tk
+    from tkinter import filedialog
+    r = tk.Tk(); r.withdraw(); r.attributes("-topmost", True)
+    p = filedialog.askdirectory()
+    r.destroy()
+    return p
 
 
 def save_file(name, folder):
@@ -645,6 +710,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/settings":
             s = settings(); s["api_key_set"] = bool(s.get("api_key")); s["api_key"] = ""
             s["gh_token_set"] = bool(s.get("gh_token")); s["gh_token"] = ""
+            s["sync_dir"] = vio.load_json(CFG, {}).get("sync_dir", ""); s["sync_found"] = detect_sync_dirs()
             return self._send(200, s)
         if u.path == "/api/fonts":
             from . import render
@@ -719,7 +785,23 @@ class H(BaseHTTPRequestHandler):
                 s[k] = v
             os.makedirs(CFG_DIR, exist_ok=True)
             vio.save_json(CFG, s)
+            r = sync_root()
+            if r:
+                vio.save_json(os.path.join(r, "settings.json"), {k: s[k] for k in SHARED if k in s})
             return self._send(200, {"ok": True})
+        if u.path == "/api/sync":
+            d = b.get("dir")
+            if d == "pick":
+                d = pick_folder()
+                if not d:
+                    return self._send(200, {"ok": False})
+            if d and not os.path.isdir(d):
+                return self._send(200, {"ok": False, "error": "התיקייה לא קיימת"})
+            try:
+                enable_sync(d or "")
+            except Exception as e:
+                return self._send(200, {"ok": False, "error": str(e)})
+            return self._send(200, {"ok": True, "dir": d or ""})
         if u.path == "/api/fullscreen":
             global FULL
             on = bool(b.get("on"))

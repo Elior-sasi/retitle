@@ -13,8 +13,12 @@ STYLE_KEYS = ("font", "weight", "size_ratio", "fill", "align", "nudge_x", "nudge
 
 
 def root():
-    base = os.environ.get("APPDATA") or os.path.expanduser("~/.config")
-    return os.path.join(base, "Retitle", "series")
+    """Series live in the sync folder when one is set (shared between computers), else in AppData."""
+    base = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), "Retitle")
+    d = vio.load_json(os.path.join(base, "settings.json"), {}).get("sync_dir", "")
+    if d and os.path.isdir(d):
+        return os.path.join(d, "Retitle", "series")
+    return os.path.join(base, "series")
 
 
 def _file(name):
@@ -71,7 +75,7 @@ def _entry(t, proj, name):
             dst = os.path.join(d, h + ".png")
             if not os.path.exists(dst):
                 shutil.copyfile(src, dst)
-            e["logo"] = dst
+            e["logo"] = os.path.relpath(dst, root())     # relative: the sync folder sits elsewhere on each computer
     return e
 
 
@@ -125,10 +129,11 @@ def apply(name, proj, T, only=None):
             st[sk] = v
         if e.get("style"):
             t["style_locked"] = sorted(set(t.get("style_locked", [])) | set(e["style"]))
-        if e.get("logo") and os.path.isfile(e["logo"]):
+        logo = os.path.join(root(), e["logo"]) if e.get("logo") else ""
+        if logo and os.path.isfile(logo):
             os.makedirs(os.path.join(proj, "logos"), exist_ok=True)
-            shutil.copyfile(e["logo"], os.path.join(proj, "logos", f"{t['id']}.png"))
-            t["layer"] = {"type": "image", "path": f"logos/{t['id']}.png", "t": os.path.getmtime(e["logo"])}
+            shutil.copyfile(logo, os.path.join(proj, "logos", f"{t['id']}.png"))
+            t["layer"] = {"type": "image", "path": f"logos/{t['id']}.png", "t": os.path.getmtime(logo)}
         elif (t.get("layer") or {}).get("type") == "image" and t.get("from_series"):
             t.pop("layer", None)
         t["from_series"] = True

@@ -204,7 +204,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 .db{padding:6px 18px 10px;overflow:auto;max-height:70vh}
 .df{display:flex;gap:8px;justify-content:flex-end;padding:10px 18px 14px}
 .frm{display:grid;grid-template-columns:200px 1fr;gap:8px 12px;align-items:center}
-.frm label{color:var(--mut)}
+.frm label,.frm .lbl{color:var(--mut)}
 .frm input,.frm select,.frm textarea{background:#141414;border:1px solid var(--line2);border-radius:3px;min-height:30px;padding:4px 8px}
 .kt{border-collapse:collapse;width:100%}
 .kt td{padding:4px 8px;border-bottom:1px solid #3a3a3a}
@@ -342,6 +342,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-rle">SRT</label><label class="chk"><input type="checkbox" id="s-rle"> תו RLE בתחילת כל שורה (לתצוגת עברית תקינה)</label>
     <label for="s-gh">טוקן GitHub לעדכונים<br><span class="unit">לריפו פרטי, קריאה בלבד</span></label>
     <div><input type="password" id="s-gh" dir="ltr" autocomplete="off" aria-describedby="ghset" style="width:100%"><div id="ghset" class="unit"></div></div>
+    <span class="lbl" id="sync-l">סנכרון בין מחשבים<br><span class="unit">חינם, דרך OneDrive או Google Drive</span></span>
+    <div role="group" aria-labelledby="sync-l"><div id="sync-st" role="status"></div><div class="row2" id="sync-b"></div></div>
     <label for="s-fs">גודל טקסט בממשק</label>
     <select id="s-fs"><option value="13">קטן (כמו Adobe)</option><option value="14">רגיל</option><option value="16">גדול</option><option value="18">גדול מאוד</option></select>
   </div></div>
@@ -706,7 +708,15 @@ function renderAll(){renderList();renderInsp();renderTimeline();updTime();$('#we
 // ================================================================ dialogs
 function openDlg(id){closeMenu(true);const d=$(id);if(d.open)return;d.showModal();const f=d.querySelector('input,select,textarea,button');if(f)f.focus()}
 document.querySelectorAll('dialog [data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog').close()));
-async function loadSettings(){const s=await api('/api/settings');$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
+function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren();
+  st.textContent=s.sync_dir?'מסונכרן דרך: ':'לא מסונכרן. הסדרות, מילון השמות וההעדפות נשמרים רק במחשב הזה.';
+  if(s.sync_dir)st.append(el('bdi',{dir:'ltr',text:s.sync_dir}));
+  const go=async d=>{const r=await api('/api/sync',{dir:d});if(r.error)say(r.error,true);else if(r.ok)say(r.dir?'הסנכרון הופעל':'הסנכרון בוטל');renderSync(await api('/api/settings'))};
+  for(const d of s.sync_found||[])if(d!==s.sync_dir){const nm=/onedrive/i.test(d)?'OneDrive':/dropbox/i.test(d)?'Dropbox':'Google Drive';
+    bx.append(el('button',{class:'mini',text:'השתמש ב-'+nm,title:d,onclick:()=>go(d)}))}
+  bx.append(el('button',{class:'mini',text:'בחר תיקייה מסונכרנת...',onclick:()=>go('pick')}));
+  if(s.sync_dir)bx.append(el('button',{class:'mini',text:'בטל סנכרון',onclick:()=>go('')}))}
+async function loadSettings(){const s=await api('/api/settings');renderSync(s);$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
   $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
