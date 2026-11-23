@@ -149,6 +149,18 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 .item .meta{color:var(--mut);font-size:.85em;display:flex;gap:6px;flex-wrap:wrap}
 .chip{border:1px solid currentColor;border-radius:9px;padding:0 6px;font-size:.82em;line-height:1.35}
 .row2{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0}
+.fontbtn{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;background:#1b1b1b;border:1px solid #444;border-radius:3px;color:#fff;padding:2px 10px;cursor:pointer;text-align:start}
+.fontbtn:hover,.fontbtn:focus-visible{border-color:var(--blue);outline:none}
+.fontbtn .fn{color:var(--mut);font-size:.85em;white-space:nowrap}.fontbtn .fs{font-size:1.35em;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#d-font{width:min(760px,96vw)}
+#fp-top{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+#fp-q{flex:1;min-width:200px;height:36px;font-size:1.05em}
+#fp-list{height:min(56vh,560px);overflow:auto;border:1px solid #333;border-radius:4px;background:#161616}
+.fopt{display:flex;flex-direction:column;align-items:stretch;width:100%;background:none;border:0;border-bottom:1px solid #262626;color:#fff;padding:6px 12px;cursor:pointer;text-align:start;font:inherit}
+.fopt:hover,.fopt:focus-visible{background:#22324a;outline:none}.fopt[aria-current=true]{background:#24456b}
+.fopt .fh{display:flex;gap:8px;align-items:center;color:#cfcfcf;font-size:.85em}.fopt .fh .chip{font-size:.8em}
+.fopt .fsmp{font-size:1.9em;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl}
+#fp-count{color:var(--mut);font-size:.9em}
 .chip.warn{color:var(--warn)}.chip.ser{color:#b9a6ff}.chip.ser.warn{color:var(--warn)}.chip.off{color:var(--mut)}
 .pfoot{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #1a1a1a}
 .pfoot .qbtn{flex:1;justify-content:center}
@@ -363,6 +375,13 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <label for="sr-new">או סדרה חדשה</label><input id="sr-new" dir="auto" placeholder="שם הסדרה">
   </div><p class="note">כל כותרת שתתרגם נשמרת בסדרה: העברית, להשאיר או למחוק, גופן, גודל, צבע ולוגו. בפרק הבא, כותרות עם אותו טקסט מקור יתמלאו לבד ויסומנו "מהסדרה".</p></div>
   <div class="df"><button class="qbtn" data-close>ביטול</button><button class="cta" id="sr-save">שמור</button></div></dialog>
+<dialog id="d-font" aria-labelledby="df-h"><h2 class="dh" id="df-h">גופן</h2><div class="db">
+  <div id="fp-top"><input id="fp-q" type="search" dir="auto" placeholder="חיפוש גופן" aria-label="חיפוש גופן" aria-controls="fp-list" autocomplete="off">
+  <div class="seg" role="group" aria-label="מקור" id="fp-src"></div></div>
+  <div id="fp-count" role="status" aria-live="polite"></div>
+  <div id="fp-list" role="list" aria-label="גופנים"></div>
+  <p class="note">Google: כל הגופנים עם עברית, יורדים בבחירה הראשונה. מערכת: מה שמותקן ב-Windows. Adobe: גופנים שהפעלת ב-Creative Cloud. שלי: קבצים שייבאת.</p></div>
+  <div class="df"><button class="qbtn" id="fp-import">ייבוא גופן (TTF / OTF)...</button><button class="qbtn" id="fp-refresh">רענן רשימה</button><button class="cta" data-close>סגור</button></div></dialog>
 <dialog id="d-recent" aria-labelledby="dr-h"><h2 class="dh" id="dr-h">פרויקטים אחרונים</h2><div class="db" id="recent2"></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
 <dialog id="d-relink" aria-labelledby="dk-h"><h2 class="dh" id="dk-h">הסרטון לא נמצא</h2><div class="db"><p id="relink-msg"></p><p class="note">אם הזזת או שינית את שם הסרטון, אתר אותו והפרויקט ימשיך מאיפה שעצרת.</p></div><div class="df"><button class="qbtn" data-close>לא עכשיו</button><button class="cta" id="relink-go">אתר את הסרטון...</button></div></dialog>
 <dialog id="d-log" aria-labelledby="dl-h"><h2 class="dh" id="dl-h">יומן פעולות</h2><div class="db"><div id="logbox" tabindex="0"></div></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
@@ -506,8 +525,9 @@ function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;con
     else if(d.from_series)sb.push(el('p',{class:'note',text:`מולא אוטומטית מהסדרה "${S.series}". שינוי כאן יחול רק על הפרק הזה, ואז תוכל לבחור לעדכן את כל הסדרה.`}));
     else sb.push(el('p',{class:'note',text:`נשמר לסדרה "${S.series}" ויופיע אוטומטית בפרקים הבאים.`}));
     box.append(group('סדרה',true,...sb))}
-  const fs=el('select',{class:'sel',id:'i-font'});for(const[n,v]of Object.entries(S.fonts))fs.append(el('option',{value:n,text:`${n} - ${v.he||v.tags}`}));fs.value=t.style.font||'Heebo';
-  fs.addEventListener('change',()=>{oneShot(()=>t.style.font=fs.value);saveTitle(t.id,0)});
+  const curF=t.style.font||'Heebo';
+  const fs=el('button',{class:'fontbtn',id:'i-font','aria-haspopup':'dialog','aria-label':'גופן: '+curF+'. פתח רשימת גופנים',onclick:()=>openFontPicker(t)},
+    el('span',{class:'fn',dir:'ltr',text:curF}),el('span',{class:'fs',dir:'rtl',text:t.he||'אבגד',style:`font-family:${face(curF)}`}));
   const col=el('input',{type:'color',class:'swatch',id:'i-col',value:hex(t.style.fill||st.fill)});
   col.addEventListener('focus',beginEdit);col.addEventListener('input',()=>{beginEdit();t.style.fill=bgr(col.value);saveTitle(t.id,250)});col.addEventListener('change',endEdit);
   if(curMode!=='replace'){box.append(group('תזמון',true,...timingRows(()=>t.in,()=>t.out,
@@ -859,6 +879,38 @@ $('#sr-save').onclick=async()=>{const name=$('#sr-new').value.trim()||$('#sr-sel
   say(name?`הפרויקט שייך לסדרה "${name}". ${r.applied?r.applied+' כותרות מולאו מהסדרה. ':''}${r.learned?r.learned+' כותרות נשמרו לסדרה.':''}`:'הפרויקט לא שייך לסדרה')};
 async function seriesAct(a,id){await flush();const r=await api('/api/series/'+a,{id});await reloadData(false);renderAll();refreshFrame();
   say(r.ok?(a==='push'?'עודכן בכל הסדרה. פרקים אחרים יתעדכנו כשתפתח אותם.':'הוחזר לגרסת הסדרה'):'לא בוצע',!r.ok)}
+// ---------------------------------------------------------------- fonts: every Hebrew font (built-in, Google, Windows, Adobe, imported)
+const SRCN={'built-in':'מובנה',google:'Google',system:'מערכת',adobe:'Adobe',mine:'שלי'};const FACES=new Map();
+function face(n){if(!FACES.has(n)){const id='rtf'+FACES.size;FACES.set(n,id);const e=(S.fonts||{})[n]||{};
+    const src=e.installed===false&&e.url?e.url:'/api/fontfile?name='+encodeURIComponent(n);
+    try{new FontFace(id,`url("${src}")`).load().then(f=>document.fonts.add(f)).catch(()=>{})}catch(err){}}
+  return `"${FACES.get(n)}", "Segoe UI", sans-serif`}
+let fpT=null,fpSrc='all',fpObs=null;
+function openFontPicker(t){fpT=t;$('#fp-q').value='';renderFontSrc();renderFonts();openDlg('#d-font');$('#fp-q').focus()}
+function renderFontSrc(){const box=$('#fp-src');box.replaceChildren();const cnt={all:0};for(const v of Object.values(S.fonts))cnt[v.source]=(cnt[v.source]||0)+1,cnt.all++;
+  for(const[k,n]of[['all','הכל'],['built-in','מובנה'],['google','Google'],['system','מערכת'],['adobe','Adobe'],['mine','שלי']]){if(k!=='all'&&!cnt[k])continue;
+    box.append(el('button',{text:`${n} (${cnt[k]||0})`,'aria-pressed':String(fpSrc===k),onclick:()=>{fpSrc=k;renderFontSrc();renderFonts()}}))}}
+function renderFonts(){const list=$('#fp-list');list.replaceChildren();const q=$('#fp-q').value.trim().toLowerCase();const cur=(fpT&&fpT.style.font)||'Heebo';
+  const sample=(fpT&&fpT.he)||'אבגד הוזח טיכלמנ';
+  const names=Object.keys(S.fonts).filter(n=>(fpSrc==='all'||S.fonts[n].source===fpSrc)&&(!q||n.toLowerCase().includes(q)||(S.fonts[n].he||'').includes(q)))
+    .sort((a,b)=>(b===cur)-(a===cur)||a.localeCompare(b));
+  $('#fp-count').textContent=`${names.length} גופנים`;
+  if(fpObs)fpObs.disconnect();fpObs=new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting){const smp=e.target.querySelector('.fsmp');smp.style.fontFamily=face(e.target.dataset.f);fpObs.unobserve(e.target)}},{root:list,rootMargin:'200px'});
+  for(const n of names){const v=S.fonts[n];
+    const b=el('button',{class:'fopt',role:'listitem','data-f':n,'aria-current':String(n===cur),'aria-label':`${n}${v.he?', '+v.he:''}, ${SRCN[v.source]||''}${v.installed===false?', יורד בבחירה':''}${n===cur?', נבחר':''}`},
+      el('span',{class:'fh'},el('bdi',{dir:'ltr',text:n}),el('span',{class:'chip off',text:SRCN[v.source]||v.source}),v.installed===false?el('span',{class:'chip off',text:'יורד בבחירה'}):null,v.he?el('span',{text:v.he}):null),
+      el('span',{class:'fsmp','aria-hidden':'true',text:sample}));
+    b.onclick=()=>pickFont(n);list.append(b);fpObs.observe(b)}}
+async function pickFont(n){if(!fpT)return;$('#d-font').close();const t=fpT;
+  if(S.fonts[n]&&S.fonts[n].installed===false){say('מוריד את הגופן '+n+'...');S.fonts[n].installed=true}
+  oneShot(()=>t.style.font=n);saveTitle(t.id,0);renderInsp();say('גופן: '+n)}
+$('#fp-q').addEventListener('input',()=>renderFonts());
+$('#fp-q').addEventListener('keydown',e=>{if(e.key==='ArrowDown'){e.preventDefault();const f=$('#fp-list .fopt');if(f)f.focus()}});
+$('#fp-list').addEventListener('keydown',e=>{const a=document.activeElement;if(!a.classList.contains('fopt'))return;
+  if(e.key==='ArrowDown'){e.preventDefault();(a.nextElementSibling||a).focus()}else if(e.key==='ArrowUp'){e.preventDefault();(a.previousElementSibling||$('#fp-q')).focus()}});
+$('#fp-import').onclick=async()=>{const r=await api('/api/fonts/import',{});if(!r.ok)return;S.fonts=await api('/api/fonts?refresh=1');renderFontSrc();renderFonts();
+  say(`${r.added.length?'נוספו: '+r.added.join(', ')+'. ':''}${r.bad.length?'בלי אותיות עבריות, לא נוספו: '+r.bad.join(', '):''}`,!!r.bad.length&&!r.added.length)};
+$('#fp-refresh').onclick=async()=>{$('#fp-count').textContent='סורק גופנים...';S.fonts=await api('/api/fonts?refresh=1');renderFontSrc();renderFonts()};
 function openRecent(){renderRecent($('#recent2'));openDlg('#d-recent')}
 function askRelink(){$('#relink-msg').textContent='הסרטון של הפרויקט לא נמצא במקום: '+S.data.project.video;openDlg('#d-relink')}
 $('#relink-go').onclick=async()=>{$('#d-relink').close();const r=await api('/api/relink',{});if(r.error)return say(r.error,true);if(r.ok)await loadProject(S.proj)};

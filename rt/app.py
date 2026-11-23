@@ -369,7 +369,22 @@ def start(name):
 PICK = {"video": ("Video (*.mp4;*.mov;*.mkv;*.m4v;*.avi;*.webm)", "Video", "*.mp4 *.mov *.mkv *.m4v *.avi *.webm"),
         "srt": ("Subtitles (*.srt)", "SRT", "*.srt"),
         "png": ("PNG image (*.png)", "PNG", "*.png"),
-        "retitle": ("Retitle project (*.retitle)", "Retitle", "*.retitle")}
+        "retitle": ("Retitle project (*.retitle)", "Retitle", "*.retitle"),
+        "font": ("Fonts (*.ttf;*.otf;*.ttc)", "Fonts", "*.ttf *.otf *.ttc")}
+
+
+def pick_files(kind):
+    wv, tkname, tkpat = PICK[kind]
+    if WINDOW is not None:
+        import webview
+        r = WINDOW.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=True, file_types=(wv, "All files (*.*)"))
+        return list(r) if r else []
+    import tkinter as tk
+    from tkinter import filedialog
+    r = tk.Tk(); r.withdraw(); r.attributes("-topmost", True)
+    p = filedialog.askopenfilenames(filetypes=[(tkname, tkpat), ("All", "*.*")])
+    r.destroy()
+    return list(p)
 
 
 def pick_folder():
@@ -713,8 +728,27 @@ class H(BaseHTTPRequestHandler):
             s["sync_dir"] = vio.load_json(CFG, {}).get("sync_dir", ""); s["sync_found"] = detect_sync_dirs()
             return self._send(200, s)
         if u.path == "/api/fonts":
-            from . import render
-            return self._send(200, vio.load_json(os.path.join(render.FONT_DIR, "catalog.json"), {}))
+            from . import fontlib
+            cat = fontlib.catalog(refresh=q.get("refresh", ["0"])[0] == "1")
+            return self._send(200, {n: {"he": v.get("he", ""), "source": v["source"], "installed": v["installed"],
+                                        "url": v.get("url", "") if not v["installed"] else ""} for n, v in cat.items()})
+        if u.path == "/api/fontfile":
+            from . import fontlib
+            try:
+                p = fontlib.ensure(q.get("name", [""])[0])
+            except Exception:
+                p = None
+            if not p:
+                return self._send(404, {"error": "font"})
+            with open(p, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "font/otf" if p.lower().endswith(".otf") else "font/ttf")
+            self.send_header("Cache-Control", "max-age=86400")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if not STATE["proj"]:
             return self._send(400, {"error": "no project"})
         if u.path == "/api/project":
@@ -789,6 +823,13 @@ class H(BaseHTTPRequestHandler):
             if r:
                 vio.save_json(os.path.join(r, "settings.json"), {k: s[k] for k in SHARED if k in s})
             return self._send(200, {"ok": True})
+        if u.path == "/api/fonts/import":
+            from . import fontlib
+            paths = pick_files("font")
+            if not paths:
+                return self._send(200, {"ok": False})
+            added, bad = fontlib.import_files(paths)
+            return self._send(200, {"ok": True, "added": added, "bad": bad})
         if u.path == "/api/sync":
             d = b.get("dir")
             if d == "pick":
@@ -994,6 +1035,13 @@ def main():
             open_file(os.path.abspath(args[0]))
         except Exception:
             traceback.print_exc()
+    def _warm():
+        try:
+            from . import fontlib
+            fontlib.catalog()
+        except Exception:
+            traceback.print_exc()
+    threading.Thread(target=_warm, daemon=True).start()
     port = free_port()
     srv = ThreadingHTTPServer(("127.0.0.1", port), H)
     srv.daemon_threads = True

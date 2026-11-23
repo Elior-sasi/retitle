@@ -1,0 +1,823 @@
+{
+"Alef": {
+"dir": "ofl/alef",
+"cat": "sans_serif",
+"files": [
+[
+"Alef-Regular.ttf",
+400
+],
+[
+"Alef-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Amatic SC": {
+"dir": "ofl/amaticsc",
+"cat": "handwriting",
+"files": [
+[
+"AmaticSC-Regular.ttf",
+400
+],
+[
+"AmaticSC-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Arimo": {
+"dir": "ofl/arimo",
+"cat": "sans_serif",
+"files": [
+[
+"Arimo[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Assistant": {
+"dir": "ofl/assistant",
+"cat": "sans_serif",
+"files": [
+[
+"Assistant[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Bellefair": {
+"dir": "ofl/bellefair",
+"cat": "serif",
+"files": [
+[
+"Bellefair-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Bona Nova": {
+"dir": "ofl/bonanova",
+"cat": "serif",
+"files": [
+[
+"BonaNova-Regular.ttf",
+400
+],
+[
+"BonaNova-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Bona Nova SC": {
+"dir": "ofl/bonanovasc",
+"cat": "serif",
+"files": [
+[
+"BonaNovaSC-Regular.ttf",
+400
+],
+[
+"BonaNovaSC-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Cardo": {
+"dir": "ofl/cardo",
+"cat": "serif",
+"files": [
+[
+"Cardo-Regular.ttf",
+400
+],
+[
+"Cardo-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Cascadia Code": {
+"dir": "ofl/cascadiacode",
+"cat": "sans_serif",
+"files": [
+[
+"CascadiaCode[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Cascadia Mono": {
+"dir": "ofl/cascadiamono",
+"cat": "sans_serif",
+"files": [
+[
+"CascadiaMono[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Cousine": {
+"dir": "ofl/cousine",
+"cat": "monospace",
+"files": [
+[
+"Cousine-Regular.ttf",
+400
+],
+[
+"Cousine-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"David Libre": {
+"dir": "ofl/davidlibre",
+"cat": "serif",
+"files": [
+[
+"DavidLibre-Regular.ttf",
+400
+],
+[
+"DavidLibre-Medium.ttf",
+500
+],
+[
+"DavidLibre-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Frank Ruhl Libre": {
+"dir": "ofl/frankruhllibre",
+"cat": "serif",
+"files": [
+[
+"FrankRuhlLibre[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Fredoka": {
+"dir": "ofl/fredoka",
+"cat": "sans_serif",
+"files": [
+[
+"Fredoka[wdth,wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Google Sans": {
+"dir": "ofl/googlesans",
+"cat": "sans_serif",
+"files": [
+[
+"GoogleSans[GRAD,opsz,wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Gveret Levin": {
+"dir": "ofl/gveretlevin",
+"cat": "handwriting",
+"files": [
+[
+"GveretLevin-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Handjet": {
+"dir": "ofl/handjet",
+"cat": "display",
+"files": [
+[
+"Handjet[ELGR,ELSH,wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Heebo": {
+"dir": "ofl/heebo",
+"cat": "sans_serif",
+"files": [
+[
+"Heebo[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"IBM Plex Sans Hebrew": {
+"dir": "ofl/ibmplexsanshebrew",
+"cat": "sans_serif",
+"files": [
+[
+"IBMPlexSansHebrew-Thin.ttf",
+100
+],
+[
+"IBMPlexSansHebrew-ExtraLight.ttf",
+200
+],
+[
+"IBMPlexSansHebrew-Light.ttf",
+300
+],
+[
+"IBMPlexSansHebrew-Regular.ttf",
+400
+],
+[
+"IBMPlexSansHebrew-Medium.ttf",
+500
+],
+[
+"IBMPlexSansHebrew-SemiBold.ttf",
+600
+],
+[
+"IBMPlexSansHebrew-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Karantina": {
+"dir": "ofl/karantina",
+"cat": "display",
+"files": [
+[
+"Karantina-Light.ttf",
+300
+],
+[
+"Karantina-Regular.ttf",
+400
+],
+[
+"Karantina-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Libertinus Serif": {
+"dir": "ofl/libertinusserif",
+"cat": "serif",
+"files": [
+[
+"LibertinusSerif-Regular.ttf",
+400
+],
+[
+"LibertinusSerif-SemiBold.ttf",
+600
+],
+[
+"LibertinusSerif-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Lunasima": {
+"dir": "ofl/lunasima",
+"cat": "sans_serif",
+"files": [
+[
+"Lunasima-Regular.ttf",
+400
+],
+[
+"Lunasima-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Miriam Libre": {
+"dir": "ofl/miriamlibre",
+"cat": "sans_serif",
+"files": [
+[
+"MiriamLibre[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"M PLUS 1p": {
+"dir": "ofl/mplus1p",
+"cat": "sans_serif",
+"files": [
+[
+"MPLUS1p-Thin.ttf",
+100
+],
+[
+"MPLUS1p-Light.ttf",
+300
+],
+[
+"MPLUS1p-Regular.ttf",
+400
+],
+[
+"MPLUS1p-Medium.ttf",
+500
+],
+[
+"MPLUS1p-Bold.ttf",
+700
+],
+[
+"MPLUS1p-ExtraBold.ttf",
+800
+],
+[
+"MPLUS1p-Black.ttf",
+900
+]
+],
+"variable": false
+},
+"M PLUS Rounded 1c": {
+"dir": "ofl/mplusrounded1c",
+"cat": "sans_serif",
+"files": [
+[
+"MPLUSRounded1c-Thin.ttf",
+100
+],
+[
+"MPLUSRounded1c-Light.ttf",
+300
+],
+[
+"MPLUSRounded1c-Regular.ttf",
+400
+],
+[
+"MPLUSRounded1c-Medium.ttf",
+500
+],
+[
+"MPLUSRounded1c-Bold.ttf",
+700
+],
+[
+"MPLUSRounded1c-ExtraBold.ttf",
+800
+],
+[
+"MPLUSRounded1c-Black.ttf",
+900
+]
+],
+"variable": false
+},
+"Noto Rashi Hebrew": {
+"dir": "ofl/notorashihebrew",
+"cat": "serif",
+"files": [
+[
+"NotoRashiHebrew[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Noto Sans Hebrew": {
+"dir": "ofl/notosanshebrew",
+"cat": "sans_serif",
+"files": [
+[
+"NotoSansHebrew[wdth,wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Noto Serif Hebrew": {
+"dir": "ofl/notoserifhebrew",
+"cat": "serif",
+"files": [
+[
+"NotoSerifHebrew[wdth,wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Open Sans": {
+"dir": "ofl/opensans",
+"cat": "sans_serif",
+"files": [
+[
+"OpenSans[wdth,wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Playpen Sans Hebrew": {
+"dir": "ofl/playpensanshebrew",
+"cat": "handwriting",
+"files": [
+[
+"PlaypenSansHebrew[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Rubik": {
+"dir": "ofl/rubik",
+"cat": "sans_serif",
+"files": [
+[
+"Rubik[wght].ttf",
+400
+]
+],
+"variable": true
+},
+"Rubik 80s Fade": {
+"dir": "ofl/rubik80sfade",
+"cat": "display",
+"files": [
+[
+"Rubik80sFade-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Beastly": {
+"dir": "ofl/rubikbeastly",
+"cat": "display",
+"files": [
+[
+"RubikBeastly-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Broken Fax": {
+"dir": "ofl/rubikbrokenfax",
+"cat": "display",
+"files": [
+[
+"RubikBrokenFax-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Bubbles": {
+"dir": "ofl/rubikbubbles",
+"cat": "display",
+"files": [
+[
+"RubikBubbles-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Burned": {
+"dir": "ofl/rubikburned",
+"cat": "display",
+"files": [
+[
+"RubikBurned-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Dirt": {
+"dir": "ofl/rubikdirt",
+"cat": "display",
+"files": [
+[
+"RubikDirt-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Distressed": {
+"dir": "ofl/rubikdistressed",
+"cat": "display",
+"files": [
+[
+"RubikDistressed-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Doodle Shadow": {
+"dir": "ofl/rubikdoodleshadow",
+"cat": "display",
+"files": [
+[
+"RubikDoodleShadow-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Doodle Triangles": {
+"dir": "ofl/rubikdoodletriangles",
+"cat": "display",
+"files": [
+[
+"RubikDoodleTriangles-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Gemstones": {
+"dir": "ofl/rubikgemstones",
+"cat": "display",
+"files": [
+[
+"RubikGemstones-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Glitch": {
+"dir": "ofl/rubikglitch",
+"cat": "display",
+"files": [
+[
+"RubikGlitch-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Glitch Pop": {
+"dir": "ofl/rubikglitchpop",
+"cat": "display",
+"files": [
+[
+"RubikGlitchPop-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Iso": {
+"dir": "ofl/rubikiso",
+"cat": "display",
+"files": [
+[
+"RubikIso-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Lines": {
+"dir": "ofl/rubiklines",
+"cat": "display",
+"files": [
+[
+"RubikLines-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Maps": {
+"dir": "ofl/rubikmaps",
+"cat": "display",
+"files": [
+[
+"RubikMaps-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Marker Hatch": {
+"dir": "ofl/rubikmarkerhatch",
+"cat": "display",
+"files": [
+[
+"RubikMarkerHatch-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Maze": {
+"dir": "ofl/rubikmaze",
+"cat": "display",
+"files": [
+[
+"RubikMaze-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Microbe": {
+"dir": "ofl/rubikmicrobe",
+"cat": "display",
+"files": [
+[
+"RubikMicrobe-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Mono One": {
+"dir": "ofl/rubikmonoone",
+"cat": "sans_serif",
+"files": [
+[
+"RubikMonoOne-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Moonrocks": {
+"dir": "ofl/rubikmoonrocks",
+"cat": "display",
+"files": [
+[
+"RubikMoonrocks-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Pixels": {
+"dir": "ofl/rubikpixels",
+"cat": "display",
+"files": [
+[
+"RubikPixels-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Puddles": {
+"dir": "ofl/rubikpuddles",
+"cat": "display",
+"files": [
+[
+"RubikPuddles-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Scribble": {
+"dir": "ofl/rubikscribble",
+"cat": "display",
+"files": [
+[
+"RubikScribble-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Spray Paint": {
+"dir": "ofl/rubikspraypaint",
+"cat": "display",
+"files": [
+[
+"RubikSprayPaint-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Storm": {
+"dir": "ofl/rubikstorm",
+"cat": "display",
+"files": [
+[
+"RubikStorm-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Vinyl": {
+"dir": "ofl/rubikvinyl",
+"cat": "display",
+"files": [
+[
+"RubikVinyl-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Rubik Wet Paint": {
+"dir": "ofl/rubikwetpaint",
+"cat": "display",
+"files": [
+[
+"RubikWetPaint-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Secular One": {
+"dir": "ofl/secularone",
+"cat": "sans_serif",
+"files": [
+[
+"SecularOne-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Solitreo": {
+"dir": "ofl/solitreo",
+"cat": "handwriting",
+"files": [
+[
+"Solitreo-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Suez One": {
+"dir": "ofl/suezone",
+"cat": "serif",
+"files": [
+[
+"SuezOne-Regular.ttf",
+400
+]
+],
+"variable": false
+},
+"Tinos": {
+"dir": "ofl/tinos",
+"cat": "serif",
+"files": [
+[
+"Tinos-Regular.ttf",
+400
+],
+[
+"Tinos-Bold.ttf",
+700
+]
+],
+"variable": false
+},
+"Varela Round": {
+"dir": "ofl/varelaround",
+"cat": "sans_serif",
+"files": [
+[
+"VarelaRound-Regular.ttf",
+400
+]
+],
+"variable": false
+}
+}

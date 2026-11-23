@@ -134,6 +134,13 @@ def font_path(name):
     cat = vio.load_json(os.path.join(FONT_DIR, "catalog.json"), {})
     if name in cat:
         return os.path.join(FONT_DIR, cat[name]["file"])
+    from . import fontlib                     # Google (downloaded on first use), Windows, Adobe Fonts, imported
+    try:
+        p = fontlib.ensure(name)
+    except Exception:
+        p = None
+    if p:
+        return p
     p = os.path.join(FONT_DIR, name)
     if os.path.exists(p):
         return p
