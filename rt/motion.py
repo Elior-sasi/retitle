@@ -13,6 +13,7 @@ Results: t["anim"]["H"] (frame coords), t["anim"]["parts"], and motion/<id>/m<f>
 """
 import os, shutil
 import cv2, numpy as np
+PNG_FAST = [cv2.IMWRITE_PNG_COMPRESSION, 1]   # still lossless, faster to write
 from PIL import Image
 from . import vio
 
@@ -294,7 +295,7 @@ def refine(proj, t, gid, lines, parts_rects=None):
             core = cv2.resize(Mref, (V.shape[1], V.shape[0]), interpolation=cv2.INTER_AREA) > 0.5
             if core.any() and (float(V[core].std()) > 0.06 or float(np.percentile(V[core], 5)) < 0.55):
                 os.makedirs(mdir, exist_ok=True)
-                cv2.imwrite(os.path.join(mdir, f"m{f:06d}.png"), (V * 255).astype(np.uint8))
+                cv2.imwrite(os.path.join(mdir, f"m{f:06d}.png"), (V * 255).astype(np.uint8), PNG_FAST)
                 mattes.append(f)
             # light / colour: the original's colour against its reference colour, on visible fill pixels
             fillw = cv2.erode((fillw > 0.5).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0     # letter interiors only
@@ -307,7 +308,7 @@ def refine(proj, t, gid, lines, parts_rects=None):
                 dev = np.abs(G[vs]).max(1) if vs.any() else np.zeros(1)
                 if float(np.median(dev)) > 14:
                     os.makedirs(mdir, exist_ok=True)
-                    cv2.imwrite(os.path.join(mdir, f"g{f:06d}.png"), np.clip(G + 128, 0, 255).astype(np.uint8))
+                    cv2.imwrite(os.path.join(mdir, f"g{f:06d}.png"), np.clip(G + 128, 0, 255).astype(np.uint8), PNG_FAST)
                     gains.append(f)
     # to frame coordinates
     T = np.array([[1, 0, reg[0]], [0, 1, reg[1]], [0, 0, 1]], np.float64); Ti = np.linalg.inv(T)

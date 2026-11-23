@@ -70,6 +70,8 @@ def estimate(crop, words, stroke_hint=None):
         return None
     # erode a little so the colour sample is the fill, not the antialias edge
     inner = cv2.erode(core, np.ones((3, 3), np.uint8)) if core.sum() > 400 else core
+    if inner.sum() < 20:                      # thin letters: eroding leaves nothing, sample the core itself
+        inner = core
     fill_lab = np.median(lab[inner > 0], axis=0)
     dist = _wdist(lab[inner > 0], fill_lab)
     tol = float(np.clip(np.percentile(dist, 90) * 1.6 + 12, 22, 70))

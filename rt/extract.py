@@ -1,6 +1,7 @@
 """Pass 3: cache full-res region crops per card (group), estimate mask/style, refine exact in/out."""
 import os, glob, shutil
 import cv2, numpy as np
+PNG_FAST = [cv2.IMWRITE_PNG_COMPRESSION, 1]   # still lossless, faster to write
 from . import vio, masks
 from .shots import shot_of
 
@@ -20,6 +21,23 @@ def _region(lines, W, H):
     if any(t.get("logo_full") for t in lines):          # symbols / decorations around the text: look further
         m = int(max(160, 3.0 * h))
     return [int(max(0, x0 - m)), int(max(0, y0 - m)), int(min(W, x1 + m)), int(min(H, y1 + m))]
+
+
+def _cache_ok(lines, lo, hi, reg, d):
+    """The card's saved frames still cover what it needs, at the same area."""
+    if not os.path.isdir(d):
+        return False
+    for t in lines:
+        if not t.get("translate", True):
+            continue
+        if "mask" not in t or "cache" not in t or t.get("reextract") or t.get("warn"):
+            return False
+        if list(t.get("region") or []) != list(reg):
+            return False
+        c0, c1 = t["cache"]
+        if lo < c0 or hi > c1:
+            return False
+    return any(t.get("translate", True) for t in lines)
 
 
 def run(proj, pad=48, progress=None):
@@ -51,10 +69,12 @@ def run(proj, pad=48, progress=None):
                 lo -= 1
             while hi < eb - 1 and hi - b < lim and dist(hi, b) < 40:
                 hi += 1
+        d = os.path.join(proj, "cache", gid)
+        if _cache_ok(lines, lo, hi, reg, d):
+            continue                                  # nothing changed for this card: keep its frames
         for t in lines:
             t["region"] = reg
         jobs[gid] = (lo, hi, reg)
-        d = os.path.join(proj, "cache", gid)
         shutil.rmtree(d, ignore_errors=True)
         os.makedirs(d)
     if not jobs:
@@ -69,7 +89,7 @@ def run(proj, pad=48, progress=None):
             progress(0.8 * (i - first) / max(1, last - first))
         for gid, (lo, hi, (x0, y0, x1, y1)) in jobs.items():
             if lo <= i <= hi:
-                cv2.imwrite(os.path.join(proj, "cache", gid, f"{i:06d}.png"), f[y0:y1, x0:x1])
+                cv2.imwrite(os.path.join(proj, "cache", gid, f"{i:06d}.png"), f[y0:y1, x0:x1], PNG_FAST)
     # estimate mask + style per line at its reference frame, then refine in/out
     for k, (gid, lines) in enumerate(groups(T).items()):
         if progress:
@@ -161,24 +181,33 @@ def _grad(img):
 def _presence(proj, t, gid, frames):
     """Per frame: how much of this line is on screen (1 = like the reference frame).
     max of (a) colour-model pixel count and (b) correlation of edge structure with the
-    reference text - (b) still sees faint text during fades."""
+    reference text - (b) still sees faint text during fades.
+    Works on the line's own neighbourhood only (not the whole card), which is what makes long titles fast."""
     reg = t["region"]
-    bx = t["box"]
+    bx = t.get("text_box", t["box"])
     h = bx[3] - bx[1]
     box = [bx[0] - reg[0] - h, bx[1] - reg[1] - h, bx[2] - reg[0] + h, bx[3] - reg[1] + h]
     refimg = cv2.imread(os.path.join(proj, "cache", gid, f"{t['ref']:06d}.png"))
-    core = masks.make(refimg, {**t["mask"], "grow": 0, "shadow": None, "extra": []}, box) > 0
+    H, W = refimg.shape[:2]
+    m = 20                                             # margin for the 31 px top-hat inside masks.make
+    X0, Y0 = max(0, box[0] - m), max(0, box[1] - m)
+    X1, Y1 = min(W, box[2] + m), min(H, box[3] + m)
+    sub = lambda im: im[Y0:Y1, X0:X1]
+    sbox = [box[0] - X0, box[1] - Y0, box[2] - X0, box[3] - Y0]
+    params = {**t["mask"], "grow": 0, "shadow": None, "extra": []}
+    core = masks.make(sub(refimg), params, sbox) > 0
     band = cv2.dilate(core.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
-    gref = _grad(refimg)[band]
+    gref = _grad(sub(refimg))[band]
     gref = (gref - gref.mean()) / (gref.std() + 1e-6)
     cnt, cor = {}, {}
     for f in frames:
         img = cv2.imread(os.path.join(proj, "cache", gid, f"{f:06d}.png"))
         if img is None:
             continue
-        m = masks.make(img, {**t["mask"], "grow": 0, "shadow": None, "extra": []}, box)
-        cnt[f] = float((m > 0).sum())
-        g = _grad(img)[band]
+        si = sub(img)
+        mk = masks.make(si, params, sbox)
+        cnt[f] = float((mk > 0).sum())
+        g = _grad(si)[band]
         g = (g - g.mean()) / (g.std() + 1e-6)
         cor[f] = float((g * gref).mean())
     return cnt, cor

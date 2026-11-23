@@ -1,9 +1,10 @@
 """Pass 4: remove the source text. Background is rebuilt from neighbouring frames of the same shot
 (aligned with ECC, brightness matched, median) - real pixels, no blur. Only what is never visible
 in any neighbour is synthesised (FSR inpainting)."""
-import os, shutil, warnings
+import os, shutil, warnings, time
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 import cv2, numpy as np
+PNG_FAST = [cv2.IMWRITE_PNG_COMPRESSION, 1]   # still lossless, faster to write
 from . import vio, masks
 from .shots import shot_of
 from .extract import groups
@@ -337,11 +338,53 @@ def synth_cached(gid, f, img, hole, motion):
     return out
 
 
-def run(proj, only=None, progress=None):
-    P = vio.load_json(os.path.join(proj, "project.json"))
+def _card(args):
+    """Clean one card (all frames of one title group). Runs in a worker process."""
+    proj, gid = args
     S = vio.load_json(os.path.join(proj, "shots.json"))
     T = vio.load_json(os.path.join(proj, "titles.json"))
-    n = P["n_frames"]
+    n = vio.load_json(os.path.join(proj, "project.json"))["n_frames"]
+    lines = groups(T)[gid]
+    act = [t for t in lines if t.get("translate", True) and "mask" in t]
+    reg = act[0]["region"]; lo, hi = act[0]["cache"]
+    d = os.path.join(proj, "clean", gid)
+    shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
+    _IMG.clear(); _MSK.clear(); SYNTH.clear()
+    _CTX.update(proj=proj, gid=gid)
+    a = min(t["in"] for t in act); b = max(t["out"] for t in act)
+    ids = {t["id"] for t in lines}
+    others = [o for o in T["titles"] if o["id"] not in ids and
+              not (o["box"][2] < reg[0] or o["box"][0] > reg[2] or o["box"][3] < reg[1] or o["box"][1] > reg[3])]
+    fr = []
+    for f in range(a, b + 1):
+        out, frac, M = clean_frame(proj, gid, f, lines, reg, S["cuts"], n, lo, hi, others=others,
+                                   motion=S.get("motion"))
+        cv2.imwrite(os.path.join(d, f"{f:06d}.png"), out, PNG_FAST)
+        cv2.imwrite(os.path.join(d, f"m{f:06d}.png"), M, PNG_FAST)
+        fr.append(frac)
+    st = {"frames": [a, b], "synth_mean": round(float(np.mean(fr)), 3), "synth_max": round(float(np.max(fr)), 3)}
+    built = {}
+    for t in lines:
+        built[t["id"]] = [t["in"], t["out"], bool(t.get("translate", True))]
+        built[t["id"] + "#reg"] = list(t.get("region") or [])
+    print(gid, st)
+    return gid, st, built
+
+
+def _worker_init(threads):
+    os.environ["RT_THREADS"] = str(threads)
+    cv2.setNumThreads(threads)
+
+
+def workers(jobs):
+    """Cards run side by side on a multi-core PC; each gets a share of the cores."""
+    cpu = os.cpu_count() or 2
+    w = int(os.environ.get("RT_WORKERS") or 0) or min(jobs, max(1, cpu // 3), 6)
+    return max(1, min(w, jobs))
+
+
+def run(proj, only=None, progress=None):
+    T = vio.load_json(os.path.join(proj, "titles.json"))
     stats = vio.load_json(os.path.join(proj, "clean_stats.json"), {})
     built = {}
     todo = {}
@@ -349,36 +392,44 @@ def run(proj, only=None, progress=None):
         act = [t for t in lines if t.get("translate", True) and "mask" in t]
         if act and not (only and gid not in only):
             todo[gid] = max(t["out"] for t in act) - min(t["in"] for t in act) + 1
-    total, done = max(1, sum(todo.values())), 0
-    for gid, lines in groups(T).items():
-        act = [t for t in lines if t.get("translate", True) and "mask" in t]
-        if gid not in todo:
-            continue
-        reg = act[0]["region"]; lo, hi = act[0]["cache"]
-        d = os.path.join(proj, "clean", gid)
-        shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
-        _IMG.clear(); _MSK.clear(); SYNTH.clear()
-        _CTX.update(proj=proj, gid=gid)
-        a = min(t["in"] for t in act); b = max(t["out"] for t in act)
-        ids = {t["id"] for t in lines}
-        others = [o for o in T["titles"] if o["id"] not in ids and
-                  not (o["box"][2] < reg[0] or o["box"][0] > reg[2] or o["box"][3] < reg[1] or o["box"][1] > reg[3])]
-        fr = []
-        for f in range(a, b + 1):
-            out, frac, M = clean_frame(proj, gid, f, lines, reg, S["cuts"], n, lo, hi, others=others,
-                                       motion=S.get("motion"))
-            cv2.imwrite(os.path.join(d, f"{f:06d}.png"), out)
-            cv2.imwrite(os.path.join(d, f"m{f:06d}.png"), M)
-            fr.append(frac)
-            done += 1
-            if progress and done % 4 == 0:
-                progress(done / total)
-        stats[gid] = {"frames": [a, b], "synth_mean": round(float(np.mean(fr)), 3),
-                      "synth_max": round(float(np.max(fr)), 3)}
-        for t in lines:
-            built[t["id"]] = [t["in"], t["out"], bool(t.get("translate", True))]
-            built[t["id"] + "#reg"] = list(t.get("region") or [])
-        print(gid, stats[gid])
+    total = max(1, sum(todo.values()))
+    order = sorted(todo, key=lambda g: -todo[g])          # longest first: better packing
+    w = workers(len(order))
+
+    def counted():
+        c = 0
+        for g in order:
+            try:
+                c += sum(1 for x in os.listdir(os.path.join(proj, "clean", g)) if not x.startswith("m"))
+            except OSError:
+                pass
+        return min(c, total)
+
+    if w <= 1:
+        for g in order:
+            gid, st, b = _card((proj, g))
+            stats[gid] = st; built.update(b)
+            if progress:
+                progress(counted() / total)
+    else:
+        import multiprocessing as mp
+        ctx = mp.get_context("spawn")
+        pool = ctx.Pool(w, initializer=_worker_init, initargs=(max(1, (os.cpu_count() or 2) // w),))
+        try:
+            res = [pool.apply_async(_card, ((proj, g),)) for g in order]
+            while not all(r.ready() for r in res):
+                if progress:
+                    progress(counted() / total)     # raises when the user cancels
+                time.sleep(0.5)
+            for r in res:
+                gid, st, b = r.get()
+                stats[gid] = st; built.update(b)
+            pool.close()
+        except BaseException:
+            pool.terminate()
+            raise
+        finally:
+            pool.join()
     vio.save_json(os.path.join(proj, "clean_stats.json"), stats)
     T2 = vio.load_json(os.path.join(proj, "titles.json"))  # re-read: the editor may have saved meanwhile
     for t in T2["titles"]:

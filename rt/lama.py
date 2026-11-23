@@ -28,7 +28,7 @@ def _session():
         import onnxruntime as ort
         so = ort.SessionOptions()
         so.log_severity_level = 3
-        so.intra_op_num_threads = max(1, (os.cpu_count() or 2))
+        so.intra_op_num_threads = int(os.environ.get("RT_THREADS") or 0) or max(1, (os.cpu_count() or 2))
         _SESS = ort.InferenceSession(model_path(), so, providers=["CPUExecutionProvider"])
     return _SESS
 
