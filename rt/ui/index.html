@@ -204,6 +204,7 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 #status{grid-area:status;display:flex;align-items:center;gap:10px;padding:0 6px;color:var(--mut);font-size:.92em}
 #msg{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #msg.err{color:var(--bad)}
+#asrnote{color:var(--mut);font-size:.9em;white-space:nowrap;margin-inline-end:10px}
 #pbar{width:200px;height:6px;display:none;accent-color:var(--blue)}
 #dirtynote{color:var(--warn);display:none}
 .linkbtn{background:none;border:0;color:var(--mut);cursor:pointer;padding:0 6px;height:24px}
@@ -331,6 +332,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <span id="msg" role="status" aria-live="polite">אין פרויקט פתוח</span>
   <span id="dirtynote">שינויי זמנים ממתינים לבנייה (Enter)</span>
   <progress id="pbar" max="1" aria-label="התקדמות"></progress>
+  <span id="asrnote" role="status"></span>
   <button class="linkbtn" id="b-log">יומן</button>
 </footer>
 </div>
@@ -345,7 +347,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-lang">שפת הכותרות במקור</label>
     <select id="s-lang"><option value="eng">אנגלית</option><option value="jpn">יפנית</option><option value="kor">קוריאנית</option><option value="chi_sim">סינית</option><option value="fra">צרפתית</option><option value="spa">ספרדית</option><option value="deu">גרמנית</option><option value="ita">איטלקית</option><option value="rus">רוסית</option></select>
     <label for="s-wlang">שפת הדיבור</label><input type="text" id="s-wlang" dir="ltr" placeholder="ריק = זיהוי אוטומטי (ja / en)">
-    <label for="s-wmodel">מודל תמלול</label><select id="s-wmodel"><option value="large-v3">large-v3 (מדויק, איטי)</option><option value="medium">medium</option><option value="small">small (מהיר)</option></select>
+    <label for="s-wmodel">מודל תמלול</label><select id="s-wmodel"><option value="large-v3-turbo">large-v3-turbo (מומלץ: מדויק ומהיר, 1.6GB)</option><option value="large-v3">large-v3 (הכי מדויק, איטי, 3GB)</option><option value="medium">medium</option><option value="small">small (מהיר)</option></select>
     <label for="s-gloss">תעתיק שמות<br><span class="unit">שורה לכל שם: מקור = עברית</span></label>
     <textarea id="s-gloss" rows="5" placeholder="Madoka = מאדוקה&#10;Homura Akemi = הומורה אקמי"></textarea>
     <label for="s-key">מפתח API של Anthropic<br><span class="unit">לתרגום אוטומטי, לא חובה</span></label>
@@ -535,6 +537,9 @@ function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;con
     v=>{t.in=clamp(v,0,t.out);saveTitle(t.id,0);softRender()},v=>{t.out=clamp(v,t.in,S.n-1);saveTitle(t.id,0);softRender()})));return}
   box.append(group('גופן ומראה',true,
     prop('גופן','i-font',el('span',{class:'v'},fs)),
+    (d.font_top&&d.font_top.length>1)?el('div',{class:'prop'},el('span',{class:'pl',text:d.font_auto&&!(d.style_locked||[]).includes('font')?'נבחר אוטומטית. עוד מתאימים':'מתאימים למקור'}),
+      el('span',{class:'v row2'},...d.font_top.filter(([n])=>n!==curF).slice(0,4).map(([n,w])=>el('button',{class:'mini',dir:'ltr',text:n,style:`font-family:${face(n)}`,'aria-label':'החלף לגופן '+n,
+        onclick:()=>{oneShot(()=>{t.style.font=n;if(w)t.style.weight=w});saveTitle(t.id,0);renderInsp();say('גופן: '+n)}})))):null,
     prop('משקל','i-w',hot('i-w',t.style.weight??400,100,100,900,v=>{t.style.weight=v;saveTitle(t.id,350)},'משקל גופן')),
     prop('גודל','i-z',hot('i-z',Math.round((t.style.size_ratio??0.9)*100),1,30,250,v=>{t.style.size_ratio=v/100;saveTitle(t.id,250)},'גודל באחוזים ביחס לאותיות המקור','% מהמקור')),
     prop('צבע מילוי','i-col',el('span',{class:'v'},col)),
@@ -687,15 +692,16 @@ function gotoEdge(which){if(!S.sel)return say('לא נבחר פריט');const it
 function step(dir){const L=items();if(!L.length)return;let i=S.sel?L.findIndex(x=>x.k===S.sel.k&&x.id===S.sel.id):-1;i=clamp(i+dir,0,L.length-1);select(L[i].k,L[i].id,true)}
 
 // ================================================================ jobs / status
-const JOBN={overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
-async function run(job){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay'].includes(job))await flush();const r=await api('/api/run',{job});if(!r.started)say('פעולה אחרת עדיין רצה',true)}
+const JOBN={fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
+async function run(job){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay','fonts'].includes(job))await flush();const r=await api('/api/run',{job});if(!r.started)say('פעולה אחרת עדיין רצה',true)}
 let wasRunning=false;
 async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
   $('#logbox').textContent=s.log.join('\n');S.running=s.running;
   if(s.proj&&s.proj!==S.proj&&!S.loading){S.loading=true;try{await loadProject(s.proj)}finally{S.loading=false}}S.proj=s.proj;
   for(const id of['q-analyze','q-trans','q-build','q-export'])$('#'+id).disabled=!s.proj||s.running;
   const pb=$('#pbar');if(s.running){pb.style.display='inline-block';if(s.progress!=null)pb.value=s.progress;else pb.removeAttribute('value')}else pb.style.display='none';
-  S.job=s.job;showBusy(s);
+  S.job=s.job;showBusy(s);const an=$('#asrnote'),A=s.asr||{};
+  an.textContent=A.state==='downloading'?`מכין מנוע תמלול ${Math.floor((A.progress||0)*100)}%`:A.state==='error'?'מנוע התמלול לא ירד - ינסה שוב בתמלול':'';
   if(s.running){const last=s.log.length?s.log[s.log.length-1].slice(10):'';say(`${JOBN[s.job]||s.job}: ${s.stage||last}${s.progress!=null?` ${Math.round(s.progress*100)}%`:''}`)}
   else if(wasRunning&&s.cancelled){await reloadData(false);renderAll();say(`${JOBN[s.job]||''} בוטל`)}
   else if(wasRunning){await reloadData(false);renderAll();setMode(S.mode);
@@ -737,7 +743,7 @@ function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren
     bx.append(el('button',{class:'mini',text:'השתמש ב-'+nm,title:d,onclick:()=>go(d)}))}
   bx.append(el('button',{class:'mini',text:'בחר תיקייה מסונכרנת...',onclick:()=>go('pick')}));
   if(s.sync_dir)bx.append(el('button',{class:'mini',text:'בטל סנכרון',onclick:()=>go('')}))}
-async function loadSettings(){const s=await api('/api/settings');renderSync(s);$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
+async function loadSettings(){const s=await api('/api/settings');renderSync(s);$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3-turbo';
   $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
@@ -767,7 +773,7 @@ $('#upd-go').onclick=async()=>{$('#d-upd').close();await flush();const r=await a
 const MENUS=[
  ['קובץ',[['פרויקט חדש מסרטון...','Ctrl+N',()=>openVideo()],['פתח פרויקט...','Ctrl+O',()=>openProjectFile()],['פרויקטים אחרונים...','',()=>openRecent()],['-'],['שמור','Ctrl+S',()=>saveNow(),'proj'],['שמור בשם...','Ctrl+Shift+S',()=>saveAs(),'proj'],['סדרה...','',()=>openSeries(),'proj'],['-'],['ייבוא SRT מקור (לתרגום)...','',()=>importSrt(false),'proj'],['ייבוא SRT בעברית...','',()=>importSrt(true),'proj'],['-'],['ייצוא מדיה (סרטון + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כותרות בלבד על רקע שקוף (MOV)','',()=>run('overlay'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks']]],
  ['עריכה',[['בטל','Ctrl+Z',()=>undo(),'undo'],['בצע שוב','Ctrl+Shift+Z',()=>redo(),'redo'],['-'],['בחר פריט במיקום הנגן','D',()=>selectAtPlayhead(),'proj'],['סמן כניסה','I',()=>setEdge('in'),'sel'],['סמן יציאה','O',()=>setEdge('out'),'sel'],['-'],['להחליף את כל הכותרות','',()=>bulk(true),'proj'],['לא להחליף אף כותרת','',()=>bulk(false),'proj'],['-'],['העדפות...','Ctrl+,',()=>openDlg('#d-settings')]]],
- ['סרטון',[['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['בדיקת QA','',()=>openQA(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
+ ['סרטון',[['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['התאם גופנים אוטומטית','',()=>run('fonts'),'proj'],['בדיקת QA','',()=>openQA(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
  ['תצוגה',[['מקור','',()=>setMode('source'),'proj'],['תוצאה','T',()=>setMode('result'),'proj'],['מסך מלא','Ctrl+`',()=>toggleFS(),'proj'],['-'],['הגדל זום','=',()=>zoomTo(S.zoom*1.5),'proj'],['הקטן זום','-',()=>zoomTo(S.zoom/1.5),'proj'],['התאם לחלון','\\',()=>fit(),'proj'],['-'],['יומן פעולות','',()=>openDlg('#d-log')]]],
  ['עזרה',[['קיצורי מקלדת','Ctrl+Alt+K',()=>openDlg('#d-help')],['-'],['בדוק עדכונים...','',()=>checkUpdate(true)]]]];
 const WHY={proj:'פתח סרטון קודם',undo:'אין מה לבטל',redo:'אין מה לשחזר',sel:'בחר פריט קודם',checks:'זמין אחרי ייצוא',subs:'לא זוהו כתוביות צרובות'};

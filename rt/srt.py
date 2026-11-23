@@ -129,13 +129,23 @@ def build(proj, out_name=None, rle=None):
 
 def transcribe(video, out_json, lang=None, model="large-v3"):
     """Runs where faster-whisper is installed (the PC). word timestamps on."""
-    from faster_whisper import WhisperModel
-    m = WhisperModel(model, device="auto", compute_type="auto")
-    segs, info = m.transcribe(video, language=lang, word_timestamps=True, vad_filter=True)
-    res = {"language": info.language, "segments": []}
-    for s in segs:
-        res["segments"].append({"start": s.start, "end": s.end, "text": s.text,
-                                "words": [{"start": w.start, "end": w.end, "word": w.word} for w in (s.words or [])]})
+    from . import asr
+
+    def go(m):
+        segs, info = m.transcribe(video, language=lang, word_timestamps=True, vad_filter=True)
+        res = {"language": info.language, "segments": []}
+        for s in segs:
+            res["segments"].append({"start": s.start, "end": s.end, "text": s.text,
+                                    "words": [{"start": w.start, "end": w.end, "word": w.word} for w in (s.words or [])]})
+        return res
+    m = asr.load(model)
+    try:
+        res = go(m)
+    except Exception:
+        if getattr(m.model, "device", "cpu") == "cpu":
+            raise
+        from faster_whisper import WhisperModel     # GPU libraries missing: fall back to the CPU
+        res = go(WhisperModel(asr.model_dir(model) if asr.ready(model) else model, device="cpu", compute_type="int8"))
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False, indent=1)
     return out_json

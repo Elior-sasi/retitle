@@ -69,8 +69,17 @@ def enable_sync(d):
 def settings():
     s = {"api_key": "", "model": "claude-sonnet-5-5", "glossary": "", "src_lang": "eng", "content": "trailer",
          "srt_rle": True, "gh_token": "", "open_maximized": True,
-         "whisper_model": "large-v3", "whisper_lang": ""}
+         "whisper_model": "large-v3-turbo", "whisper_lang": ""}
     s.update(vio.load_json(CFG, {}))
+    if not s.get("asr_v2"):                    # one-time: large-v3 -> large-v3-turbo (near the same accuracy, ~5x faster on CPU)
+        if s.get("whisper_model") == "large-v3":
+            s["whisper_model"] = "large-v3-turbo"
+        s["asr_v2"] = True
+        try:
+            raw = vio.load_json(CFG, {}); raw.update(whisper_model=s["whisper_model"], asr_v2=True)
+            os.makedirs(CFG_DIR, exist_ok=True); vio.save_json(CFG, raw)
+        except Exception:
+            pass
     r = sync_root()
     if r:
         sh = vio.load_json(os.path.join(r, "settings.json"), {})
@@ -181,7 +190,10 @@ def job_analyze():
         extract.run(proj, progress=prog)
         prog(0.9)
         thumbs()
-    run_steps([("מחפש חיתוכי שוטים", 0.3, a), ("מזהה טקסט על המסך", 0.55, b), ("מודד צבע, צל ותזמון מדויק", 0.15, c)])
+    def d():
+        fonts_auto()
+    run_steps([("מחפש חיתוכי שוטים", 0.3, a), ("מזהה טקסט על המסך", 0.5, b), ("מודד צבע, צל ותזמון מדויק", 0.12, c),
+               ("מתאים גופן עברי לכל כותרת", 0.08, d)])
     n = series_apply()
     if n:
         log(f"{n} כותרות מולאו מהסדרה \"{series_name()}\" - מסומנות \"מהסדרה\" ברשימה")
@@ -268,12 +280,37 @@ def job_overlay():
     log("להדבקה על סרטון אחר באותו אורך וקצב פריימים (למשל גרסה בלי טקסט): שים את הקובץ ברצועה מעל הסרטון, מתחילת הציר.")
 
 
+def fonts_auto():
+    from . import fontmatch
+    s = settings()
+    with LOCK:
+        n = fontmatch.run(STATE["proj"], api_key=s.get("api_key", ""), model=s.get("model") or "claude-sonnet-5-5",
+                          progress=prog, log=log)
+    if n:
+        log(f"נבחר גופן אוטומטית ל-{n} כותרות" + (" (בעזרת Claude)" if s.get("api_key") else ""))
+    return n
+
+
+def job_fonts():
+    run_steps([("מתאים גופן עברי לכל כותרת", 1.0, fonts_auto)])
+    if os.path.exists(P("layers", "meta.json")):
+        from . import render
+        render.build_layers(STATE["proj"])
+
+
 def job_transcribe():
     from . import srt
     s = settings()
     PJ = vio.load_json(P("project.json"))
-    log("מתמלל עם Whisper (בפעם הראשונה יורד מודל, זה לוקח זמן)...")
-    srt.transcribe(PJ["video"], P("whisper.json"), s.get("whisper_lang") or None, s.get("whisper_model", "large-v3"))
+    from . import asr
+    name = s.get("whisper_model", "large-v3-turbo")
+    if not asr.ready(name):
+        STATE.update(stage="מוריד את מנוע התמלול (פעם אחת)", step=1, steps=2)
+        log("מוריד את מנוע התמלול (פעם אחת)...")
+        asr.wait(name, progress=lambda x: STATE.update(progress=round(0.5 * x, 3)) if not STATE["cancel"] else prog(0))
+    STATE.update(stage="מתמלל", step=2 if STATE["steps"] == 2 else 1, steps=STATE["steps"] or 1)
+    log("מתמלל עם Whisper...")
+    srt.transcribe(PJ["video"], P("whisper.json"), s.get("whisper_lang") or None, name)
     srt.prep(STATE["proj"], P("whisper.json"))
     log("התמלול מוכן. בחר כתובית והקלד עברית.")
 
@@ -337,7 +374,7 @@ def job_update():
 
 
 JOBS = {"analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
-        "transcribe": job_transcribe, "overlay": job_overlay, "srt": job_srt,
+        "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
 
@@ -717,7 +754,8 @@ class H(BaseHTTPRequestHandler):
             from . import series
             return self._send(200, {"current": series_name(), "list": series.list_all()})
         if u.path == "/api/status":
-            return self._send(200, {"proj": STATE["proj"], "file": STATE.get("file"), "missing_video": STATE.get("missing_video", False), "running": STATE["running"], "job": STATE["job"],
+            from . import asr
+            return self._send(200, {"asr": asr.STATE, "proj": STATE["proj"], "file": STATE.get("file"), "missing_video": STATE.get("missing_video", False), "running": STATE["running"], "job": STATE["job"],
                                     "error": STATE["error"], "log": STATE["log"], "progress": STATE["progress"],
                                     "stage": STATE["stage"], "step": STATE["step"], "steps": STATE["steps"],
                                     "elapsed": round((time.time() if STATE["running"] else STATE.get("t1", time.time())) - STATE["t0"], 1) if STATE["t0"] else 0,
@@ -822,6 +860,9 @@ class H(BaseHTTPRequestHandler):
             r = sync_root()
             if r:
                 vio.save_json(os.path.join(r, "settings.json"), {k: s[k] for k in SHARED if k in s})
+            if "whisper_model" in b:
+                from . import asr
+                asr.prepare(s.get("whisper_model", "large-v3-turbo"))
             return self._send(200, {"ok": True})
         if u.path == "/api/fonts/import":
             from . import fontlib
@@ -1039,6 +1080,12 @@ def main():
         try:
             from . import fontlib
             fontlib.catalog()
+        except Exception:
+            traceback.print_exc()
+        try:                                   # transcription engine: fetched once in the background
+            from . import asr
+            if "--server" not in sys.argv:
+                asr.prepare(settings().get("whisper_model", "large-v3-turbo"))
         except Exception:
             traceback.print_exc()
     threading.Thread(target=_warm, daemon=True).start()
