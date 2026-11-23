@@ -147,7 +147,7 @@ def font_path(name):
     raise FileNotFoundError(f"font {name} - run: python -m rt fonts")
 
 
-def _font(name, size, weight=None):
+def _font(name, size, weight=None, wdth=None):
     f = ImageFont.truetype(font_path(name), int(round(size)), layout_engine=ImageFont.Layout.RAQM if RAQM else ImageFont.Layout.BASIC)
     try:
         axes = f.get_variation_axes()
@@ -158,7 +158,9 @@ def _font(name, size, weight=None):
         for ax in axes:
             nm = ax.get("name"); nm = nm.decode() if isinstance(nm, bytes) else str(nm)
             if nm.lower().startswith("weight"):
-                vals.append(weight or ax.get("default", 400))
+                vals.append(min(ax.get("maximum", 1000), max(ax.get("minimum", 1), weight or ax.get("default", 400))))
+            elif nm.lower().startswith("width") and wdth:
+                vals.append(min(ax.get("maximum", 200), max(ax.get("minimum", 25), wdth)))
             else:
                 vals.append(ax.get("default", ax.get("minimum")))
         try:
@@ -170,7 +172,7 @@ def _font(name, size, weight=None):
 
 def auto_size(st):
     """Font px so that the Hebrew letter body matches the source letter height * size_ratio."""
-    f = _font(st.get("font", "Heebo"), 200, st.get("weight"))
+    f = _font(st.get("font", "Heebo"), 200, st.get("weight"), st.get("wdth"))
     b = f.getbbox(_vis("המש"), **_kw(direction="rtl", language="he"))
     body = (b[3] - b[1]) / 200
     return st.get("letter_h", 60) * st.get("size_ratio", 0.9) / max(body, 0.1)
@@ -184,7 +186,7 @@ def text_layer(he, st, ss=2):
     """Render Hebrew text to an RGBA PIL image at ss x supersample. Returns (img, anchor_xy)
     where anchor is the centre of the letter body in the image."""
     size = st.get("size_px") or auto_size(st)
-    font = _font(st.get("font", "Heebo"), size * ss, st.get("weight"))
+    font = _font(st.get("font", "Heebo"), size * ss, st.get("weight"), st.get("wdth"))
     lines = [_vis(l) for l in he.split("\n")]
     spacing = st.get("line_gap", 0.25) * size * ss
     ow = int(round((st.get("outline") or {}).get("width", 0) * ss))

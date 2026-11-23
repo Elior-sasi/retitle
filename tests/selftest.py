@@ -59,6 +59,7 @@ def main():
     hardsub_test(d)
     never_seen_test(d)
     qa_test()
+    fontmatch_test()
     print("SELFTEST OK")
 
 
@@ -121,6 +122,25 @@ def never_seen_test(d):
     white = float((outs[1][m].min(1) > 235).mean())
     print(f"never-seen: synth {st['synth_max']}, error {err:.1f}, flicker {flick:.1f}, white left {white:.3f}, {time.time() - t0:.0f}s")
     assert st["synth_max"] > 0.8 and err < 20 and flick < 8 and white < 0.01, (st, err, flick, white)
+
+
+def fontmatch_test():
+    """Find a similar font: a mask rendered in a known Hebrew font must rank that font near the top."""
+    import tempfile
+    os.environ.setdefault("APPDATA", tempfile.mkdtemp())
+    from rt import fontmatch as fm
+    C = fm.candidate_traits(names=None)
+    txt = "שלום לכולם מהאולפן"
+    r = fm.rank(fm.traits(fm.render_mask("Fredoka", txt, weight=700, size=60)), C, "hebrew", 8)
+    names = [x["font"] for x in r]
+    print("fontmatch Fredoka 700 ->", names[:5])
+    assert "Fredoka" in names[:3], names
+    r = fm.rank(fm.traits(fm.render_mask("Karantina Bold", txt, size=60)), C, "hebrew", 40)
+    names = [x["font"] for x in r]
+    print("fontmatch Karantina Bold ->", names[:5])
+    kar = min(i for i, n in enumerate(names) if n.startswith("Karantina"))
+    assert "Fredoka" not in names or kar < names.index("Fredoka"), names
+    print("fontmatch: ok")
 
 
 def qa_test():

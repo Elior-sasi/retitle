@@ -291,6 +291,42 @@ def fonts_auto():
     return n
 
 
+def job_fontmatch():
+    """Find a similar font for one title (button in the inspector). Result: fontmatch/<id>.json."""
+    from . import fontmatch
+    a = STATE.get("args") or {}
+    tid = a.get("id")
+    T = vio.load_json(P("titles.json"))
+    t = next((x for x in T["titles"] if x["id"] == tid), None)
+    if not t:
+        raise RuntimeError("הכותרת לא נמצאה")
+    s = settings()
+    res = {}
+
+    def measure():
+        res.update(fontmatch.match(STATE["proj"], t, top=8, api_key="", progress=prog, log=log))
+
+    def claude():
+        r = fontmatch.match(STATE["proj"], t, top=8, api_key=s["api_key"], model=s.get("model") or "claude-sonnet-5-5", log=log)
+        if r.get("rows"):
+            res.update(r)
+    steps = []
+    if a.get("google"):
+        steps.append(("מוריד את כל גופני Google עם עברית (פעם אחת)", 0.4, lambda: fontmatch.download_google(progress=prog)))
+    steps.append(("מודד את סגנון האותיות ומשווה לכל הגופנים", 0.4, measure))
+    if s.get("api_key"):
+        steps.append(("Claude משווה את המועמדים למקור", 0.2, claude))
+    run_steps(steps)
+    os.makedirs(P("fontmatch"), exist_ok=True)
+    res["id"] = tid
+    res.pop("traits", None)
+    vio.save_json(P("fontmatch", f"{tid}.json"), res)
+    if res.get("error"):
+        log(res["error"])
+    else:
+        log(f"נמצאו {len(res['rows'])} גופנים דומים" + (" - Claude בחר את הראשון" if res.get("by_claude") else ""))
+
+
 def job_fonts():
     run_steps([("מתאים גופן עברי לכל כותרת", 1.0, fonts_auto)])
     if os.path.exists(P("layers", "meta.json")):
@@ -374,7 +410,7 @@ def job_update():
 
 
 JOBS = {"analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
-        "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "srt": job_srt,
+        "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
 
@@ -566,7 +602,7 @@ def build_media(proj):
 
 
 # ------------------------------------------------------------------ live edits
-STYLE_KEYS = {"font", "weight", "size_ratio", "fill", "align", "nudge_x", "nudge_y"}
+STYLE_KEYS = {"font", "weight", "wdth", "size_ratio", "fill", "align", "nudge_x", "nudge_y"}
 
 
 def apply_titles(edits):
@@ -812,6 +848,9 @@ class H(BaseHTTPRequestHandler):
             if STATE["proj"] not in MEDIA_BUSY:
                 threading.Thread(target=build_media, args=(STATE["proj"],), daemon=True).start()
             return self._send(200, {"ready": False})
+        if u.path == "/api/fontmatch":
+            f = P("fontmatch", q.get("id", [""])[0] + ".json")
+            return self._send(200, vio.load_json(f, {}) if os.path.exists(f) else {})
         if u.path == "/api/video":
             which = q.get("which", ["src"])[0]
             path = P("proxy.mp4") if which == "proxy" else vio.load_json(P("project.json"))["video"]
@@ -899,6 +938,9 @@ class H(BaseHTTPRequestHandler):
                 log("מבטל...")
             return self._send(200, {"ok": True})
         if u.path == "/api/run":
+            if STATE["running"]:
+                return self._send(200, {"started": False})
+            STATE["args"] = b.get("args") or {}
             return self._send(200, {"started": start(b["job"])})
         if u.path == "/api/update/check":
             from . import update

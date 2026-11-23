@@ -8,6 +8,9 @@
   clean <proj> [gid..]         remove source text, rebuild background
   track <proj>                 measure source animation per frame
   fontsheet <proj> <id> [fonts..]  source crop vs Hebrew in candidate fonts
+  fontmatch <proj> <id> [--top 8] [--download 1] [--key KEY] [--apply 1]
+                               similar Hebrew fonts for a title (style traits; with --key Claude picks and
+                               fontmatch/fontmatch_<id>.jpg is the sheet it saw; --download 1 adds Google fonts not downloaded)
   layers <proj>                render Hebrew layers
   preview <proj> <gid> [frames..]  result crops without encoding
   compose <proj>               write final video
@@ -76,6 +79,25 @@ def main(argv):
         render.track(proj)
         for t in vio.load_json(_p(proj, "titles.json"))["titles"]:
             print(t["id"], t.get("anim", {}).get("mode"))
+    elif cmd == "fontmatch":
+        from . import fontmatch
+        T = vio.load_json(_p(proj, "titles.json"))
+        t = next(x for x in T["titles"] if x["id"] == pos[1])
+        if opt.get("download") == "1":
+            ok, n = fontmatch.download_google(); print(f"google: {ok}/{n} downloaded")
+        r = fontmatch.match(proj, t, top=int(opt.get("top", 8)), api_key=opt.get("key", ""),
+                            include_remote=opt.get("download") == "1")
+        if r.get("error"):
+            print(r["error"]); return
+        if r.get("by_claude"):
+            print(f"Claude: latin font ~ {r['latin_font']} | {r['reason_he']} | {r['settings_he']}")
+            print("sheet:", _p(proj, "fontmatch", f"fontmatch_{t['id']}.jpg"))
+        for i, x in enumerate(r["rows"], 1):
+            print(f"{i}. {x['font']:<30} w={x['weight']} wdth={x['wdth']} score={x['score']}  {x['diff']}")
+        if opt.get("apply") == "1" and r["rows"]:
+            fontmatch.apply_row(t, r["rows"][0])
+            t["style_locked"] = sorted(set(t.get("style_locked", [])) | {"font", "weight", "wdth"})
+            vio.save_json(_p(proj, "titles.json"), T); print("applied:", r["rows"][0]["font"])
     elif cmd == "fontsheet":
         font_sheet(proj, pos[1], pos[2:])
     elif cmd == "layers":

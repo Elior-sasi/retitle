@@ -9,7 +9,7 @@ import os, re, shutil, time, hashlib
 from . import vio
 from .detect import norm
 
-STYLE_KEYS = ("font", "weight", "size_ratio", "fill", "align", "nudge_x", "nudge_y")
+STYLE_KEYS = ("font", "weight", "wdth", "size_ratio", "fill", "align", "nudge_x", "nudge_y")
 
 
 def root():
