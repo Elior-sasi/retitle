@@ -2,7 +2,7 @@
 background crop + the Hebrew layer. Audio is copied as is."""
 import os
 import cv2, numpy as np
-from . import vio, render
+from . import vio, render, live
 from .extract import groups
 
 
@@ -54,7 +54,12 @@ def run(proj, out_name=None, crf=14, preset="veryfast", scale=None, progress=Non
     n = P.get("n_frames") or 1
     try:
         for f, fr in enumerate(vio.frames(P["video"], W, H)):
-            wr.write(frame_result(proj, f, fr, T, meta, cache, W, H) if f in busy else fr)
+            if f in busy:
+                res = frame_result(proj, f, fr, T, meta, cache, W, H)
+                live.show(proj, f"מציב עברית - פריים {f}", res, fr, width=960)   # RTL: source on the right
+                wr.write(res)
+            else:
+                wr.write(fr)
             if progress and f % 48 == 0:
                 progress(f / n)
     except BaseException:

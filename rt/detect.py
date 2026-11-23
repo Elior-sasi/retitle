@@ -254,7 +254,11 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None):
                 h = a["ref_box"][3] - a["ref_box"][1]
                 if abs(b["ref_box"][1] - a["ref_box"][3]) < 3 * h or abs(a["ref_box"][1] - b["ref_box"][3]) < 3 * h:
                     b["group"] = a["group"]
-    classify_hardsubs(titles, P)
+    merge_cards(titles, every)
+    for i, t in enumerate(titles):
+        t["id"] = f"t{i + 1:02d}"
+    classify_keep(titles, P)
+    classify_hardsubs([t for t in titles if not t.get("auto_reason")], P)
     vio.save_json(os.path.join(proj, "titles.json"), {"titles": titles})
     sheet(proj, titles, P)
     return titles
@@ -302,3 +306,120 @@ def sheet(proj, titles, P, name="detect_sheet.jpg"):
     out = os.path.join(proj, name)
     cv2.imwrite(out, np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 85])
     return out
+
+
+# ------------------------------------------------------------------ what should stay as it is
+# Lines that are better left untouched by default. Each gets translate=False and a reason
+# the user sees ("auto_reason"); one click brings it back.
+STUDIOS = ["universal", "universalpictures", "comcast", "comcastcompany", "netflix", "disney", "pixar",
+           "dreamworks", "warnerbros", "warner", "paramount", "sonypictures", "columbia", "lionsgate", "a24",
+           "hbo", "hbomax", "amazonmgmstudios", "primevideo", "appletv", "illumination", "legendary",
+           "neon", "focusfeatures", "searchlight", "20thcenturystudios", "newline", "mgm", "studiocanal",
+           "toho", "toei", "toeianimation", "aniplex", "crunchyroll", "madhouse", "mappa", "ufotable",
+           "kyotoanimation", "sunrise", "bonesstudio", "productioni.g", "funimation", "gkids", "sola",
+           "solamedia", "likeaphoton", "likeaphotoncreative", "alceon", "screenqueensland", "screenaustralia",
+           "nationalgeographic", "bbc", "bbcstudios", "discovery", "showtime", "starz", "peacock", "hulu"]
+CREDIT_WORDS = ["directedby", "producedby", "screenplay", "writtenby", "executiveproducer", "producers",
+                "coproducer", "musicby", "composition", "composer", "cinematography", "editedby", "castingby",
+                "productiondesign", "costume", "visualeffects", "basedon", "pty", "ltd", "inc", "llc",
+                "entertainment", "partners", "present", "presents", "inassociation", "allrightsreserved",
+                "copyright", "studios"]
+_PLATE = re.compile(r"^(?=.*\d)(?=.*[a-z])[a-z0-9]{4,9}$")
+
+
+def _studio(text):
+    k = norm(text)
+    if len(k) < 3:
+        return None
+    for s in STUDIOS:
+        if k == s or (len(k) >= 5 and len(s) >= 5 and SequenceMatcher(None, k, s).ratio() >= 0.75):
+            return s
+    return None
+
+
+def classify_keep(titles, P):
+    W, H, fps = P["info"]["width"], P["info"]["height"], P["info"]["fps"]
+    groups = {}
+    for t in titles:
+        groups.setdefault(t["group"], []).append(t)
+    gsmall = lambda g: all(x["box"][3] - x["box"][1] < 0.06 * H for x in groups[g])
+
+    def keep(t, why):
+        if not t.get("auto_reason"):
+            t["translate"] = False; t["auto_reason"] = why
+            t.pop("mode", None); t["kind"] = "text" if t.get("kind") == "sub" else t.get("kind", "text")
+    # credits: a card of many small lines, or any card naming credit roles / companies
+    for g, ls in groups.items():
+        k = [norm(t["src"]) for t in ls]
+        creditish = sum(any(w in x for w in CREDIT_WORDS) for x in k)
+        small = all(t["box"][3] - t["box"][1] < 0.075 * H for t in ls)
+        if creditish and (creditish >= 2 or len(ls) >= 4 or small) or (len(ls) >= 5 and small):
+            for t in ls:
+                keep(t, "קרדיטים")
+    # credits that follow a credit card (logo strip under it, same time)
+    cred = [t for t in titles if t.get("auto_reason") == "קרדיטים"]
+    for t in titles:
+        if not t.get("auto_reason") and any(c["sample_in"] - fps <= t["sample_in"] <= c["sample_out"] and
+                                            t["sample_out"] <= c["sample_out"] + fps for c in cred) \
+                and t["box"][3] - t["box"][1] < 0.1 * H:
+            keep(t, "קרדיטים")
+    for t in titles:
+        if t.get("auto_reason"):
+            continue
+        k = norm(t["src"]); h = t["box"][3] - t["box"][1]
+        dur = (t["sample_out"] - t["sample_in"]) / fps
+        alone = len(groups[t["group"]]) == 1
+        if _studio(t["src"]):
+            keep(t, "לוגו של חברה")
+        elif _PLATE.match(k) and " " not in t["src"].strip():
+            keep(t, "טקסט בתוך התמונה")          # licence plates, codes, serials
+        elif gsmall(t["group"]) and dur < 1.5 and len(k) <= 10 and " " not in t["src"].strip():
+            keep(t, "טקסט בתוך התמונה")          # signs / labels in the scene
+        elif alone and h < 0.1 * H and dur < 0.6 and len(k) <= 5 and t["conf"] < 70:
+            keep(t, "טקסט בתוך התמונה")
+    return [t for t in titles if t.get("auto_reason")]
+
+
+def merge_cards(titles, every):
+    """Words of one animated card (a film title that builds up word by word) often get separate
+    groups: they come in at different times but leave together. Join them into one card."""
+    # the same word seen a moment earlier at a nearby place (still animating in): one title
+    for b in list(titles):
+        for a in titles:
+            if a is b or b not in titles:
+                continue
+            if norm(a["src"]) == norm(b["src"]) and 0 <= a["sample_in"] - b["sample_out"] <= every * 8 \
+                    and _near(a["box"], b["box"]):
+                a["sample_in"], a["prev_sample"] = b["sample_in"], b["prev_sample"]
+                a["in"] = min(a["in"], b["in"])
+                a["box"] = [min(a["box"][0], b["box"][0]), min(a["box"][1], b["box"][1]),
+                            max(a["box"][2], b["box"][2]), max(a["box"][3], b["box"][3])]
+                titles.remove(b)
+                break
+    changed = True
+    while changed:
+        changed = False
+        for a in titles:
+            for b in titles:
+                if a["group"] == b["group"]:
+                    continue
+                if abs(a["sample_out"] - b["sample_out"]) > every * 2:
+                    continue
+                ov = min(a["sample_out"], b["sample_out"]) - max(a["sample_in"], b["sample_in"])
+                if ov < 0.4 * min(a["sample_out"] - a["sample_in"], b["sample_out"] - b["sample_in"]) or ov < every:
+                    continue
+                A, B = a["box"], b["box"]
+                ha, hb = A[3] - A[1], B[3] - B[1]
+                gap = max(B[1] - A[3], A[1] - B[3])
+                hx = min(A[2], B[2]) - max(A[0], B[0])
+                if gap < 0.5 * max(ha, hb) and hx > 0.3 * min(A[2] - A[0], B[2] - B[0]) and min(ha, hb) > 0.6 * max(ha, hb) / 3:
+                    old, new = b["group"], a["group"]
+                    for t in titles:
+                        if t["group"] == old:
+                            t["group"] = new
+                    changed = True
+
+
+def _near(A, B):
+    h = max(A[3] - A[1], B[3] - B[1])
+    return max(B[0] - A[2], A[0] - B[2]) < h and max(B[1] - A[3], A[1] - B[3]) < h

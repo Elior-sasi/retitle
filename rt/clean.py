@@ -5,7 +5,7 @@ import os, shutil, warnings, time
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 import cv2, numpy as np
 PNG_FAST = [cv2.IMWRITE_PNG_COMPRESSION, 1]   # still lossless, faster to write
-from . import vio, masks
+from . import vio, masks, live
 from .shots import shot_of
 from .extract import groups
 
@@ -361,6 +361,9 @@ def _card(args):
                                    motion=S.get("motion"))
         cv2.imwrite(os.path.join(d, f"{f:06d}.png"), out, PNG_FAST)
         cv2.imwrite(os.path.join(d, f"m{f:06d}.png"), M, PNG_FAST)
+        src = cv2.imread(os.path.join(proj, "cache", gid, f"{f:06d}.png"))
+        if src is not None and src.shape == out.shape:
+            live.show(proj, f"מוחק את {', '.join(t['src'] for t in act)[:40]} - פריים {f}", out, src)   # RTL: source on the right
         fr.append(frac)
     st = {"frames": [a, b], "synth_mean": round(float(np.mean(fr)), 3), "synth_max": round(float(np.max(fr)), 3)}
     built = {}

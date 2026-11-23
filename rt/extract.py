@@ -86,18 +86,21 @@ def run(proj, pad=48, progress=None):
         if i < first:
             continue
         if progress and i % 24 == 0:
-            progress(0.8 * (i - first) / max(1, last - first))
+            progress(0.6 * (i - first) / max(1, last - first))
         for gid, (lo, hi, (x0, y0, x1, y1)) in jobs.items():
             if lo <= i <= hi:
                 cv2.imwrite(os.path.join(proj, "cache", gid, f"{i:06d}.png"), f[y0:y1, x0:x1], PNG_FAST)
     # estimate mask + style per line at its reference frame, then refine in/out
-    for k, (gid, lines) in enumerate(groups(T).items()):
-        if progress:
-            progress(0.8 + 0.2 * k / max(1, len(jobs)))
+    nlines = max(1, sum(len(l) for g, l in groups(T).items() if g in jobs))
+    k = 0
+    for gid, lines in groups(T).items():
         if gid not in jobs:
             continue
         lo, hi, reg = jobs[gid]
         for t in lines:
+            k += 1
+            if progress:
+                progress(0.6 + 0.4 * k / nlines)
             t["cache"] = [lo, hi]
             if not t.get("translate", True):
                 continue

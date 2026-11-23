@@ -101,6 +101,15 @@ class Cancelled(Exception):
     pass
 
 
+def _live():
+    """The live preview of the running job (only frames written since it started)."""
+    if not STATE["running"] or not STATE["proj"]:
+        return None
+    from . import live
+    st = live.state(STATE["proj"])
+    return st if st and st.get("t", 0) >= (STATE["t0"] or 0) else None
+
+
 def prog(x):
     """Stage progress 0..1, mapped onto the whole job. Also the cancel point for long loops."""
     if STATE["cancel"]:
@@ -195,7 +204,7 @@ def job_analyze():
         thumbs()
     def d():
         fonts_auto()
-    run_steps([("מחפש חיתוכי שוטים", 0.3, a), ("מזהה טקסט על המסך", 0.5, b), ("מודד צבע, צל ותזמון מדויק", 0.12, c),
+    run_steps([("מחפש חיתוכי שוטים", 0.15, a), ("מזהה טקסט על המסך", 0.45, b), ("מודד צבע, צל ותזמון מדויק", 0.32, c),
                ("מתאים גופן עברי לכל כותרת", 0.08, d)])
     n = series_apply()
     if n:
@@ -267,10 +276,10 @@ def job_export():
         issues = qa.run(STATE["proj"])
         errs = sum(1 for i in issues if i["sev"] == "err")
         if issues:
-            log(f"בדיקת QA: {errs} שגיאות, {len(issues) - errs} אזהרות (תפריט סרטון > בדיקת QA)")
-    run_steps(pre + [("מקודד את הסרטון הסופי", 0.5, enc), ("בודק כל כותרת לפני ואחרי", 0.05, chk),
+            log(f"בדיקת QA: {errs} שגיאות, {len(issues) - errs} אזהרות (תפריט וידאו > בדיקת QA)")
+    run_steps(pre + [("מקודד את הווידאו הסופי", 0.5, enc), ("בודק כל כותרת לפני ואחרי", 0.05, chk),
                      ("כתוביות ובדיקת QA", 0.02, subs)])
-    log(f"הסרטון מוכן: {res['out']}")
+    log(f"הווידאו מוכן: {res['out']}")
 
 
 def job_overlay():
@@ -284,7 +293,7 @@ def job_overlay():
     res = {}
     run_steps(pre + [("מקודד כותרות על רקע שקוף (ProRes 4444)", 0.4, lambda: res.update(out=compose.run_overlay(STATE["proj"], progress=prog)))])
     log(f"כותרות בלבד, רקע שקוף: {res['out']}")
-    log("להדבקה על סרטון אחר באותו אורך וקצב פריימים (למשל גרסה בלי טקסט): שים את הקובץ ברצועה מעל הסרטון, מתחילת הציר.")
+    log("להדבקה על וידאו אחר באותו אורך וקצב פריימים (למשל גרסה בלי טקסט): שים את הקובץ ברצועה מעל הווידאו, מתחילת הציר.")
 
 
 def fonts_auto():
@@ -427,7 +436,53 @@ def job_update():
     threading.Timer(0.6, bye).start()
 
 
-JOBS = {"analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
+PLAYABLE = {"h264", "vp8", "vp9"}
+
+
+def needs_playable(proj=None):
+    """WebView2 cannot play some codecs (HEVC without the extension, AV1, ProRes, MPEG-2...).
+    Those get a playback copy; the original stays the source for every frame Retitle edits."""
+    proj = proj or STATE["proj"]
+    if not proj:
+        return False
+    info = vio.load_json(os.path.join(proj, "project.json"), {}).get("info", {})
+    return bool(info.get("codec")) and info["codec"] not in PLAYABLE
+
+
+def play_path():
+    p = P("play.mp4")
+    return p if os.path.exists(p) else None
+
+
+def job_playable():
+    import re as _re, subprocess
+    src = vio.load_json(P("project.json"))["video"]
+    n = vio.load_json(P("project.json")).get("n_frames") or 1
+    out = P("play.tmp.mp4")
+    STATE.update(stage="מכין עותק לניגון (הווידאו בקידוד שהנגן לא מכיר)", step=1, steps=1)
+    cmd = [vio.FFMPEG, "-v", "error", "-y", "-i", src, "-map", "0:v:0", "-map", "0:a:0?", "-fps_mode", "passthrough",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+           "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", out]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, **vio.NOWIN)
+    try:
+        for line in p.stdout:
+            m = _re.match(r"frame=(\d+)", line)
+            if m:
+                prog(int(m.group(1)) / n)
+    except Cancelled:
+        p.kill(); p.wait()
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+        raise
+    if p.wait() != 0:
+        raise RuntimeError("לא הצלחתי להכין עותק לניגון")
+    os.replace(out, P("play.mp4"))
+    log("הווידאו מוכן לניגון.")
+
+
+JOBS = {"playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
@@ -544,6 +599,8 @@ def _activate(rfile, data):
         traceback.print_exc()
     if not STATE["missing_video"]:
         threading.Thread(target=build_media, args=(data,), daemon=True).start()
+        if needs_playable(data) and not os.path.exists(os.path.join(data, "play.mp4")) and not STATE["running"]:
+            threading.Timer(0.3, lambda: start("playable")).start()
     return data
 
 
@@ -892,7 +949,17 @@ class H(BaseHTTPRequestHandler):
                                     "error": STATE["error"], "log": STATE["log"], "progress": STATE["progress"],
                                     "stage": STATE["stage"], "step": STATE["step"], "steps": STATE["steps"],
                                     "elapsed": round((time.time() if STATE["running"] else STATE.get("t1", time.time())) - STATE["t0"], 1) if STATE["t0"] else 0,
-                                    "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"]})
+                                    "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"],
+                                    "live": _live()})
+        if u.path == "/api/live":
+            f = os.path.join(STATE["proj"] or "", "live", "live.jpg")
+            if not STATE["proj"] or not os.path.exists(f):
+                return self._send(404, {"error": "none"})
+            with open(f, "rb") as fh:
+                data = fh.read()
+            self.send_response(200); self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(data)))
+            self.end_headers(); self.wfile.write(data); return
         if u.path == "/api/settings":
             s = settings(); s["api_key_set"] = bool(s.get("api_key")); s["api_key"] = ""
             s["gh_token_set"] = bool(s.get("gh_token")); s["gh_token"] = ""
@@ -956,7 +1023,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, vio.load_json(f, {}) if os.path.exists(f) else {})
         if u.path == "/api/video":
             which = q.get("which", ["src"])[0]
-            path = P("proxy.mp4") if which == "proxy" else vio.load_json(P("project.json"))["video"]
+            path = P("proxy.mp4") if which == "proxy" else (play_path() or vio.load_json(P("project.json"))["video"])
             if not os.path.exists(path):
                 return self._send(404, {"error": "no video"})
             return self._video(path)
