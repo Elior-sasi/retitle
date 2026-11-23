@@ -1,5 +1,6 @@
 """End-to-end check: generated clip with 3 animated English titles -> Hebrew video + SRT."""
 import os, sys, json, shutil, subprocess, tempfile
+sys.stdout.reconfigure(encoding="utf-8")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from rt import vio, shots, detect, extract, clean, render, compose, check, srt

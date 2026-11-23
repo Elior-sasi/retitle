@@ -1,6 +1,11 @@
 """Entry point for the Windows app (PyInstaller)."""
 import os, sys
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 if getattr(sys, "frozen", False):
     base = sys._MEIPASS
     os.environ.setdefault("FFMPEG", os.path.join(base, "bin", "ffmpeg.exe"))
