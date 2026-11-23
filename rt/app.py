@@ -19,7 +19,7 @@ LAYERS = {}                      # id -> (mtime, premultiplied layer)
 
 
 # settings that travel between computers through the sync folder (secrets and recent files stay local)
-SHARED = ("glossary", "content", "src_lang", "model", "srt_rle", "whisper_model", "whisper_lang", "ui_fs")
+SHARED = ("open_maximized", "glossary", "content", "src_lang", "model", "srt_rle", "whisper_model", "whisper_lang", "ui_fs")
 
 
 def sync_root():
@@ -68,7 +68,7 @@ def enable_sync(d):
 
 def settings():
     s = {"api_key": "", "model": "claude-sonnet-5-5", "glossary": "", "src_lang": "eng", "content": "trailer",
-         "srt_rle": True, "gh_token": "",
+         "srt_rle": True, "gh_token": "", "open_maximized": True,
          "whisper_model": "large-v3", "whisper_lang": ""}
     s.update(vio.load_json(CFG, {}))
     r = sync_root()
@@ -1054,7 +1054,8 @@ def main():
         try:
             import webview
             WINDOW = webview.create_window("Retitle", url, width=1600, height=980, min_size=(1100, 700),
-                                           background_color="#101114")
+                                           background_color="#101114",
+                                           maximized=settings().get("open_maximized", True))
             print("window: pywebview", flush=True)
             webview.start()
             return

@@ -356,6 +356,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <div><input type="password" id="s-gh" dir="ltr" autocomplete="off" aria-describedby="ghset" style="width:100%"><div id="ghset" class="unit"></div></div>
     <span class="lbl" id="sync-l">סנכרון בין מחשבים<br><span class="unit">חינם, דרך OneDrive או Google Drive</span></span>
     <div role="group" aria-labelledby="sync-l"><div id="sync-st" role="status"></div><div class="row2" id="sync-b"></div></div>
+    <label for="s-max">פתיחת התוכנה</label><select id="s-max"><option value="1">מסך מלא (מוגדל)</option><option value="0">חלון רגיל</option></select>
     <label for="s-fs">גודל טקסט בממשק</label>
     <select id="s-fs"><option value="13">קטן (כמו Adobe)</option><option value="14">רגיל</option><option value="16">גדול</option><option value="18">גדול מאוד</option></select>
   </div></div>
@@ -736,11 +737,11 @@ function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren
     bx.append(el('button',{class:'mini',text:'השתמש ב-'+nm,title:d,onclick:()=>go(d)}))}
   bx.append(el('button',{class:'mini',text:'בחר תיקייה מסונכרנת...',onclick:()=>go('pick')}));
   if(s.sync_dir)bx.append(el('button',{class:'mini',text:'בטל סנכרון',onclick:()=>go('')}))}
-async function loadSettings(){const s=await api('/api/settings');renderSync(s);$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
+async function loadSettings(){const s=await api('/api/settings');renderSync(s);$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
   $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
-  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
+  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
 function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
 
 // ================================================================ import / hardsubs / QA / update
