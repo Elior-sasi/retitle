@@ -1,5 +1,5 @@
 """Self-update from GitHub releases (Windows exe). Private repo: needs a read-only token in settings."""
-import os, sys, json, zipfile, tempfile, subprocess, urllib.request
+import os, sys, json, zipfile, tempfile, subprocess, urllib.request, shutil
 from . import vio
 
 REPO = "Elior-sasi/retitle"                 # private: needs a token
@@ -189,17 +189,71 @@ def apply_delta(info, progress=None):
             raise RuntimeError("checksum " + k)
     with open(os.path.join(stage, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(remote, f)
-    exe = os.path.join(app_dir, "Retitle.exe")
-    pid = os.getpid()
-    lines = ["@echo off", ":wait",
-             f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (timeout /t 1 /nobreak >nul & goto wait)',
-             f'robocopy "{stage}" "{app_dir}" /E /IS /IT /R:10 /W:1 /NFL /NDL /NJH /NJS >nul']
-    for k in gone:
-        lines.append(f'del /f /q "{os.path.join(app_dir, *k.split("/"))}" >nul 2>&1')
-    lines += [f'start "" "{exe}"', f'rmdir /s /q "{tmp}"']
-    cmd = os.path.join(tempfile.gettempdir(), f"retitle_update_{pid}.cmd")
-    with open(cmd, "w", encoding="mbcs" if os.name == "nt" else "utf-8") as f:
-        f.write("\r\n".join(lines) + "\r\n")
-    subprocess.Popen(["cmd", "/c", cmd], creationflags=0x08000000 | 0x00000008)
-    print(f"delta update: {len(need)} files, {round(total / 1e6, 1)} MB, {len(gone)} removed")
+    swap(stage, app_dir, need + ["manifest.json"], gone)
+    # start the new version; it waits until this process is gone before it opens its window
+    subprocess.Popen([os.path.join(app_dir, "Retitle.exe"), "--wait-pid", str(os.getpid())],
+                     creationflags=0x00000008, close_fds=True)
+    print(f"delta update: {len(need)} files, {round(total / 1e6, 1)} MB, {len(gone)} removed - swapped in place")
+    shutil.rmtree(tmp, ignore_errors=True)
     return True
+
+
+OLD = ".retitle-old"
+
+
+def swap(stage, app_dir, files, gone):
+    """Put the new files in place while this app is still running. Windows lets a running exe and
+    loaded DLLs be renamed (not overwritten), so each old file is renamed aside first and the new
+    one moved in. All or nothing: on any failure everything is put back."""
+    done = []                                       # (target, aside or None)
+    try:
+        for k in files:
+            src = os.path.join(stage, *k.split("/")); dst = os.path.join(app_dir, *k.split("/"))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            aside = None
+            if os.path.exists(dst):
+                aside = dst + OLD
+                if os.path.exists(aside):
+                    os.remove(aside)
+                os.replace(dst, aside)
+            done.append((dst, aside))
+            shutil.copy2(src, dst)
+        for k in gone:
+            dst = os.path.join(app_dir, *k.split("/"))
+            if os.path.exists(dst):
+                os.replace(dst, dst + OLD)
+                done.append((None, dst + OLD))
+    except Exception:
+        for dst, aside in reversed(done):
+            try:
+                if dst and os.path.exists(dst):
+                    os.remove(dst)
+                if aside:
+                    os.replace(aside, dst or aside[:-len(OLD)])
+            except Exception:
+                pass
+        raise
+
+
+def cleanup_old(app_dir=None):
+    """At start: remove what the last update set aside (no longer in use now)."""
+    app_dir = app_dir or os.path.dirname(sys.executable)
+    for d, _, fs in os.walk(app_dir):
+        for f in fs:
+            if f.endswith(OLD):
+                try:
+                    os.remove(os.path.join(d, f))
+                except OSError:
+                    pass
+
+
+def wait_pid(pid, timeout=60):
+    """Block until process `pid` has exited (Windows), at most `timeout` seconds."""
+    if os.name != "nt":
+        return
+    import ctypes
+    k = ctypes.windll.kernel32
+    h = k.OpenProcess(0x00100000, False, int(pid))      # SYNCHRONIZE
+    if h:
+        k.WaitForSingleObject(h, int(timeout * 1000))
+        k.CloseHandle(h)

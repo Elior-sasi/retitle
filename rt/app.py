@@ -1376,8 +1376,27 @@ def close_splash():
         pass
 
 
+def _after_update():
+    """Started by an update: wait for the old copy to close, then tidy up what it set aside."""
+    if "--wait-pid" in sys.argv:
+        from . import update
+        i = sys.argv.index("--wait-pid")
+        try:
+            update.wait_pid(int(sys.argv[i + 1]))
+        except Exception:
+            traceback.print_exc()
+        del sys.argv[i:i + 2]
+    if getattr(sys, "frozen", False):
+        try:
+            from . import update
+            update.cleanup_old()
+        except Exception:
+            traceback.print_exc()
+
+
 def main():
     global WINDOW
+    _after_update()
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     if args and os.path.isfile(args[0]):
         if _handoff(os.path.abspath(args[0])):
