@@ -876,6 +876,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "text/html; charset=utf-8")
         if u.path == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
+        if u.path == "/api/google":
+            from . import gdrive
+            return self._send(200, gdrive.status())
         if u.path == "/api/ping":
             return self._send(200, {"app": "retitle"})
         if u.path == "/api/recent":
@@ -1010,6 +1013,23 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": False})
             added, bad = fontlib.import_files(paths)
             return self._send(200, {"ok": True, "added": added, "bad": bad})
+        if u.path.startswith("/api/google/"):
+            from . import gdrive
+            act = u.path.rsplit("/", 1)[1]
+            try:
+                if act == "signin":
+                    email = gdrive.sign_in()
+                    gdrive.pull(force=True); gdrive.push(force=True)
+                    return self._send(200, {"ok": True, "email": email})
+                if act == "backup":
+                    gdrive.push(force=True); return self._send(200, {"ok": True})
+                if act == "restore":
+                    gdrive.pull(force=True); return self._send(200, {"ok": True})
+                if act == "signout":
+                    gdrive.sign_out(); return self._send(200, {"ok": True})
+            except Exception as e:
+                return self._send(200, {"ok": False, "error": str(e)})
+            return self._send(404, {"error": "?"})
         if u.path == "/api/sync":
             d = b.get("dir")
             if d == "pick":
@@ -1239,6 +1259,12 @@ def main():
         try:
             from . import fontlib
             fontlib.catalog()
+        except Exception:
+            traceback.print_exc()
+        try:                                   # Google backup: restore what other computers added, then keep it current
+            from . import gdrive
+            if "--server" not in sys.argv:
+                threading.Thread(target=gdrive.auto_loop, daemon=True).start()
         except Exception:
             traceback.print_exc()
         try:                                   # transcription engine: fetched once in the background

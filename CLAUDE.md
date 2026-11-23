@@ -7,3 +7,5 @@ When localizing a video in chat with this repo: init -> shots -> detect (look at
 User-facing text in Hebrew, accessible UI (large text, labels, RTL, contrast, reduced motion).
 
 Releases: CI publishes to this private repo and, with the repo secret RELEASES_TOKEN, also to the public Elior-sasi/retitle-releases, which installs and self-updates read (no token on the user's side).
+
+Google backup (rt/gdrive.py): CI writes rt/_google.py from the repo secrets GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (Desktop OAuth client, scope drive.appdata). Without them the backup shows "not available".

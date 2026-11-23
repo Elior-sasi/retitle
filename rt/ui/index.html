@@ -394,6 +394,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-rle">SRT</label><label class="chk"><input type="checkbox" id="s-rle"> תו RLE בתחילת כל שורה (לתצוגת עברית תקינה)</label>
     <label for="s-gh">טוקן GitHub לעדכונים<br><span class="unit">לריפו פרטי, קריאה בלבד</span></label>
     <div><input type="password" id="s-gh" dir="ltr" autocomplete="off" aria-describedby="ghset" style="width:100%"><div id="ghset" class="unit"></div></div>
+    <span class="lbl" id="gb-l">גיבוי ל-Google<br><span class="unit">סדרות, מילון שמות, גופנים שייבאת והעדפות</span></span>
+    <div role="group" aria-labelledby="gb-l"><div id="gb-st" role="status"></div><div class="row2" id="gb-b"></div></div>
     <span class="lbl" id="sync-l">סנכרון בין מחשבים<br><span class="unit">חינם, דרך OneDrive או Google Drive</span></span>
     <div role="group" aria-labelledby="sync-l"><div id="sync-st" role="status"></div><div class="row2" id="sync-b"></div></div>
     <label for="s-max">פתיחת התוכנה</label><select id="s-max"><option value="1">מסך מלא (מוגדל)</option><option value="0">חלון רגיל</option></select>
@@ -806,6 +808,16 @@ function renderAll(){renderList();renderInsp();renderTimeline();updTime();$('#we
 // ================================================================ dialogs
 function openDlg(id){closeMenu(true);const d=$(id);if(d.open)return;d.showModal();const f=d.querySelector('input,select,textarea,button');if(f)f.focus()}
 document.querySelectorAll('dialog [data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog').close()));
+async function renderGoogle(){const st=$('#gb-st'),bx=$('#gb-b');bx.replaceChildren();let g;try{g=await api('/api/google')}catch(e){return}
+  if(!g.configured){st.textContent='עוד לא זמין בגרסה הזאת.';return}
+  const act=async(a,busy,done)=>{st.textContent=busy;bx.querySelectorAll('button').forEach(b=>b.disabled=true);const r=await api('/api/google/'+a,{});
+    if(!r.ok){say(r.error||'נכשל',true)}else say(done);renderGoogle()};
+  if(!g.signed_in){st.textContent='לא מחובר. הגיבוי נשמר בתיקייה מוסתרת ב-Drive שלך, שרק Retitle רואה.';
+    bx.append(el('button',{class:'mini',text:'התחבר עם Google',onclick:()=>act('signin','נפתח דפדפן להתחברות - אשר שם וחזור לכאן...','מחובר ל-Google. הגיבוי פעיל')}));return}
+  st.replaceChildren('מחובר: ',el('bdi',{dir:'ltr',text:g.email||''}),'. ',g.last_push?`גיבוי אחרון: ${new Date(g.last_push).toLocaleString('he-IL')}.`:'',g.error?` שגיאה אחרונה: ${g.error}`:'',' גיבוי אוטומטי כשמשהו משתנה.');
+  bx.append(el('button',{class:'mini',text:'גבה עכשיו',onclick:()=>act('backup','מגבה...','הגיבוי נשמר ב-Google')}),
+    el('button',{class:'mini',text:'שחזר מהגיבוי',onclick:()=>act('restore','משחזר...','שוחזר מהגיבוי')}),
+    el('button',{class:'mini',text:'התנתק',onclick:()=>act('signout','מתנתק...','התנתקת מ-Google')}))}
 function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren();
   st.textContent=s.sync_dir?'מסונכרן דרך: ':'לא מסונכרן. הסדרות, מילון השמות וההעדפות נשמרים רק במחשב הזה.';
   if(s.sync_dir)st.append(el('bdi',{dir:'ltr',text:s.sync_dir}));
@@ -814,7 +826,7 @@ function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren
     bx.append(el('button',{class:'mini',text:'השתמש ב-'+nm,title:d,onclick:()=>go(d)}))}
   bx.append(el('button',{class:'mini',text:'בחר תיקייה מסונכרנת...',onclick:()=>go('pick')}));
   if(s.sync_dir)bx.append(el('button',{class:'mini',text:'בטל סנכרון',onclick:()=>go('')}))}
-async function loadSettings(){const s=await api('/api/settings');renderSync(s);$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
+async function loadSettings(){const s=await api('/api/settings');renderSync(s);renderGoogle();$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
   $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
