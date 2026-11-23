@@ -37,7 +37,9 @@ def check(token=""):
     assets = rel.get("assets", [])
     asset = next((a for a in assets if a["name"].lower().endswith("setup.exe")), None) or \
         next((a for a in assets if a["name"].endswith(".zip")), None)
+    z = next((a for a in assets if a["name"].endswith(".zip")), None)
     return {"current": BUILD, "latest": n, "newer": n > BUILD, "tag": tag,
+            "zip_url": z.get("browser_download_url") if z else None, "zip_size": z["size"] if z else 0,
             "asset_api": asset["url"] if asset else None, "size": asset["size"] if asset else 0,
             "asset_name": asset["name"] if asset else "",
             "notes": rel.get("name", "")}
@@ -50,6 +52,11 @@ def apply(info, token="", progress=None):
         raise RuntimeError("עדכון עצמי עובד רק בגרסה המותקנת")
     if not info.get("asset_api"):
         raise RuntimeError("לא נמצא קובץ התקנה בגרסה החדשה")
+    try:                                          # only the files that changed (usually a few MB)
+        if apply_delta(info, progress):
+            return True
+    except Exception as e:
+        print("delta update failed, full installer:", e)
     tmp = tempfile.mkdtemp(prefix="retitle_upd_")
     dst = os.path.join(tmp, info.get("asset_name") or "Retitle-Setup.exe")
     with _get(info["asset_api"], token, "application/octet-stream") as r, open(dst, "wb") as f:
@@ -66,7 +73,7 @@ def apply(info, token="", progress=None):
     if total and os.path.getsize(dst) < total:
         raise RuntimeError("ההורדה נקטעה - נסה שוב")
     if dst.lower().endswith(".exe"):
-        subprocess.Popen([dst, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/SP-"],
+        subprocess.Popen([dst, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/SP-"],   # a small progress window, no questions
                          creationflags=0x00000008)  # detached
         return True
     # portable zip fallback
@@ -84,4 +91,115 @@ robocopy "{new_dir}" "{app_dir}" /E /IS /IT /R:3 /W:1 /NFL /NDL /NJH /NJS >nul
 start "" "{exe}"
 """)
     subprocess.Popen(["cmd", "/c", cmd], creationflags=0x08000000 | 0x00000008)
+    return True
+
+
+# ------------------------------------------------------------------ delta update
+class HttpFile:
+    """Read-only, seekable view of a remote file through HTTP Range requests (enough for zipfile)."""
+
+    def __init__(self, url, size):
+        self.url, self.size, self.pos, self.got = url, size, 0, 0
+        self._cache = (0, b"")
+
+    def seekable(self):
+        return True
+
+    def tell(self):
+        return self.pos
+
+    def seek(self, off, whence=0):
+        self.pos = off if whence == 0 else self.pos + off if whence == 1 else self.size + off
+        return self.pos
+
+    def read(self, n=-1):
+        if n is None or n < 0:
+            n = self.size - self.pos
+        n = max(0, min(n, self.size - self.pos))
+        if n == 0:
+            return b""
+        c0, cb = self._cache
+        if c0 <= self.pos and self.pos + n <= c0 + len(cb):
+            b = cb[self.pos - c0:self.pos - c0 + n]
+        else:
+            want = max(n, 1 << 16)                 # small reads (headers) come in one request
+            end = min(self.size, self.pos + want) - 1
+            req = urllib.request.Request(self.url, headers={"Range": f"bytes={self.pos}-{end}", "User-Agent": "Retitle"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                if r.status != 206:
+                    raise RuntimeError("server does not send parts of the file")
+                data = r.read()
+            self.got += len(data)
+            self._cache = (self.pos, data)
+            b = data[:n]
+        self.pos += len(b)
+        return b
+
+
+def _sha(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def apply_delta(info, progress=None):
+    """Fetch only the changed files out of the release zip, then swap them in after this app exits
+    and start it again. False when not possible (the caller uses the full installer)."""
+    if not getattr(sys, "frozen", False) or not info.get("zip_url") or not info.get("zip_size"):
+        return False
+    app_dir = os.path.dirname(sys.executable)
+    local = vio.load_json(os.path.join(app_dir, "manifest.json"))
+    if not local:
+        return False
+    z = zipfile.ZipFile(HttpFile(info["zip_url"], info["zip_size"]))
+    names = {n.replace("\\", "/"): n for n in z.namelist()}
+    pre = next((n[:-len("manifest.json")] for n in names if n.endswith("manifest.json") and n.count("/") <= 1), None)
+    if pre is None:
+        return False
+    remote = json.loads(z.read(names[pre + "manifest.json"]).decode())
+    lf, rf = local["files"], remote["files"]
+    # what is on disk now counts, not what the old manifest says
+    need = [k for k, (sz, sh) in rf.items()
+            if lf.get(k) != [sz, sh] or not os.path.exists(os.path.join(app_dir, k))]
+    gone = [k for k in lf if k not in rf]
+    total = sum(rf[k][0] for k in need)
+    if total > 0.6 * sum(v[0] for v in rf.values()):
+        return False                                # most of it changed: the installer is as quick
+    tmp = tempfile.mkdtemp(prefix="retitle_delta_")
+    stage = os.path.join(tmp, "new")
+    done = 0
+    for k in need:
+        src = names.get(pre + k)
+        if src is None:
+            return False
+        dst = os.path.join(stage, *k.split("/"))
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with z.open(src) as r, open(dst, "wb") as f:
+            while True:
+                b = r.read(1 << 20)
+                if not b:
+                    break
+                f.write(b); done += len(b)
+                if progress and total:
+                    progress(min(0.98, done / total))
+        if _sha(dst) != rf[k][1]:
+            raise RuntimeError("checksum " + k)
+    with open(os.path.join(stage, "manifest.json"), "w", encoding="utf-8") as f:
+        json.dump(remote, f)
+    exe = os.path.join(app_dir, "Retitle.exe")
+    pid = os.getpid()
+    lines = ["@echo off", ":wait",
+             f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (timeout /t 1 /nobreak >nul & goto wait)',
+             f'robocopy "{stage}" "{app_dir}" /E /IS /IT /R:10 /W:1 /NFL /NDL /NJH /NJS >nul']
+    for k in gone:
+        lines.append(f'del /f /q "{os.path.join(app_dir, *k.split("/"))}" >nul 2>&1')
+    lines += [f'start "" "{exe}"', f'rmdir /s /q "{tmp}"']
+    cmd = os.path.join(tempfile.gettempdir(), f"retitle_update_{pid}.cmd")
+    with open(cmd, "w", encoding="mbcs" if os.name == "nt" else "utf-8") as f:
+        f.write("\r\n".join(lines) + "\r\n")
+    subprocess.Popen(["cmd", "/c", cmd], creationflags=0x08000000 | 0x00000008)
+    print(f"delta update: {len(need)} files, {round(total / 1e6, 1)} MB, {len(gone)} removed")
     return True

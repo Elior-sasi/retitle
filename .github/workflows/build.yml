@@ -105,6 +105,8 @@ jobs:
           Get-Content "$env:APPDATA\Retitle\retitle.log" -ErrorAction SilentlyContinue
           Stop-Process -Id $p.Id -Force
           Write-Host "WINDOW SMOKE OK"
+      - name: Manifest (lets the updater fetch only changed files)
+        run: python tools/manifest.py dist/Retitle ${{ github.run_number }}
       - name: Zip
         shell: pwsh
         run: Compress-Archive dist/Retitle Retitle-win64.zip
