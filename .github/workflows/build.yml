@@ -40,7 +40,7 @@ jobs:
           python tests/selftest.py
       - name: Package
         run: >
-          pyinstaller --noconfirm --windowed --name Retitle --icon NONE
+          pyinstaller --noconfirm --windowed --name Retitle --icon assets/icon.ico
           --add-data "rt/ui;rt/ui" --add-data "fonts;fonts" --add-data "models;models" --add-binary "bin/ffmpeg.exe;bin" --add-binary "bin/ffprobe.exe;bin"
           --collect-all rapidocr_onnxruntime --collect-all faster_whisper --collect-all ctranslate2 --collect-all onnxruntime
           --collect-all webview --hidden-import clr --collect-submodules rt --hidden-import tkinter

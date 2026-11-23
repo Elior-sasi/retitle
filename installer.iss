@@ -21,6 +21,8 @@ CloseApplications=yes
 RestartApplications=no
 UninstallDisplayIcon={app}\Retitle.exe
 SetupLogging=yes
+SetupIconFile=assets\icon.ico
+WizardSmallImageFile=assets\icon_wizard.bmp
 
 [Languages]
 Name: "he"; MessagesFile: "compiler:Languages\Hebrew.isl"
