@@ -72,7 +72,7 @@ def settings():
          "whisper_model": "large-v3", "whisper_lang": ""}
     s.update(vio.load_json(CFG, {}))
     if not s.get("asr_v3"):                    # one-time: back to large-v3, the most accurate (undoes the turbo switch of build ~20)
-        if s.get("whisper_model") == "large-v3":
+        if s.get("whisper_model") in ("large-v3-turbo", "turbo"):
             s["whisper_model"] = "large-v3"
         s["asr_v3"] = True
         try:
