@@ -740,7 +740,7 @@ async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
   for(const id of['q-analyze','q-trans','q-build','q-export'])$('#'+id).disabled=!s.proj||s.running;
   const pb=$('#pbar');if(s.running){pb.style.display='inline-block';if(s.progress!=null)pb.value=s.progress;else pb.removeAttribute('value')}else pb.style.display='none';
   S.job=s.job;showBusy(s);const an=$('#asrnote'),A=s.asr||{};
-  an.textContent=A.state==='downloading'?`מכין מנוע תמלול ${Math.floor((A.progress||0)*100)}%`:A.state==='error'?'מנוע התמלול לא ירד - ינסה שוב בתמלול':'';
+  an.textContent=A.state==='downloading'?`${A.what==='gpu'?'מוריד תמיכה בכרטיס המסך לתמלול':'מכין מנוע תמלול'} ${Math.floor((A.progress||0)*100)}%`:A.state==='error'?'מנוע התמלול לא ירד - ינסה שוב בתמלול':'';
   if(s.running){const last=s.log.length?s.log[s.log.length-1].slice(10):'';say(`${JOBN[s.job]||s.job}: ${s.stage||last}${s.progress!=null?` ${Math.round(s.progress*100)}%`:''}`)}
   else if(wasRunning&&s.cancelled){await reloadData(false);renderAll();say(`${JOBN[s.job]||''} בוטל`)}
   else if(wasRunning){await reloadData(false);renderAll();setMode(S.mode);

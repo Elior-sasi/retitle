@@ -345,7 +345,7 @@ def job_transcribe():
         log("מוריד את מנוע התמלול (פעם אחת)...")
         asr.wait(name, progress=lambda x: STATE.update(progress=round(0.5 * x, 3)) if not STATE["cancel"] else prog(0))
     STATE.update(stage="מתמלל", step=2 if STATE["steps"] == 2 else 1, steps=STATE["steps"] or 1)
-    log("מתמלל עם Whisper...")
+    log("מתמלל עם Whisper" + (" על כרטיס המסך..." if asr.has_nvidia() and asr.gpu_ready() else " על המעבד..."))
     srt.transcribe(PJ["video"], P("whisper.json"), s.get("whisper_lang") or None, name)
     srt.prep(STATE["proj"], P("whisper.json"))
     log("התמלול מוכן. בחר כתובית והקלד עברית.")
