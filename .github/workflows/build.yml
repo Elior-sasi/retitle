@@ -69,13 +69,15 @@ jobs:
       - name: Installer smoke test (silent install, start, uninstall)
         shell: pwsh
         run: |
-          Start-Process .\Retitle-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-" -Wait
+          $p = Start-Process .\Retitle-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-" -PassThru
+          $p.WaitForExit()
           $exe = "$env:LOCALAPPDATA\Programs\Retitle\Retitle.exe"
           if (!(Test-Path $exe)) { throw "not installed" }
           Start-Sleep 15
           Invoke-RestMethod "http://127.0.0.1:8765/api/status" | Out-Null
           Get-Process Retitle -ErrorAction SilentlyContinue | Stop-Process -Force
-          Start-Process "$env:LOCALAPPDATA\Programs\Retitle\unins000.exe" -ArgumentList "/VERYSILENT" -Wait
+          $u = Start-Process "$env:LOCALAPPDATA\Programs\Retitle\unins000.exe" -ArgumentList "/VERYSILENT" -PassThru
+          $u.WaitForExit()
           Write-Host "INSTALLER SMOKE OK"
       - uses: actions/upload-artifact@v4
         with:
