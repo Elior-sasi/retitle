@@ -32,7 +32,7 @@ jobs:
           GID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GSEC: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
-          if ($env:GID) { Set-Content -Path rt/_google.py -Value "CLIENT_ID = `"$env:GID`"`nCLIENT_SECRET = `"$env:GSEC`"" }
+          if ($env:GID -and $env:GSEC) { Set-Content -Path rt/_google.py -Value "CLIENT_ID = `"$env:GID`"`nCLIENT_SECRET = `"$env:GSEC`""; Write-Host "Google backup: configured" } else { Write-Host "Google backup: secrets missing" }
       - name: Fonts
         run: python -m rt fonts
       - name: Inpainting model (LaMa, OpenCV Zoo, checksum-verified)
@@ -70,7 +70,7 @@ jobs:
           GID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GSEC: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
-          if ($env:GID) { Set-Content -Path rt/_google.py -Value "CLIENT_ID = `"$env:GID`"`nCLIENT_SECRET = `"$env:GSEC`"" }
+          if ($env:GID -and $env:GSEC) { Set-Content -Path rt/_google.py -Value "CLIENT_ID = `"$env:GID`"`nCLIENT_SECRET = `"$env:GSEC`""; Write-Host "Google backup: configured" } else { Write-Host "Google backup: secrets missing" }
       - name: Fonts
         run: python -m rt fonts
       - name: Inpainting model (LaMa, OpenCV Zoo, checksum-verified)
