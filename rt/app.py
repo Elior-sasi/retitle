@@ -1053,9 +1053,11 @@ def main():
     if "--browser" not in sys.argv:
         try:
             import webview
-            WINDOW = webview.create_window("Retitle", url, width=1600, height=980, min_size=(1100, 700),
-                                           background_color="#101114",
-                                           maximized=settings().get("open_maximized", True))
+            kw = dict(width=1600, height=980, min_size=(1100, 700), background_color="#101114")
+            try:
+                WINDOW = webview.create_window("Retitle", url, maximized=settings().get("open_maximized", True), **kw)
+            except TypeError:                 # older pywebview without `maximized`
+                WINDOW = webview.create_window("Retitle", url, **kw)
             print("window: pywebview", flush=True)
             webview.start()
             return
