@@ -130,6 +130,9 @@ def job_analyze():
         prog(0.9)
         thumbs()
     run_steps([("מחפש חיתוכי שוטים", 0.3, a), ("מזהה טקסט על המסך", 0.55, b), ("מודד צבע, צל ותזמון מדויק", 0.15, c)])
+    n = series_apply()
+    if n:
+        log(f"{n} כותרות מולאו מהסדרה \"{series_name()}\" - מסומנות \"מהסדרה\" ברשימה")
     log("הניתוח הסתיים. בחר כותרת ברשימה והקלד עברית.")
 
 
@@ -361,6 +364,12 @@ def _activate(rfile, data):
     os.makedirs(CFG_DIR, exist_ok=True)
     vio.save_json(CFG, s)
     set_title()
+    try:
+        n = series_apply()
+        if n:
+            log(f"{n} כותרות עודכנו מהסדרה")
+    except Exception:
+        traceback.print_exc()
     if not STATE["missing_video"]:
         threading.Thread(target=build_media, args=(data,), daemon=True).start()
     return data
@@ -453,6 +462,7 @@ def apply_titles(edits):
             t = byid.get(e.get("id"))
             if not t:
                 continue
+            was = (t.get("he", ""), t.get("translate", True), t.get("mode", "replace"), t.get("layer"), dict(t.get("style") or {}))
             if "he" in e and e["he"] != t.get("he", ""):
                 t["he"] = e["he"]; relayer.add(t["id"])
             if "translate" in e and bool(e["translate"]) != t.get("translate", True):
@@ -474,11 +484,41 @@ def apply_titles(edits):
             for k in ("in", "out"):
                 if k in e and e[k] is not None and int(e[k]) != t.get(k):
                     t[k] = int(e[k]); t[k + "_override"] = int(e[k])
+            if t.get("from_series") and was != (t.get("he", ""), t.get("translate", True), t.get("mode", "replace"), t.get("layer"), dict(t.get("style") or {})):
+                t["series_override"] = True       # changed here: stays local until pushed to the whole series
         vio.save_json(P("titles.json"), T)
+        name = series_name()
+        if name and relayer:
+            from . import series
+            try:
+                series.learn(name, STATE["proj"], T["titles"])
+            except Exception:
+                traceback.print_exc()
     if relayer and os.path.exists(P("layers", "meta.json")):
         from . import render
         render.build_layers(STATE["proj"], only=relayer)
     return relayer
+
+
+def series_name():
+    return vio.load_json(P("project.json"), {}).get("series", "") if STATE["proj"] else ""
+
+
+def series_apply(only=None):
+    """Fill titles from the project's series; re-render what changed."""
+    from . import series
+    name = series_name()
+    if not name or not os.path.exists(P("titles.json")):
+        return 0
+    with LOCK:
+        T = vio.load_json(P("titles.json"))
+        ch = series.apply(name, STATE["proj"], T, only=only)
+        if ch:
+            vio.save_json(P("titles.json"), T)
+    if ch and os.path.exists(P("layers", "meta.json")):
+        from . import render
+        render.build_layers(STATE["proj"], only=ch)
+    return len(ch)
 
 
 def apply_dialog(cues):
@@ -593,6 +633,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"app": "retitle"})
         if u.path == "/api/recent":
             return self._send(200, {"items": recent()})
+        if u.path == "/api/series":
+            from . import series
+            return self._send(200, {"current": series_name(), "list": series.list_all()})
         if u.path == "/api/status":
             return self._send(200, {"proj": STATE["proj"], "file": STATE.get("file"), "missing_video": STATE.get("missing_video", False), "running": STATE["running"], "job": STATE["job"],
                                     "error": STATE["error"], "log": STATE["log"], "progress": STATE["progress"],
@@ -717,6 +760,32 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"proj": STATE["proj"], "file": STATE["file"], "missing_video": STATE["missing_video"]})
         if not STATE["proj"]:
             return self._send(400, {"error": "no project"})
+        if u.path == "/api/series":
+            from . import series
+            name = (b.get("name") or "").strip()
+            pj = vio.load_json(P("project.json")); pj["series"] = name; vio.save_json(P("project.json"), pj)
+            learned = applied = 0
+            if name and os.path.exists(P("titles.json")):
+                applied = series_apply()
+                learned = series.learn(name, STATE["proj"], vio.load_json(P("titles.json"))["titles"])
+            return self._send(200, {"ok": True, "applied": applied, "learned": learned})
+        if u.path in ("/api/series/push", "/api/series/revert"):
+            from . import series
+            name = series_name(); tid = b.get("id")
+            if not name:
+                return self._send(200, {"ok": False})
+            with LOCK:
+                T = vio.load_json(P("titles.json"))
+                t = next((x for x in T["titles"] if x["id"] == tid), None)
+                if t:
+                    t.pop("series_override", None)
+                    if u.path.endswith("push"):
+                        t["from_series"] = True
+                    vio.save_json(P("titles.json"), T)
+            if t and u.path.endswith("push"):
+                series.learn(name, STATE["proj"], [t], force_ids={tid})
+            series_apply(only={tid}) if t else None
+            return self._send(200, {"ok": bool(t)})
         if u.path == "/api/titles":
             try:
                 r = apply_titles(b.get("titles", []))

@@ -148,7 +148,8 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 .item .he{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff}
 .item .meta{color:var(--mut);font-size:.85em;display:flex;gap:6px;flex-wrap:wrap}
 .chip{border:1px solid currentColor;border-radius:9px;padding:0 6px;font-size:.82em;line-height:1.35}
-.chip.warn{color:var(--warn)}.chip.off{color:var(--mut)}
+.row2{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0}
+.chip.warn{color:var(--warn)}.chip.ser{color:#b9a6ff}.chip.ser.warn{color:var(--warn)}.chip.off{color:var(--mut)}
 .pfoot{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #1a1a1a}
 .pfoot .qbtn{flex:1;justify-content:center}
 
@@ -355,6 +356,11 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 </dialog>
 <dialog id="d-qa" aria-labelledby="dq-h"><h2 class="dh" id="dq-h">בדיקת QA</h2><div class="db"><p class="note" id="qa-sum" style="padding:0 0 6px" role="status"></p><table class="kt qa"><tbody id="qa-list"></tbody></table></div><div class="df"><button class="qbtn" id="qa-re">בדוק שוב</button><button class="cta" data-close>סגור</button></div></dialog>
 <dialog id="d-upd" aria-labelledby="du-h"><h2 class="dh" id="du-h">עדכונים</h2><div class="db"><p id="upd-msg" role="status"></p></div><div class="df"><button class="qbtn" data-close>סגור</button><button class="cta" id="upd-go" hidden>עדכן עכשיו</button></div></dialog>
+<dialog id="d-series" aria-labelledby="dsr-h"><h2 class="dh" id="dsr-h">סדרה</h2><div class="db"><div class="frm">
+  <label for="sr-sel">הפרויקט שייך לסדרה</label><select id="sr-sel"></select>
+  <label for="sr-new">או סדרה חדשה</label><input id="sr-new" dir="auto" placeholder="שם הסדרה">
+  </div><p class="note">כל כותרת שתתרגם נשמרת בסדרה: העברית, להשאיר או למחוק, גופן, גודל, צבע ולוגו. בפרק הבא, כותרות עם אותו טקסט מקור יתמלאו לבד ויסומנו "מהסדרה".</p></div>
+  <div class="df"><button class="qbtn" data-close>ביטול</button><button class="cta" id="sr-save">שמור</button></div></dialog>
 <dialog id="d-recent" aria-labelledby="dr-h"><h2 class="dh" id="dr-h">פרויקטים אחרונים</h2><div class="db" id="recent2"></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
 <dialog id="d-relink" aria-labelledby="dk-h"><h2 class="dh" id="dk-h">הסרטון לא נמצא</h2><div class="db"><p id="relink-msg"></p><p class="note">אם הזזת או שינית את שם הסרטון, אתר אותו והפרויקט ימשיך מאיפה שעצרת.</p></div><div class="df"><button class="qbtn" data-close>לא עכשיו</button><button class="cta" id="relink-go">אתר את הסרטון...</button></div></dialog>
 <dialog id="d-log" aria-labelledby="dl-h"><h2 class="dh" id="dl-h">יומן פעולות</h2><div class="db"><div id="logbox" tabindex="0"></div></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
@@ -410,7 +416,7 @@ async function reloadData(keepModel){const d=await api('/api/project');if(d.erro
   if(!keepModel)modelFromData();else{const ids=new Set(S.model.titles.map(t=>t.id));
     if(((d.titles||{}).titles||[]).some(t=>!ids.has(t.id))||((d.dialog||{}).cues||[]).length!==S.model.cues.length)modelFromData()}
   const name=d.project.video.split(/[\\/]/).pop();
-  $('#workspace').textContent=d.file?d.file.split(/[\\/]/).pop().replace(/\.retitle$/i,''):name;$('#prog-name').replaceChildren(el('bdi',{dir:'ltr',text:name}));$('#tl-name').replaceChildren(el('bdi',{dir:'ltr',text:name}));$('#workspace').title=(d.file||'')+'\n'+d.project.video;
+  $('#workspace').textContent=(d.file?d.file.split(/[\\/]/).pop().replace(/\.retitle$/i,''):name)+(d.project.series?' · סדרה: '+d.project.series:'');$('#prog-name').replaceChildren(el('bdi',{dir:'ltr',text:name}));$('#tl-name').replaceChildren(el('bdi',{dir:'ltr',text:name}));$('#workspace').title=(d.file||'')+'\n'+d.project.video;
   $('#frame').style.aspectRatio=`${d.project.info.width}/${d.project.info.height}`;
   $('#dur').textContent=tc(S.n);
   $('#dirtynote').style.display=d.dirty.length?'inline':'none';
@@ -434,6 +440,7 @@ function renderList(){const ul=$('#items');ul.replaceChildren();
       if(d.kind==='sub')chips.push(el('span',{class:'chip off',text:'כתובית צרובה'}));
       if(!t.translate)chips.push(el('span',{class:'chip off',text:'נשאר'}));else if(t.mode==='remove')chips.push(el('span',{class:'chip off',text:'מחיקה בלבד'}));
       else if(t.layer&&t.layer.type==='image')chips.push(el('span',{class:'chip off',text:'תמונה'}));else if(!t.he)chips.push(el('span',{class:'chip warn',text:'חסר תרגום'}));
+      if(d.series_override)chips.push(el('span',{class:'chip ser warn',text:'שונה מהסדרה'}));else if(d.from_series)chips.push(el('span',{class:'chip ser',text:'מהסדרה'}));
       if(t.translate&&dirty.has(d.group))chips.push(el('span',{class:'chip warn',text:'דורש בנייה'}));
       ul.append(el('li',{},el('button',{class:'item','aria-current':isSel('t',t.id)?'true':'false',onclick:()=>select('t',t.id,true),
         'aria-label':`${d.src||''}. ${t.he?'עברית: '+t.he:'בלי תרגום'}. ${tc(t.in)} עד ${tc(t.out)}${chips.length?'. '+chips.map(c=>c.textContent).join(', '):''}`},
@@ -491,6 +498,12 @@ function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;con
     el('p',{class:'note',text:curMode==='remove'?'הטקסט במקור יימחק בלי להוסיף עברית (למשל כתוביות צרובות - העברית תהיה ב-SRT).':'להשאיר: קרדיטים, לוגואים של אולפנים, סמלי דירוג, שמות באנגלית.'}),
     curMode==='replace'&&!isImg?he:null,curMode==='replace'?prop('לוגו',null,logo):null,
     isImg?el('p',{class:'note',text:'במקום הטקסט מוצגת תמונה שקופה, ברוחב הטקסט המקורי ועם אותה אנימציה. "גודל" משנה את הרוחב.'}):null));
+  if(S.series&&d.kind!=='sub'){const sb=[];
+    if(d.series_override){sb.push(el('p',{class:'note',text:`שינית את הכותרת הזאת רק בפרק הזה. בסדרה "${S.series}" שמורה גרסה אחרת.`}),
+      el('div',{class:'row2'},el('button',{class:'mini',text:'עדכן בכל הסדרה',onclick:()=>seriesAct('push',t.id)}),el('button',{class:'mini',text:'חזור לגרסת הסדרה',onclick:()=>seriesAct('revert',t.id)})))}
+    else if(d.from_series)sb.push(el('p',{class:'note',text:`מולא אוטומטית מהסדרה "${S.series}". שינוי כאן יחול רק על הפרק הזה, ואז תוכל לבחור לעדכן את כל הסדרה.`}));
+    else sb.push(el('p',{class:'note',text:`נשמר לסדרה "${S.series}" ויופיע אוטומטית בפרקים הבאים.`}));
+    box.append(group('סדרה',true,...sb))}
   const fs=el('select',{class:'sel',id:'i-font'});for(const[n,v]of Object.entries(S.fonts))fs.append(el('option',{value:n,text:`${n} - ${v.he||v.tags}`}));fs.value=t.style.font||'Heebo';
   fs.addEventListener('change',()=>{oneShot(()=>t.style.font=fs.value);saveTitle(t.id,0)});
   const col=el('input',{type:'color',class:'swatch',id:'i-col',value:hex(t.style.fill||st.fill)});
@@ -721,7 +734,7 @@ $('#upd-go').onclick=async()=>{$('#d-upd').close();await flush();const r=await a
 
 // ================================================================ menus
 const MENUS=[
- ['קובץ',[['פרויקט חדש מסרטון...','Ctrl+N',()=>openVideo()],['פתח פרויקט...','Ctrl+O',()=>openProjectFile()],['פרויקטים אחרונים...','',()=>openRecent()],['-'],['שמור','Ctrl+S',()=>saveNow(),'proj'],['שמור בשם...','Ctrl+Shift+S',()=>saveAs(),'proj'],['-'],['ייבוא SRT מקור (לתרגום)...','',()=>importSrt(false),'proj'],['ייבוא SRT בעברית...','',()=>importSrt(true),'proj'],['-'],['ייצוא מדיה (סרטון + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כותרות בלבד על רקע שקוף (MOV)','',()=>run('overlay'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks']]],
+ ['קובץ',[['פרויקט חדש מסרטון...','Ctrl+N',()=>openVideo()],['פתח פרויקט...','Ctrl+O',()=>openProjectFile()],['פרויקטים אחרונים...','',()=>openRecent()],['-'],['שמור','Ctrl+S',()=>saveNow(),'proj'],['שמור בשם...','Ctrl+Shift+S',()=>saveAs(),'proj'],['סדרה...','',()=>openSeries(),'proj'],['-'],['ייבוא SRT מקור (לתרגום)...','',()=>importSrt(false),'proj'],['ייבוא SRT בעברית...','',()=>importSrt(true),'proj'],['-'],['ייצוא מדיה (סרטון + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כותרות בלבד על רקע שקוף (MOV)','',()=>run('overlay'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks']]],
  ['עריכה',[['בטל','Ctrl+Z',()=>undo(),'undo'],['בצע שוב','Ctrl+Shift+Z',()=>redo(),'redo'],['-'],['בחר פריט במיקום הנגן','D',()=>selectAtPlayhead(),'proj'],['סמן כניסה','I',()=>setEdge('in'),'sel'],['סמן יציאה','O',()=>setEdge('out'),'sel'],['-'],['להחליף את כל הכותרות','',()=>bulk(true),'proj'],['לא להחליף אף כותרת','',()=>bulk(false),'proj'],['-'],['העדפות...','Ctrl+,',()=>openDlg('#d-settings')]]],
  ['סרטון',[['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['בדיקת QA','',()=>openQA(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
  ['תצוגה',[['מקור','',()=>setMode('source'),'proj'],['תוצאה','T',()=>setMode('result'),'proj'],['מסך מלא','Ctrl+`',()=>toggleFS(),'proj'],['-'],['הגדל זום','=',()=>zoomTo(S.zoom*1.5),'proj'],['הקטן זום','-',()=>zoomTo(S.zoom/1.5),'proj'],['התאם לחלון','\\',()=>fit(),'proj'],['-'],['יומן פעולות','',()=>openDlg('#d-log')]]],
@@ -811,9 +824,9 @@ document.querySelectorAll('[data-split]').forEach(sp=>{
     if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();e.stopPropagation();const d=(e.key==='ArrowLeft'||e.key==='ArrowDown'?20:-20);apply(isV?cur+d:cur-d)}})});
 
 // ================================================================ wiring
-async function loadProject(proj){S.proj=proj;S.undo=[];S.redo=[];S.sel=null;S.media=null;S.mediaFor=null;await reloadData(false);
+async function loadProject(proj){S.proj=proj;S.series='';S.undo=[];S.redo=[];S.sel=null;S.media=null;S.mediaFor=null;await reloadData(false);
   const v=$('#vid');v.dataset.src='';setSrc();S.frame=0;renderAll();fit();setMode('source');saveState();
-  say('הפרויקט נפתח: '+projName());if(S.data.missing_video)askRelink()}
+  await loadSeries();renderAll();say('הפרויקט נפתח: '+projName()+(S.series?` (סדרה: ${S.series})`:''));if(S.data.missing_video)askRelink()}
 const projName=()=>S.data&&S.data.file?S.data.file.split(/[\\/]/).pop().replace(/\.retitle$/i,''):'';
 async function openVideo(){closeMenu(true);if(S.proj)await flush();say('בוחר סרטון...');const r=await api('/api/pick',{});
   if(r.error)return say(r.error,true);if(!r.proj){say('לא נבחר סרטון');return}await loadProject(r.proj)}
@@ -828,6 +841,14 @@ async function renderRecent(box,headId){const r=await api('/api/recent');box.rep
       'aria-label':`${it.name}${it.saved?', נשמר '+it.saved:''}${it.exists?'':', הקובץ לא נמצא'}`},
     el('span',{class:'rn',dir:'auto',text:it.name}),el('span',{class:'rf',text:it.folder}),el('span',{class:'rf',text:it.exists?(it.saved?'נשמר '+it.saved:''):'הקובץ לא נמצא - אולי הוזז או נמחק'}));
     b.onclick=()=>{if(it.exists)openProjectFile(it.path);else say('הקובץ לא נמצא',true)};box.append(b)}}
+async function loadSeries(){if(!S.proj){S.series='';return}try{const r=await api('/api/series');S.series=r.current||'';S.seriesList=r.list||[]}catch(e){S.series=''}}
+async function openSeries(){await loadSeries();const sel=$('#sr-sel');sel.replaceChildren(el('option',{value:'',text:'ללא סדרה'}));
+  for(const x of S.seriesList)sel.append(el('option',{value:x.name,text:`${x.name} (${x.count} כותרות)`}));sel.value=S.series;$('#sr-new').value='';openDlg('#d-series')}
+$('#sr-save').onclick=async()=>{const name=$('#sr-new').value.trim()||$('#sr-sel').value;$('#d-series').close();await flush();
+  const r=await api('/api/series',{name});await loadSeries();await reloadData(false);renderAll();refreshFrame();
+  say(name?`הפרויקט שייך לסדרה "${name}". ${r.applied?r.applied+' כותרות מולאו מהסדרה. ':''}${r.learned?r.learned+' כותרות נשמרו לסדרה.':''}`:'הפרויקט לא שייך לסדרה')};
+async function seriesAct(a,id){await flush();const r=await api('/api/series/'+a,{id});await reloadData(false);renderAll();refreshFrame();
+  say(r.ok?(a==='push'?'עודכן בכל הסדרה. פרקים אחרים יתעדכנו כשתפתח אותם.':'הוחזר לגרסת הסדרה'):'לא בוצע',!r.ok)}
 function openRecent(){renderRecent($('#recent2'));openDlg('#d-recent')}
 function askRelink(){$('#relink-msg').textContent='הסרטון של הפרויקט לא נמצא במקום: '+S.data.project.video;openDlg('#d-relink')}
 $('#relink-go').onclick=async()=>{$('#d-relink').close();const r=await api('/api/relink',{});if(r.error)return say(r.error,true);if(r.ok)await loadProject(S.proj)};
@@ -852,7 +873,7 @@ $('#tlwrap').addEventListener('wheel',e=>{if(e.altKey||e.ctrlKey){e.preventDefau
 addEventListener('resize',()=>{renderTimeline();refreshFrameSoon(200)});
 (async()=>{S.fonts=await api('/api/fonts');await loadSettings();const s=await api('/api/status');
   if(s.proj){S.proj=s.proj;await reloadData(false);setSrc();say('פרויקט פתוח: '+S.data.project.video.split(/[\\/]/).pop())}
-  renderAll();if(S.proj){fit();saveState();if(S.data.missing_video)askRelink()}else renderRecent($('#recent'),'rc-h');setMode('source');setInterval(poll,800);poll();setTimeout(()=>checkUpdate(false),4000)})();
+  if(S.proj)await loadSeries();renderAll();if(S.proj){fit();saveState();if(S.data.missing_video)askRelink()}else renderRecent($('#recent'),'rc-h');setMode('source');setInterval(poll,800);poll();setTimeout(()=>checkUpdate(false),4000)})();
 </script>
 </body>
 </html>
