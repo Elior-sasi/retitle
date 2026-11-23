@@ -906,7 +906,7 @@ async function openQA(){await flush();const r=await api('/api/qa',{});const L=r.
   $('#qa-sum').textContent=L.length?`${errs} שגיאות, ${L.length-errs} אזהרות.`:'לא נמצאו בעיות.';
   $('#qa-list').replaceChildren(...L.map(i=>el('tr',{},el('td',{},el('span',{class:'sev '+i.sev,text:i.sev==='err'?'שגיאה':'אזהרה'})),
     el('td',{text:(i.k==='t'?'כותרת '+i.id:'כתובית '+i.id)+': '+i.msg}),
-    el('td',{},el('button',{class:'mini',text:'עבור','aria-label':`עבור אל ${i.k==='t'?'כותרת '+i.id:'כתובית '+i.id}`,onclick:()=>{$('#d-qa').close();select(i.k,i.id,true);const f=$('#i-he')||$('#i-che');if(f)f.focus()}})))));
+    el('td',{},el('button',{class:'mini',text:'עבור','aria-label':`עבור אל ${i.k==='t'?'כותרת '+i.id:'כתובית '+i.id}`,onclick:()=>{$('#d-qa').close();select(i.k,i.id,true);if(i.f!=null){setMode('compare');seek(i.f)}else{const f=$('#i-he')||$('#i-che');if(f)f.focus()}}})))));
   openDlg('#d-qa')}
 $('#qa-re').onclick=()=>{$('#d-qa').close();openQA()};
 async function checkUpdate(show){let r;try{r=await api('/api/update/check',{})}catch(e){r={error:String(e)}}

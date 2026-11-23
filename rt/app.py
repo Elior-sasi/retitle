@@ -292,6 +292,14 @@ def job_export():
     def chk():
         check.run(STATE["proj"])
 
+    def vqa():
+        from . import visualqa
+        try:
+            iss = visualqa.run(STATE["proj"], s["api_key"], s.get("model"), progress=prog)
+            log(f"Claude עבר על התוצאה: {len(iss)} הערות" + (" - פתח בדיקת QA" if iss else " - נראה טוב"))
+        except Exception as e:
+            log(f"הבדיקה של Claude לא הצליחה ({e})")
+
     def subs():
         D = vio.load_json(P("dialog.json"), {"cues": []})
         if any(c.get("he") for c in D["cues"]):
@@ -303,7 +311,9 @@ def job_export():
         errs = sum(1 for i in issues if i["sev"] == "err")
         if issues:
             log(f"בדיקת QA: {errs} שגיאות, {len(issues) - errs} אזהרות (תפריט וידאו > בדיקת QA)")
+    s = settings()
     run_steps(pre + [("מקודד את הווידאו הסופי", 0.5, enc), ("בודק כל כותרת לפני ואחרי", 0.05, chk),
+                     ("Claude בודק את התוצאה כמו צופה", 0.05, vqa) if s.get("api_key") else None,
                      ("כתוביות ובדיקת QA", 0.02, subs)])
     log(f"הווידאו מוכן: {res['out']}")
 
@@ -1357,7 +1367,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True})
         if u.path == "/api/qa":
             from . import qa
-            return self._send(200, {"issues": qa.run(STATE["proj"])})
+            vis = vio.load_json(P("visual_qa.json"), {"issues": []})["issues"]
+            return self._send(200, {"issues": qa.run(STATE["proj"]) + vis})
         if u.path == "/api/save":
             from . import project
             if not STATE.get("file"):
