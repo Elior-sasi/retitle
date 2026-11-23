@@ -128,9 +128,12 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 #welcome{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px;background:#0d0d0d}
 #busy{position:absolute;inset-inline:0;bottom:14px;margin:auto;width:min(560px,calc(100% - 28px));background:rgba(24,24,28,.94);border:1px solid #3a3a44;border-radius:8px;padding:14px 18px;box-shadow:0 8px 28px rgba(0,0,0,.55);z-index:5;color:#fff}
 #busy[hidden]{display:none}
-#busy:has(#busy-live:not([hidden])){width:min(980px,calc(100% - 28px))}
-#busy-live{margin:12px 0 4px}#busy-live img{display:block;width:100%;border-radius:4px;background:#000;max-height:46vh;object-fit:contain}
-#busy-live figcaption{font-size:.95em;color:#cfd3dc;margin-top:6px;display:flex;justify-content:space-between;gap:8px}
+#busy-live{position:absolute;inset:0;margin:0;background:#000;z-index:4;display:flex;flex-direction:column}
+#busy-live[hidden]{display:none}
+#busy-live img{flex:1;min-height:0;width:100%;object-fit:contain;display:block}
+#busy-live figcaption{position:absolute;top:8px;inset-inline:8px;font-size:1em;color:#fff;display:flex;justify-content:space-between;gap:8px;pointer-events:none}
+#busy-live figcaption span{background:rgba(0,0,0,.7);padding:3px 10px;border-radius:5px}
+#stage:has(#busy-live:not([hidden])) #busy{top:auto;bottom:14px;transform:none}
 #busy{top:50%;bottom:auto;transform:translateY(-50%)}
 #stage:has(#busy:not([hidden])) #welcome{visibility:hidden}
 #busy h3{margin:0;font-size:1.15em;display:flex;align-items:baseline;gap:10px}
@@ -309,11 +312,11 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <img id="still2" alt="">
       <span class="plab">תוצאה</span>
     </div>
+    <figure id="busy-live" hidden><img id="busy-img" alt=""><figcaption id="busy-cap"></figcaption></figure>
     <div id="busy" role="region" aria-labelledby="busy-h" hidden>
       <h3><span id="busy-h">ניתוח</span><span class="left" id="busy-left"></span><span class="pct" id="busy-pct" aria-hidden="true"></span></h3>
       <p class="stg" id="busy-stg" aria-live="polite"></p>
       <progress id="busy-bar" max="1" aria-labelledby="busy-h"></progress>
-      <figure id="busy-live" hidden><img id="busy-img" alt=""><figcaption id="busy-cap"></figcaption></figure>
       <div class="row"><span id="busy-time"></span><span class="sp"></span><button id="busy-cancel">ביטול</button></div>
     </div>
     <div id="welcome">
@@ -830,7 +833,7 @@ function showBusy(s){const b=$('#busy');if(!s.running){b.hidden=true;S.busyStg='
   if(p!=null&&p<1)left=S.eta!=null?mmss(S.eta):'מחשב...';
   $('#busy-left').textContent=!left?'':S.eta!=null?'נותרו '+left:'מחשב זמן...';$('#busy-time').textContent='עברו '+mmss(s.elapsed);
   const lv=$('#busy-live');if(s.live&&S.liveOn!==false){if(s.live.t!==S.liveT){S.liveT=s.live.t;$('#busy-img').src='/api/live?t='+s.live.t;
-      $('#busy-img').alt='תצוגה חיה: מימין המקור, משמאל התוצאה. '+s.live.label;$('#busy-cap').replaceChildren(el('span',{text:'מקור'}),el('span',{text:s.live.label}),el('span',{text:'תוצאה'}))}lv.hidden=false}
+      $('#busy-img').alt=(s.live.panels>1?'תצוגה חיה: מימין המקור, משמאל התוצאה. ':'תצוגה חיה: ')+s.live.label;$('#busy-cap').replaceChildren(...(s.live.panels>1?[el('span',{text:'מקור'}),el('span',{text:s.live.label}),el('span',{text:'תוצאה'})]:[el('span',{text:s.live.label})]))}lv.hidden=false}
   else lv.hidden=true;
   $('#busy-cancel').disabled=!!s.cancelling;if(first&&!s.cancelling)renderTimeline()}
 function showNext(){const T=S.model.titles,on=T.filter(t=>t.translate&&t.mode!=='remove').length;if(!T.length)return;

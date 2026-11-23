@@ -34,7 +34,7 @@ def show(proj, label, *panels, every=0.5, width=720):
         cv2.imwrite(tmp, im, [cv2.IMWRITE_JPEG_QUALITY, 80])
         os.replace(tmp, os.path.join(d, "live.jpg"))
         with open(os.path.join(d, f"tmp{os.getpid()}.json"), "w", encoding="utf-8") as f:
-            json.dump({"t": now, "label": label}, f, ensure_ascii=False)
+            json.dump({"t": now, "label": label, "panels": len(panels)}, f, ensure_ascii=False)
         os.replace(os.path.join(d, f"tmp{os.getpid()}.json"), os.path.join(d, "live.json"))
     except Exception:
         pass

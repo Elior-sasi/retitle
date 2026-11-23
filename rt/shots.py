@@ -25,46 +25,79 @@ def run(proj, every=None, progress=None):
     TW, TH = 160, max(60, MH // 3)
     win = cv2.createHanningWindow((TW, TH), cv2.CV_32F)
     mprev, pos, conf = None, [(0.0, 0.0)], [1.0]
-    n = 0
-    for i, f in enumerate(vio.frames(P["video"], w, h)):
-        small = cv2.resize(f, (192, 108), interpolation=cv2.INTER_AREA)
+    from concurrent.futures import ThreadPoolExecutor
+    nt = max(2, min(12, os.cpu_count() or 2))
+
+    def feat(f):
+        # one big downscale per frame; the small views come from it (OpenCV releases the GIL,
+        # so frames are measured on all cores at once)
+        m = cv2.resize(f, (MW, MH), interpolation=cv2.INTER_AREA)
+        small = cv2.resize(m, (192, 108), interpolation=cv2.INTER_AREA)
         hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
-        hist = cv2.calcHist([hsv], [0, 1, 2], None, [16, 8, 8], [0, 180, 0, 256, 0, 256])
-        hist = cv2.normalize(hist, None).flatten()
+        hist = cv2.normalize(cv2.calcHist([hsv], [0, 1, 2], None, [16, 8, 8], [0, 180, 0, 256, 0, 256]), None).flatten()
         g = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32)
-        if prev is None:
-            diffs.append((0.0, 0.0))
-        else:
-            hd = cv2.compareHist(prevh, hist, cv2.HISTCMP_BHATTACHARYYA)
-            md = float(np.mean(np.abs(g - prev))) / 255
-            diffs.append((float(hd), md))
-        feats.append(float(g.mean()))
-        mg = cv2.cvtColor(cv2.resize(f, (MW, MH), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY).astype(np.float32)
-        if mprev is not None:
-            # median over a grid of tiles: titles and subtitles cover only some tiles
-            sh = []
-            for ty in range(0, MH - TH + 1, TH):
-                for tx in range(0, MW - TW + 1, TW):
-                    (dx, dy), resp = cv2.phaseCorrelate(mprev[ty:ty + TH, tx:tx + TW], mg[ty:ty + TH, tx:tx + TW], win)
-                    if resp > 0.1:
-                        sh.append((dx, dy))
-            dx, dy = (np.median(np.array(sh), 0) if len(sh) >= 3 else (0.0, 0.0))
-            sx = w / MW
-            px, py = pos[-1]
-            pos.append((px + float(dx) * sx, py + float(dy) * sx)); conf.append(len(sh) / 12)
-        mprev = mg
-        prev, prevh = g, hist
-        if i % every == 0:
-            # change test on a 64x36 block grid: any block that changed means new content
-            sm = cv2.resize(g, (64, 36), interpolation=cv2.INTER_AREA)
-            changed = last_s is None or float(np.abs(sm - last_s).max()) > 6 or i - last_f >= 10 * fps
-            if changed:
-                cv2.imwrite(os.path.join(sdir, f"{i:06d}.jpg"), f, [cv2.IMWRITE_JPEG_QUALITY, 92])
-                live.show(proj, f"סורק את הווידאו - פריים {i}", f, every=0.7, width=960)
-                samples.append(i); last_s = sm; last_f = i
-        n = i + 1
-        if progress and i % 200 == 0:
-            progress(min(1.0, i / total))
+        return g, hist, cv2.cvtColor(m, cv2.COLOR_BGR2GRAY).astype(np.float32)
+
+    def shift(pair):
+        a, b = pair
+        sh = []
+        # median over a grid of tiles: titles and subtitles cover only some tiles
+        for ty in range(0, MH - TH + 1, TH):
+            for tx in range(0, MW - TW + 1, TW):
+                (dx, dy), resp = cv2.phaseCorrelate(np.ascontiguousarray(a[ty:ty + TH, tx:tx + TW]),
+                                                     np.ascontiguousarray(b[ty:ty + TH, tx:tx + TW]), win)
+                if resp > 0.1:
+                    sh.append((dx, dy))
+        return sh
+
+    def batches(it, k=48):
+        buf = []
+        for f in it:
+            buf.append(f)
+            if len(buf) == k:
+                yield buf; buf = []
+        if buf:
+            yield buf
+
+    n = 0
+    writes = []
+    with ThreadPoolExecutor(nt) as ex:
+        for batch in batches(vio.frames(P["video"], w, h)):
+            F = list(ex.map(feat, batch))
+            mgs = [mprev] + [x[2] for x in F] if mprev is not None else [x[2] for x in F]
+            S = list(ex.map(shift, zip(mgs[:-1], mgs[1:])))
+            si = 0
+            for j, f in enumerate(batch):
+                i = n
+                g, hist, mg = F[j]
+                if prev is None:
+                    diffs.append((0.0, 0.0))
+                else:
+                    hd = cv2.compareHist(prevh, hist, cv2.HISTCMP_BHATTACHARYYA)
+                    md = float(np.mean(np.abs(g - prev))) / 255
+                    diffs.append((float(hd), md))
+                feats.append(float(g.mean()))
+                if mprev is not None:
+                    sh = S[si]; si += 1
+                    dx, dy = (np.median(np.array(sh), 0) if len(sh) >= 3 else (0.0, 0.0))
+                    sx = w / MW
+                    px, py = pos[-1]
+                    pos.append((px + float(dx) * sx, py + float(dy) * sx)); conf.append(len(sh) / 12)
+                mprev = mg
+                prev, prevh = g, hist
+                if i % every == 0:
+                    # change test on a 64x36 block grid: any block that changed means new content
+                    sm = cv2.resize(g, (64, 36), interpolation=cv2.INTER_AREA)
+                    changed = last_s is None or float(np.abs(sm - last_s).max()) > 6 or i - last_f >= 10 * fps
+                    if changed:
+                        writes.append(ex.submit(cv2.imwrite, os.path.join(sdir, f"{i:06d}.jpg"), f, [cv2.IMWRITE_JPEG_QUALITY, 92]))
+                        live.show(proj, f"מחפש חיתוכים - פריים {i}", f, every=0.7, width=960)
+                        samples.append(i); last_s = sm; last_f = i
+                n = i + 1
+            if progress:
+                progress(min(1.0, n / total))
+        for x in writes:
+            x.result()
     d = np.array(diffs)
     score = d[:, 0] * 0.7 + d[:, 1] * 2.0
     cuts = [0]
