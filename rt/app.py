@@ -69,14 +69,14 @@ def enable_sync(d):
 def settings():
     s = {"api_key": "", "model": "claude-sonnet-5-5", "glossary": "", "src_lang": "eng", "content": "trailer",
          "srt_rle": True, "gh_token": "", "open_maximized": True,
-         "whisper_model": "large-v3-turbo", "whisper_lang": ""}
+         "whisper_model": "large-v3", "whisper_lang": ""}
     s.update(vio.load_json(CFG, {}))
-    if not s.get("asr_v2"):                    # one-time: large-v3 -> large-v3-turbo (near the same accuracy, ~5x faster on CPU)
+    if not s.get("asr_v3"):                    # one-time: back to large-v3, the most accurate (undoes the turbo switch of build ~20)
         if s.get("whisper_model") == "large-v3":
-            s["whisper_model"] = "large-v3-turbo"
-        s["asr_v2"] = True
+            s["whisper_model"] = "large-v3"
+        s["asr_v3"] = True
         try:
-            raw = vio.load_json(CFG, {}); raw.update(whisper_model=s["whisper_model"], asr_v2=True)
+            raw = vio.load_json(CFG, {}); raw.update(whisper_model=s["whisper_model"], asr_v3=True)
             os.makedirs(CFG_DIR, exist_ok=True); vio.save_json(CFG, raw)
         except Exception:
             pass
@@ -339,7 +339,7 @@ def job_transcribe():
     s = settings()
     PJ = vio.load_json(P("project.json"))
     from . import asr
-    name = s.get("whisper_model", "large-v3-turbo")
+    name = s.get("whisper_model", "large-v3")
     if not asr.ready(name):
         STATE.update(stage="מוריד את מנוע התמלול (פעם אחת)", step=1, steps=2)
         log("מוריד את מנוע התמלול (פעם אחת)...")
@@ -901,7 +901,7 @@ class H(BaseHTTPRequestHandler):
                 vio.save_json(os.path.join(r, "settings.json"), {k: s[k] for k in SHARED if k in s})
             if "whisper_model" in b:
                 from . import asr
-                asr.prepare(s.get("whisper_model", "large-v3-turbo"))
+                asr.prepare(s.get("whisper_model", "large-v3"))
             return self._send(200, {"ok": True})
         if u.path == "/api/fonts/import":
             from . import fontlib
@@ -1127,7 +1127,7 @@ def main():
         try:                                   # transcription engine: fetched once in the background
             from . import asr
             if "--server" not in sys.argv:
-                asr.prepare(settings().get("whisper_model", "large-v3-turbo"))
+                asr.prepare(settings().get("whisper_model", "large-v3"))
         except Exception:
             traceback.print_exc()
     threading.Thread(target=_warm, daemon=True).start()

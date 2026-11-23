@@ -51,10 +51,21 @@ def _download(name):
         stop.set()
         os.remove(flag)
         STATE.update(state="ready", progress=1.0)
+        _cleanup(name)
     except Exception as e:
         STATE.update(state="error", error=str(e), progress=None)
     finally:
         stop.set()
+
+
+def _cleanup(keep):
+    """Free the space of other models downloaded before (only the one in use is kept)."""
+    import shutil
+    base = os.path.dirname(model_dir(keep))
+    for d in os.listdir(base):
+        if d not in (keep, ".cache") and os.path.isfile(os.path.join(base, d, "model.bin")):
+            shutil.rmtree(os.path.join(base, d), ignore_errors=True)
+    shutil.rmtree(os.path.join(base, ".cache"), ignore_errors=True)
 
 
 def prepare(name):
@@ -62,6 +73,10 @@ def prepare(name):
     with _LOCK:
         if ready(name):
             STATE.update(model=name, state="ready", progress=1.0, error="")
+            try:
+                _cleanup(name)
+            except Exception:
+                pass
             return
         if _THREAD[0] and _THREAD[0].is_alive():
             return

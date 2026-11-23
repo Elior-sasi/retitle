@@ -369,7 +369,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-lang">שפת הכותרות במקור</label>
     <select id="s-lang"><option value="eng">אנגלית</option><option value="jpn">יפנית</option><option value="kor">קוריאנית</option><option value="chi_sim">סינית</option><option value="fra">צרפתית</option><option value="spa">ספרדית</option><option value="deu">גרמנית</option><option value="ita">איטלקית</option><option value="rus">רוסית</option></select>
     <label for="s-wlang">שפת הדיבור</label><input type="text" id="s-wlang" dir="ltr" placeholder="ריק = זיהוי אוטומטי (ja / en)">
-    <label for="s-wmodel">מודל תמלול</label><select id="s-wmodel"><option value="large-v3-turbo">large-v3-turbo (מומלץ: מדויק ומהיר, 1.6GB)</option><option value="large-v3">large-v3 (הכי מדויק, איטי, 3GB)</option><option value="medium">medium</option><option value="small">small (מהיר)</option></select>
+    <label for="s-wmodel">מודל תמלול</label><select id="s-wmodel"><option value="large-v3">large-v3 (מומלץ: הכי מדויק, 3GB)</option><option value="large-v3-turbo">large-v3-turbo (מהיר, קצת פחות מדויק, 1.6GB)</option><option value="medium">medium</option><option value="small">small (מהיר)</option></select>
     <label for="s-gloss">תעתיק שמות<br><span class="unit">שורה לכל שם: מקור = עברית</span></label>
     <textarea id="s-gloss" rows="5" placeholder="Madoka = מאדוקה&#10;Homura Akemi = הומורה אקמי"></textarea>
     <label for="s-key">מפתח API של Anthropic<br><span class="unit">לתרגום אוטומטי, לא חובה</span></label>
@@ -784,7 +784,7 @@ function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren
     bx.append(el('button',{class:'mini',text:'השתמש ב-'+nm,title:d,onclick:()=>go(d)}))}
   bx.append(el('button',{class:'mini',text:'בחר תיקייה מסונכרנת...',onclick:()=>go('pick')}));
   if(s.sync_dir)bx.append(el('button',{class:'mini',text:'בטל סנכרון',onclick:()=>go('')}))}
-async function loadSettings(){const s=await api('/api/settings');renderSync(s);$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3-turbo';
+async function loadSettings(){const s=await api('/api/settings');renderSync(s);$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
   $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
