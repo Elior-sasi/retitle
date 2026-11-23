@@ -165,6 +165,10 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 .item .src{direction:ltr;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;display:block}
 .item .he{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff}
 .item .meta{color:var(--mut);font-size:.85em;display:flex;gap:6px;flex-wrap:wrap}
+.card{border-inline-start:3px solid #3a6fd8;margin:6px 0 10px;padding-inline-start:4px}.card-h{font-size:.9em;color:#cfd3dc;padding:4px 8px}
+.card-l{list-style:none;margin:0;padding:0}.sum{padding:8px 10px;font-size:1em;color:#e6e6e6}
+.fold{width:100%;text-align:start;background:#26262c;color:#e6e6e6;border:1px solid #3a3a44;border-radius:6px;padding:10px 12px;font-size:1em;margin:10px 0 6px;cursor:pointer;min-height:44px}
+.fold:focus-visible{outline:3px solid #5a9cff;outline-offset:2px}.fold-li{list-style:none}
 .chip{border:1px solid currentColor;border-radius:9px;padding:0 6px;font-size:.82em;line-height:1.35}
 .row2{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0}
 .fontbtn{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;background:#1b1b1b;border:1px solid #444;border-radius:3px;color:#fff;padding:2px 10px;cursor:pointer;text-align:start}
@@ -507,23 +511,42 @@ function setSrc(){if(!S.proj)return;const v=$('#vid');const want=(S.mode==='resu
 function items(){return S.tab==='t'?S.model.titles.map(t=>({k:'t',id:t.id})):S.model.cues.map(c=>({k:'c',id:c.n}))}
 const isSel=(k,id)=>S.sel&&S.sel.k===k&&S.sel.id===id;
 function renderList(){const ul=$('#items');ul.replaceChildren();
-  $('#cnt-t').textContent=S.model.titles.length?`(${S.model.titles.length})`:'';$('#cnt-c').textContent=S.model.cues.length?`(${S.model.cues.length})`:'';
+  $('#cnt-t').textContent=S.model.titles.length?`(${new Set(S.model.titles.filter(t=>t.translate).map(t=>(dt(t.id)||{}).group||t.id)).size})`:'';$('#cnt-c').textContent=S.model.cues.length?`(${S.model.cues.length})`:'';
   $('#tab-t').setAttribute('aria-selected',S.tab==='t');$('#tab-c').setAttribute('aria-selected',S.tab==='c');ul.setAttribute('aria-labelledby',S.tab==='t'?'tab-t':'tab-c');
   $('#bulk').style.display=(S.tab==='t'&&S.model.titles.length>1)?'flex':'none';
   const q=S.filter.trim().toLowerCase();const dirty=new Set((S.data&&S.data.dirty)||[]);
   if(S.tab==='t'){
     if(!S.model.titles.length){ul.append(el('li',{class:'note',style:'padding:14px;text-align:center',text:S.proj?'אין עדיין כותרות. "נתח כותרות" מזהה את הטקסט על המסך.':'ייבא וידאו כדי להתחיל.'}));return}
-    for(const t of S.model.titles){const d=dt(t.id)||{};if(q&&!((d.src||'')+' '+t.he).toLowerCase().includes(q))continue;const chips=[];
+    const item=t=>{const d=dt(t.id)||{};const chips=[];
       if(d.kind==='sub')chips.push(el('span',{class:'chip off',text:'כתובית צרובה'}));
       if(!t.translate)chips.push(el('span',{class:'chip off',text:d.auto_reason?'נשאר - '+d.auto_reason:'נשאר',title:d.auto_reason?'סומן אוטומטית. אפשר להחזיר לתרגום בבחירת "החלף".':''}));else if(t.mode==='remove')chips.push(el('span',{class:'chip off',text:'מחיקה בלבד'}));
       else if(t.layer&&t.layer.type==='image')chips.push(el('span',{class:'chip off',text:'תמונה'}));else if(!t.he)chips.push(el('span',{class:'chip warn',text:'חסר תרגום'}));
       if(d.series_override)chips.push(el('span',{class:'chip ser warn',text:'שונה מהסדרה'}));else if(d.from_series)chips.push(el('span',{class:'chip ser',text:'מהסדרה'}));
       if(t.translate&&dirty.has(d.group))chips.push(el('span',{class:'chip warn',text:'דורש בנייה'}));
-      ul.append(el('li',{},el('button',{class:'item','aria-current':isSel('t',t.id)?'true':'false',onclick:()=>select('t',t.id,true),
+      return el('li',{},el('button',{class:'item','aria-current':isSel('t',t.id)?'true':'false',onclick:()=>select('t',t.id,true),
         'aria-label':`${d.src||''}. ${t.he?'עברית: '+t.he:'בלי תרגום'}. ${tc(t.in)} עד ${tc(t.out)}${chips.length?'. '+chips.map(c=>c.textContent).join(', '):''}`},
         el('img',{src:`/api/file?p=thumbs/${t.id}.jpg`,alt:''}),
         el('span',{style:'min-width:0'},el('span',{class:'src',lang:'und',text:d.src||''}),el('div',{class:'he',text:t.he||'—'}),
-          el('div',{class:'meta'},el('bdi',{dir:'ltr',text:tc(t.in)}),...chips)))))}
+          el('div',{class:'meta'},el('bdi',{dir:'ltr',text:tc(t.in)}),...chips))))};
+    // one entry per card (a title on screen), its lines under it; what stays as it is folds away at the end
+    const cards=[],byG={};
+    for(const t of S.model.titles){const d=dt(t.id)||{};const g=d.group||t.id;if(!byG[g]){byG[g]={g,lines:[]};cards.push(byG[g])}byG[g].lines.push(t)}
+    const live=cards.filter(c=>c.lines.some(t=>t.translate)),kept=cards.filter(c=>!c.lines.some(t=>t.translate));
+    const hit=t=>{const d=dt(t.id)||{};return!q||((d.src||'')+' '+t.he).toLowerCase().includes(q)};
+    const keptLines=kept.reduce((n,c)=>n+c.lines.length,0);
+    ul.append(el('li',{class:'note sum',role:'status',text:`${live.length} כותרות לתרגום${kept.length?` · ${keptLines} שורות נשארות כמו שהן`:''}`}));
+    let n=0;
+    const putCard=(c,box)=>{const ls=c.lines.filter(hit);if(!ls.length)return;
+      if(c.lines.length===1){box.append(item(ls[0]));return}
+      const head=c.lines.map(t=>(dt(t.id)||{}).src||'').join(' / ');
+      const sub=el('ul',{class:'card-l','aria-label':head});ls.forEach(t=>sub.append(item(t)));
+      box.append(el('li',{class:'card'},el('div',{class:'card-h',dir:'auto'},el('span',{text:c.lines.length+' שורות · '}),el('bdi',{dir:'ltr',text:tc(Math.min(...c.lines.map(t=>t.in)))})),sub))};
+    for(const c of live){n++;putCard(c,ul)}
+    if(kept.length){const selKept=S.sel&&S.sel.k==='t'&&kept.some(c=>c.lines.some(t=>t.id===S.sel.id));const open=S.keptOpen||selKept||!!q;
+      const btn=el('button',{class:'fold','aria-expanded':String(open),onclick:()=>{S.keptOpen=!open;renderList()}},
+        el('span',{'aria-hidden':'true',text:open?'▾ ':'◂ '}),`נשארות כמו שהן - קרדיטים, לוגואים, טקסט בתמונה (${keptLines})`);
+      ul.append(el('li',{class:'fold-li'},btn));
+      if(open)for(const c of kept)putCard(c,ul)}
   }else{
     if(!S.model.cues.length){ul.append(el('li',{class:'note',style:'padding:14px;text-align:center',text:S.proj?'אין עדיין תמלול. "תמלל" יוצר כתוביות מהדיבור.':'ייבא וידאו כדי להתחיל.'}));return}
     for(const c of S.model.cues){const d=dc(c.n)||{};if(q&&!((d.src||'')+' '+c.he).toLowerCase().includes(q))continue;const chips=[];if(!c.he)chips.push(el('span',{class:'chip warn',text:'חסר תרגום'}));
