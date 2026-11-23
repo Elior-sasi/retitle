@@ -321,7 +321,7 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None, rng=None):
     merge_cards(titles, every)
     for i, t in enumerate(titles):
         t["id"] = f"t{i + 1:02d}"
-    classify_keep(titles, P)
+    classify_keep(titles, P, langs)
     classify_hardsubs([t for t in titles if not t.get("auto_reason")], P)
     if rng:
         titles = merge_range(proj, titles, rng)
@@ -418,7 +418,11 @@ STUDIOS = ["universal", "universalpictures", "comcast", "comcastcompany", "netfl
            "toho", "toei", "toeianimation", "aniplex", "crunchyroll", "madhouse", "mappa", "ufotable",
            "kyotoanimation", "sunrise", "bonesstudio", "productioni.g", "funimation", "gkids", "sola",
            "solamedia", "likeaphoton", "likeaphotoncreative", "alceon", "screenqueensland", "screenaustralia",
-           "nationalgeographic", "bbc", "bbcstudios", "discovery", "showtime", "starz", "peacock", "hulu"]
+           "nationalgeographic", "bbc", "bbcstudios", "discovery", "showtime", "starz", "peacock", "hulu",
+           "skykids", "skyone", "skycinema", "cartoonnetwork", "boomerang", "nickelodeon", "nickjr",
+           "disneychannel", "disneyjunior", "disneyxd", "cbbc", "cbeebies", "pbskids", "foxkids", "jetix",
+           "zodiakkids", "zodiak", "marathonmedia", "banijay", "teletoon", "gulli", "kika", "rai", "zdf",
+           "hopchannel", "logichannel"]
 CREDIT_WORDS = ["directedby", "producedby", "screenplay", "writtenby", "executiveproducer", "producers",
                 "coproducer", "musicby", "composition", "composer", "cinematography", "editedby", "castingby",
                 "productiondesign", "costume", "visualeffects", "basedon", "pty", "ltd", "inc", "llc",
@@ -437,7 +441,7 @@ def _studio(text):
     return None
 
 
-def classify_keep(titles, P):
+def classify_keep(titles, P, langs="eng"):
     W, H, fps = P["info"]["width"], P["info"]["height"], P["info"]["fps"]
     groups = {}
     for t in titles:
@@ -448,6 +452,11 @@ def classify_keep(titles, P):
         if not t.get("auto_reason"):
             t["translate"] = False; t["auto_reason"] = why
             t.pop("mode", None); t["kind"] = "text" if t.get("kind") == "sub" else t.get("kind", "text")
+    # OCR noise first: letters of the wrong script, and short letter strings that are no word
+    for t in titles:
+        why = junk_reason(t["src"], langs, len(groups[t["group"]]))
+        if why:
+            keep(t, why)
     # credits: a card of many small lines, or any card naming credit roles / companies
     for g, ls in groups.items():
         k = [norm(t["src"]) for t in ls]
@@ -467,6 +476,8 @@ def classify_keep(titles, P):
         if t.get("auto_reason"):
             continue
         k = norm(t["src"]); h = t["box"][3] - t["box"][1]
+        if re.fullmatch(r"(an?)?(production|productions|presents|present|incollaborationwith|inassociationwith)", k):
+            keep(t, "קרדיטים"); continue
         dur = (t["sample_out"] - t["sample_in"]) / fps
         alone = len(groups[t["group"]]) == 1
         if _studio(t["src"]):
@@ -523,3 +534,26 @@ def merge_cards(titles, every):
 def _near(A, B):
     h = max(A[3] - A[1], B[3] - B[1])
     return max(B[0] - A[2], A[0] - B[2]) < h and max(B[1] - A[3], A[1] - B[3]) < h
+
+
+SHORT_WORDS = set("""a i an as at be by do go he if in is it me my no of oh ok on or so to up us we
+all and are boy but can day did end for get got god guy had has her hey him his how its let man may new
+not now off old one our out run say see she the too try two war was way who why yes yet you
+it's i'm""".split())
+
+
+def junk_reason(src, langs="eng", card_lines=1):
+    """Why a detected line is OCR noise (not a title), or None.
+    - a CJK character when the video's language is not Chinese/Japanese/Korean (the OCR model reads
+      Chinese, so patterns and drawings sometimes come out as one or two Chinese characters);
+    - a lone, very short letter string that is no word ("DD", "MOD" read off a drawing)."""
+    import unicodedata
+    t = src.strip()
+    cjk_lang = any(x in (langs or "") for x in ("chi", "jpn", "kor"))
+    cjk = sum(unicodedata.east_asian_width(ch) in "WF" for ch in t)
+    if cjk and not cjk_lang:
+        return "רעש של זיהוי"
+    letters = re.sub(r"[^A-Za-z']", "", t)
+    if card_lines == 1 and 0 < len(letters) <= 3 and letters.lower() not in SHORT_WORDS and not re.search(r"\d", t):
+        return "רעש של זיהוי"
+    return None

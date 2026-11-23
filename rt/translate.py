@@ -50,13 +50,12 @@ def translate(items, api_key, glossary="", context="", model="claude-sonnet-5-5"
                 content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                              "data": base64.b64encode(f.read()).decode()}})
     content.append({"type": "text", "text": user})
-    body = {"model": model, "max_tokens": 8000, "system": RULES,
+    body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 8000, "system": RULES,
             "messages": [{"role": "user", "content": content}]}
     req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                  headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                                           "content-type": "application/json"})
-    with urllib.request.urlopen(req, timeout=180) as r:
-        res = json.loads(r.read().decode())
+    res = call(req)
     text = "".join(b.get("text", "") for b in res.get("content", []))
     m = re.search(r"\{.*\}", text, re.S)
     data = json.loads(m.group(0)) if m else {"items": []}
@@ -67,3 +66,26 @@ def translate(items, api_key, glossary="", context="", model="claude-sonnet-5-5"
         he = he.replace(chr(0x201C), '"').replace(chr(0x201D), '"').replace(chr(0x05F4), '"')
         out[str(it["id"])] = he
     return out
+
+
+def call(req):
+    """POST to the Claude API; on an error, say what the API said (in Hebrew where it is a known case)."""
+    import urllib.error
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode()).get("error", {}).get("message", "")
+        except Exception:
+            msg = ""
+        low = msg.lower()
+        if "credit balance" in low:
+            raise RuntimeError("אין יתרה בחשבון ה-API של Claude. צריך להוסיף קרדיט ב-platform.claude.com, בחלק של החיוב (Billing)") from None
+        if e.code == 401 or "api key" in low or "authentication" in low:
+            raise RuntimeError("מפתח ה-API לא תקין - בדוק שהעתקת אותו במלואו להעדפות") from None
+        if "model" in low:
+            raise RuntimeError(f"שם המודל בהעדפות לא מוכר ל-API ({msg}). אפשר להשאיר את השדה ריק") from None
+        if e.code == 429 or e.code == 529:
+            raise RuntimeError("שרת Claude עמוס כרגע - נסה שוב בעוד דקה") from None
+        raise RuntimeError(f"Claude API {e.code}: {msg or e.reason}") from None

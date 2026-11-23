@@ -416,7 +416,21 @@ def job_translate(kind):
     if not s.get("api_key"):
         raise RuntimeError("אין מפתח API בהגדרות")
     if kind == "titles":
-        T = vio.load_json(P("titles.json"))
+        from .detect import junk_reason
+        with LOCK:                              # OCR noise is set to stay as it is, not sent to translation
+            T = vio.load_json(P("titles.json"))
+            cnt = {}
+            for t in T["titles"]:
+                cnt[t["group"]] = cnt.get(t["group"], 0) + 1
+            junk = 0
+            for t in T["titles"]:
+                if t.get("translate", True) and not t.get("he") and not t.get("auto_reason"):
+                    why = junk_reason(t["src"], s.get("src_lang") or "eng", cnt[t["group"]])
+                    if why:
+                        t["translate"] = False; t["auto_reason"] = why; junk += 1
+            if junk:
+                vio.save_json(P("titles.json"), T)
+                log(f"{junk} שורות של רעש זיהוי (כמו אותיות סיניות או \"DD\") סומנו \"נשאר\"")
         items = [{"id": t["id"], "src": t["src"], "group": t["group"]} for t in T["titles"]
                  if t.get("translate", True) and not t.get("he")]
         if not items:
