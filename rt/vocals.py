@@ -105,38 +105,64 @@ def _istft(S, length):
     return out[:, p:p + length]
 
 
-def chunks(mix, progress=None):
-    """mix (2, n) float32 at 44.1 kHz -> yields vocal pieces (2, k) that add up to n samples.
-    Streams: memory stays small even for an hour of audio."""
+OVERLAP = 0.5        # windows overlap and are blended: no seams at the window borders
+SOFT = 0.25          # the rest of the soundtrack is kept, 12 dB down: Whisper hears clean speech
+                     # without the artefacts a hard cut leaves (those turned words into other words)
+
+
+def _window(mix, a, chunk):
+    n = mix.shape[1]
+    w = np.zeros((2, chunk), np.float32)
+    lo, hi = max(0, a), min(n, a + chunk)
+    if hi > lo:
+        w[:, lo - a:hi - a] = mix[:, lo:hi]
+    return w
+
+
+def _infer(sess, w, chunk, trim):
+    S = _stft(w)
+    spec = np.stack([S.real, S.imag], 1).reshape(4, S.shape[1], S.shape[2])[:, :DIM_F]
+    y = sess.run(None, {"input": spec[None].astype(np.float32)})[0][0]
+    full = np.zeros((4, N_FFT // 2 + 1, DIM_T), np.float32); full[:, :DIM_F] = y
+    full = full.reshape(2, 2, N_FFT // 2 + 1, DIM_T)
+    return _istft(full[:, 0] + 1j * full[:, 1], chunk)[:, trim:-trim] * COMP
+
+
+def chunks(mix, progress=None, overlap=OVERLAP):
+    """mix (2, n) float32 at 44.1 kHz -> yields (start, vocals piece) that tile 0..n in order.
+    Overlapping windows are cross-faded; memory stays small even for an hour of audio."""
     n = mix.shape[1]
     chunk = HOP * (DIM_T - 1)
     trim = N_FFT // 2
     gen = chunk - 2 * trim
+    step = max(1, int(gen * (1 - overlap)))
+    wgt = np.maximum(np.hanning(gen + 2)[1:-1], 1e-3).astype(np.float32) if overlap > 0 else np.ones(gen, np.float32)
     sess = _session()
-    steps = list(range(0, n, gen))
-    left = n
-    for k, i in enumerate(steps):
-        a, b = i - trim, i - trim + chunk                       # window in mix coordinates
-        w = np.zeros((2, chunk), np.float32)
-        lo, hi = max(0, a), min(n, b)
-        w[:, lo - a:hi - a] = mix[:, lo:hi]
-        S = _stft(w)
-        spec = np.stack([S.real, S.imag], 1).reshape(4, S.shape[1], S.shape[2])[:, :DIM_F]
-        y = sess.run(None, {"input": spec[None].astype(np.float32)})[0][0]
-        full = np.zeros((4, N_FFT // 2 + 1, DIM_T), np.float32); full[:, :DIM_F] = y
-        full = full.reshape(2, 2, N_FFT // 2 + 1, DIM_T)
-        wav = _istft(full[:, 0] + 1j * full[:, 1], chunk)[:, trim:-trim] * COMP
-        take = min(gen, left); left -= take
+    starts = list(range(-(gen - step) if overlap > 0 else 0, n, step))
+    acc = np.zeros((2, 0), np.float32); wacc = np.zeros(0, np.float32); base = starts[0]; emitted = 0
+    for k, s in enumerate(starts):
+        v = _infer(sess, _window(mix, s - trim, chunk), chunk, trim)
+        need = s + gen - base
+        if acc.shape[1] < need:
+            acc = np.concatenate([acc, np.zeros((2, need - acc.shape[1]), np.float32)], 1)
+            wacc = np.concatenate([wacc, np.zeros(need - len(wacc), np.float32)])
+        acc[:, s - base:s - base + gen] += v * wgt
+        wacc[s - base:s - base + gen] += wgt
+        upto = min(n, starts[k + 1] if k + 1 < len(starts) else n)      # no later window touches these
+        if upto > emitted:
+            a0, a1 = emitted - base, upto - base
+            yield emitted, acc[:, a0:a1] / wacc[a0:a1]
+            acc, wacc, base = acc[:, a1:], wacc[a1:], upto
+            emitted = upto
         if progress:
-            progress((k + 1) / len(steps))
-        yield wav[:, :take]
+            progress((k + 1) / len(starts))
 
 
-def separate(mix, progress=None):
-    return np.concatenate(list(chunks(mix, progress)), 1)
+def separate(mix, progress=None, overlap=OVERLAP):
+    return np.concatenate([c for _, c in chunks(mix, progress, overlap)], 1)
 
 
-def speech_wav(video, out_wav, progress=None):
+def speech_wav(video, out_wav, progress=None, soft=SOFT):
     """Write a 16 kHz mono WAV of the dialogue only (same length as the video's audio)."""
     r = subprocess.run([vio.FFMPEG, "-v", "error", "-i", video, "-map", "0:a:0", "-ac", "2", "-ar", str(SR),
                         "-f", "f32le", "-"], capture_output=True, check=True, **vio.NOWIN)
@@ -145,8 +171,9 @@ def speech_wav(video, out_wav, progress=None):
     p = subprocess.Popen([vio.FFMPEG, "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-",
                           "-ac", "1", "-ar", "16000", out_wav], stdin=subprocess.PIPE, **vio.NOWIN)
     try:
-        for c in chunks(mix, progress):
-            p.stdin.write(np.ascontiguousarray(c.T).astype(np.float32).tobytes())
+        for i, c in chunks(mix, progress):
+            out = c + soft * (mix[:, i:i + c.shape[1]] - c)
+            p.stdin.write(np.ascontiguousarray(out.T).astype(np.float32).tobytes())
     except BaseException:
         p.kill(); p.wait()
         raise

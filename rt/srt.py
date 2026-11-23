@@ -146,9 +146,27 @@ def transcribe(video, out_json, lang=None, model="large-v3"):
             raise
         from faster_whisper import WhisperModel     # GPU libraries missing: fall back to the CPU
         res = go(WhisperModel(asr.model_dir(model) if asr.ready(model) else model, device="cpu", compute_type="int8"))
+    res["segments"] = [x for x in res["segments"] if not noise_line(x["text"])]
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False, indent=1)
     return out_json
+
+
+def noise_line(text):
+    """Whisper's sound tags and bare cries, not dialogue: "(buzzing)", "[MUSIC]", "*scream", "Waaaaah",
+    "♪♪", "..." ."""
+    import re
+    t = text.strip()
+    if not t:
+        return True
+    if re.fullmatch(r"[\[\(\*♪#].*", t) and not re.search(r"[\]\)\*♪#]\s*\w", t[1:]):
+        return True                                  # the whole line is a tag
+    words = re.findall(r"\w+", t)
+    if not words:
+        return True
+    if len(words) == 1 and re.search(r"(\w)\1{3,}", words[0]):
+        return True                                  # one stretched cry
+    return False
 
 
 def parse_srt(path):
