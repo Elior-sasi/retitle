@@ -203,6 +203,22 @@ def job_analyze():
         ts = detect.run(proj, s.get("src_lang") or "eng", progress=prog, rng=rng)
         log(f"נמצאו {len([t for t in ts if t['id'] not in before])} שורות טקסט" + (" בטווח" if rng else ""))
 
+    def b2():
+        from . import review
+        only = None
+        if rng:
+            only = {t["id"] for t in vio.load_json(P("titles.json"))["titles"] if t["id"] not in before}
+        try:
+            with LOCK:
+                cnt = review.classify(proj, s["api_key"], s.get("model"), only=only, progress=prog, log=log)
+        except Exception as e:
+            log(f"הבדיקה של Claude לא הצליחה ({e}) - נשארים עם הסימון האוטומטי")
+            return
+        names = {"title": "כותרות לתרגום", "logo": "לוגואים", "credits": "קרדיטים", "scene": "טקסט בתוך התמונה",
+                 "dialogue": "כתוביות צרובות", "noise": "רעש"}
+        if cnt:
+            log("Claude מיין: " + ", ".join(f"{names[k]} {v}" for k, v in cnt.items()))
+
     def c():
         extract.run(proj, progress=prog)
         prog(0.9)
@@ -212,7 +228,9 @@ def job_analyze():
             fonts_auto(only={t["id"] for t in vio.load_json(P("titles.json"))["titles"] if t["id"] not in before})
         else:
             fonts_auto()
-    run_steps([("מחפש חיתוכי שוטים", 0.15, a), ("מזהה טקסט על המסך", 0.45, b), ("מודד צבע, צל ותזמון מדויק", 0.32, c),
+    run_steps([("מחפש חיתוכי שוטים", 0.15, a), ("מזהה טקסט על המסך", 0.45, b),
+               ("Claude בודק מה כל טקסט - כותרת, לוגו, קרדיט או רעש", 0.06, b2) if s.get("api_key") else None,
+               ("מודד צבע, צל ותזמון מדויק", 0.32, c),
                ("מתאים גופן עברי לכל כותרת", 0.08, d)])
     n = series_apply()
     if n:
@@ -554,7 +572,22 @@ def job_playable():
     log("הווידאו מוכן לניגון.")
 
 
-JOBS = {"playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
+def job_review():
+    """Menu: Claude sorts the detected texts again (titles not yet translated or edited)."""
+    from . import review
+    s = settings()
+    if not s.get("api_key"):
+        raise RuntimeError("אין מפתח API בהגדרות")
+    STATE.update(stage="Claude בודק מה כל טקסט - כותרת, לוגו, קרדיט או רעש", step=1, steps=1)
+    only = {t["id"] for t in vio.load_json(P("titles.json"))["titles"] if not t.get("he") and not t.get("user_set")}
+    with LOCK:
+        cnt = review.classify(STATE["proj"], s["api_key"], s.get("model"), only=only, progress=prog, log=log)
+    names = {"title": "כותרות לתרגום", "logo": "לוגואים", "credits": "קרדיטים", "scene": "טקסט בתוך התמונה",
+             "dialogue": "כתוביות צרובות", "noise": "רעש"}
+    log("Claude מיין: " + (", ".join(f"{names[k]} {v}" for k, v in cnt.items()) or "אין מה לבדוק"))
+
+
+JOBS = {"review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
@@ -1214,7 +1247,7 @@ class H(BaseHTTPRequestHandler):
             if STATE["running"]:
                 return self._send(200, {"started": False})
             STATE["args"] = b.get("args") or {}
-            if b["job"] in ("translate_titles", "translate_dialog") and not settings().get("api_key"):
+            if b["job"] in ("translate_titles", "translate_dialog", "review") and not settings().get("api_key"):
                 return self._send(200, {"started": False, "need": "api_key"})
             return self._send(200, {"started": start(b["job"])})
         if u.path == "/api/update/check":
