@@ -38,6 +38,9 @@ jobs:
           --collect-all rapidocr_onnxruntime --collect-all faster_whisper --collect-all ctranslate2 --collect-all onnxruntime
           --collect-submodules rt --hidden-import tkinter
           retitle_app.py
+      - name: Exe smoke test
+        shell: pwsh
+        run: ./tests/exe_smoke.ps1
       - name: Zip
         shell: pwsh
         run: Compress-Archive dist/Retitle Retitle-win64.zip
