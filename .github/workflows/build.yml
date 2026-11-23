@@ -24,6 +24,8 @@ jobs:
         run: Set-Content -Path rt/_version.py -Value "BUILD = ${{ github.run_number }}"
       - name: Fonts
         run: python -m rt fonts
+      - name: Inpainting model (LaMa, OpenCV Zoo, checksum-verified)
+        run: python -c "from rt import lama; print(lama.fetch('models'))"
       - name: FFmpeg
         shell: pwsh
         run: |
@@ -39,7 +41,7 @@ jobs:
       - name: Package
         run: >
           pyinstaller --noconfirm --windowed --name Retitle --icon NONE
-          --add-data "rt/ui;rt/ui" --add-data "fonts;fonts" --add-binary "bin/ffmpeg.exe;bin" --add-binary "bin/ffprobe.exe;bin"
+          --add-data "rt/ui;rt/ui" --add-data "fonts;fonts" --add-data "models;models" --add-binary "bin/ffmpeg.exe;bin" --add-binary "bin/ffprobe.exe;bin"
           --collect-all rapidocr_onnxruntime --collect-all faster_whisper --collect-all ctranslate2 --collect-all onnxruntime
           --collect-all webview --hidden-import clr --collect-submodules rt --hidden-import tkinter
           retitle_app.py

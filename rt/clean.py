@@ -272,6 +272,12 @@ def synth(img, hole):
     hole = hole.astype(bool)
     if hole.sum() < 150:
         return cv2.inpaint(img, hole.astype(np.uint8) * 255, 5, cv2.INPAINT_TELEA)
+    from . import lama
+    if lama.available():   # learned inpainting (LaMa, local): continues shapes and textures
+        try:
+            return lama.inpaint(img, hole)
+        except Exception:
+            pass
     from .inpaint import exemplar
     ns = cv2.inpaint(img, hole.astype(np.uint8) * 255, 5, cv2.INPAINT_NS).astype(np.float32)
     ex = exemplar(img, hole, patch=9).astype(np.float32)

@@ -120,7 +120,7 @@ def never_seen_test(d):
     flick = float(np.abs(outs[0] - outs[2]).max(2)[m].mean())
     white = float((outs[1][m].min(1) > 235).mean())
     print(f"never-seen: synth {st['synth_max']}, error {err:.1f}, flicker {flick:.1f}, white left {white:.3f}, {time.time() - t0:.0f}s")
-    assert st["synth_max"] > 0.8 and err < 25 and flick < 8 and white < 0.01, (st, err, flick, white)
+    assert st["synth_max"] > 0.8 and err < 20 and flick < 8 and white < 0.01, (st, err, flick, white)
 
 
 def qa_test():
