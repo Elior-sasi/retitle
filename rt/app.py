@@ -419,10 +419,27 @@ def job_translate(kind):
         T = vio.load_json(P("titles.json"))
         items = [{"id": t["id"], "src": t["src"], "group": t["group"]} for t in T["titles"]
                  if t.get("translate", True) and not t.get("he")]
+        if not items:
+            log("אין כותרות שמחכות לתרגום (כולן כבר בעברית או מסומנות \"נשאר\").")
+            return
+        STATE.update(stage=f"מתרגם {len(items)} כותרות עם Claude", step=1, steps=1)
         log(f"מתרגם {len(items)} כותרות...")
         imgs = {it["id"]: P("thumbs", f"{it['id']}.jpg") for it in items if os.path.exists(P("thumbs", f"{it['id']}.jpg"))}
-        res = translate.translate(items, s["api_key"], s.get("glossary", ""),
-                                  translate.context(s.get("content"), "titles"), s.get("model"), images=imgs)
+        res = {}
+        # whole cards stay together in one request (their lines are translated as one sentence)
+        batches, cur = [], []
+        for it in items:
+            if cur and len(cur) >= 12 and cur[-1]["group"] != it["group"]:
+                batches.append(cur); cur = []
+            cur.append(it)
+        if cur:
+            batches.append(cur)
+        prog(0.02)
+        for k, bt in enumerate(batches):
+            res.update(translate.translate(bt, s["api_key"], s.get("glossary", ""),
+                                           translate.context(s.get("content"), "titles"), s.get("model"),
+                                           images={i: imgs[i] for i in imgs if any(x["id"] == i for x in bt)}))
+            prog((k + 1) / len(batches))
         with LOCK:
             T = vio.load_json(P("titles.json"))
             for t in T["titles"]:
@@ -435,11 +452,17 @@ def job_translate(kind):
     else:
         D = vio.load_json(P("dialog.json"))
         items = [{"id": str(c["n"]), "src": c["src"]} for c in D["cues"] if not c.get("he")]
+        if not items:
+            log("אין כתוביות שמחכות לתרגום.")
+            return
+        STATE.update(stage=f"מתרגם {len(items)} כתוביות עם Claude", step=1, steps=1)
         log(f"מתרגם {len(items)} כתוביות...")
         res = {}
+        prog(0.02)
         for i in range(0, len(items), 60):
             res.update(translate.translate(items[i:i + 60], s["api_key"], s.get("glossary", ""),
                                            translate.context(s.get("content"), "dialog"), s.get("model")))
+            prog(min(1.0, (i + 60) / len(items)))
         with LOCK:
             D = vio.load_json(P("dialog.json"))
             for c in D["cues"]:
@@ -1177,6 +1200,8 @@ class H(BaseHTTPRequestHandler):
             if STATE["running"]:
                 return self._send(200, {"started": False})
             STATE["args"] = b.get("args") or {}
+            if b["job"] in ("translate_titles", "translate_dialog") and not settings().get("api_key"):
+                return self._send(200, {"started": False, "need": "api_key"})
             return self._send(200, {"started": start(b["job"])})
         if u.path == "/api/update/check":
             from . import update

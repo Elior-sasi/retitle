@@ -80,13 +80,10 @@ def run(proj, pad=48, progress=None):
     if not jobs:
         return
     first = min(j[0] for j in jobs.values()); last = max(j[1] for j in jobs.values())
-    for i, f in enumerate(vio.frames(P["video"], W, H)):
-        if i > last:
-            break
-        if i < first:
-            continue
-        if progress and i % 24 == 0:
-            progress(0.6 * (i - first) / max(1, last - first))
+    want = sum(hi - lo + 1 for lo, hi, _ in jobs.values())
+    for k, (i, f) in enumerate(vio.frames_at(P["video"], W, H, [(lo, hi) for lo, hi, _ in jobs.values()])):
+        if progress and k % 12 == 0:
+            progress(0.6 * k / max(1, want))
         for gid, (lo, hi, (x0, y0, x1, y1)) in jobs.items():
             if lo <= i <= hi:
                 cv2.imwrite(os.path.join(proj, "cache", gid, f"{i:06d}.png"), f[y0:y1, x0:x1], PNG_FAST)

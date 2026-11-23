@@ -122,3 +122,32 @@ def count_frames(path):
         return int(out.strip().split(",")[0])
     except ValueError:
         return 0
+
+
+def frames_at(path, w, h, ranges):
+    """Only the frames in `ranges` [(a, b) inclusive], as (index, frame). One decode pass; the frames
+    in between are decoded by ffmpeg but never converted or sent (fast on long videos)."""
+    rs = []
+    for a, b in sorted(ranges):
+        if rs and a <= rs[-1][1] + 1:
+            rs[-1][1] = max(rs[-1][1], b)
+        else:
+            rs.append([a, b])
+    if not rs:
+        return
+    idx = [i for a, b in rs for i in range(a, b + 1)]
+    expr = "+".join(f"between(n\\,{a}\\,{b})" for a, b in rs)
+    cmd = [FFMPEG, "-v", "error", "-i", path, "-map", "0:v:0", "-vf", f"select={expr}", "-fps_mode", "passthrough",
+           "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=w * h * 3 * 4, **NOWIN)
+    n = w * h * 3
+    try:
+        for i in idx:
+            buf = p.stdout.read(n)
+            if len(buf) < n:
+                break
+            yield i, np.frombuffer(buf, np.uint8).reshape(h, w, 3)
+    finally:
+        p.stdout.close()
+        p.kill()
+        p.wait()
