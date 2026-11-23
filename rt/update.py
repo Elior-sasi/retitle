@@ -55,12 +55,16 @@ def apply(info, token="", progress=None):
     with _get(info["asset_api"], token, "application/octet-stream") as r, open(dst, "wb") as f:
         total = info.get("size") or 0; done = 0
         while True:
-            b = r.read(1 << 20)
+            b = r.read(min(1 << 20, total - done) if total else 1 << 20)
             if not b:
                 break
             f.write(b); done += len(b)
             if progress and total:
-                progress(done / total)
+                progress(min(0.999, done / total))
+            if total and done >= total:          # all of it: do not wait on a connection that stays open
+                break
+    if total and os.path.getsize(dst) < total:
+        raise RuntimeError("ההורדה נקטעה - נסה שוב")
     if dst.lower().endswith(".exe"):
         subprocess.Popen([dst, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/SP-"],
                          creationflags=0x00000008)  # detached

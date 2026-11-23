@@ -123,7 +123,17 @@ def track(proj, only=None):
             vals = np.array(list(fr.values()))
             static = (np.abs(vals[:, :2]).max() < 1.5 and np.abs(vals[:, 2] - 1).max() < 0.025
                       and vals[:, 3].min() > 0.9)
-            t["anim"] = {"mode": "static"} if static else {"mode": "match", "frames": {str(k): v for k, v in fr.items()}}
+            t["anim"] = {"mode": "static", "frames": {str(k): v for k, v in fr.items()}} if static else \
+                {"mode": "match", "frames": {str(k): v for k, v in fr.items()}}
+            # rotation / perspective, reveal matte, light, layered logos
+            from . import motion
+            try:
+                rects = [rc for _, rc in motion.parts_layout(proj, t)] if (t.get("layer") or {}).get("type") == "parts" else None
+                motion.refine(proj, t, gid, lines, rects)
+            except Exception as e:
+                print("motion refine failed", t["id"], e)
+            if t["anim"].get("mode") == "static":
+                t["anim"].pop("frames", None)
     vio.save_json(os.path.join(proj, "titles.json"), T)
 
 
@@ -297,6 +307,16 @@ def build_layers(proj, only=None):
                 t["warn_shrunk"] = round(st2["size_px"], 1)
             else:
                 t.pop("warn_shrunk", None)
+        elif lay["type"] == "parts":
+            from . import motion
+            parts = []
+            for i, (im, rc) in enumerate(motion.parts_layout(proj, t)):
+                pp = os.path.join(d, f"{t['id']}#{i}.png"); im.save(pp)
+                ssp = im.width / max(1e-6, rc[2] - rc[0])
+                parts.append({"file": pp, "ss": ssp, "anchor": [im.width / 2, im.height / 2],
+                              "target": [(rc[0] + rc[2]) / 2, (rc[1] + rc[3]) / 2]})
+            meta[t["id"]] = {"parts": parts}
+            continue
         elif lay["type"] == "image":
             # a designed logo (transparent PNG): fitted to the width of the source text block
             img = Image.open(os.path.join(proj, lay["path"])).convert("RGBA")
@@ -329,22 +349,24 @@ def build_layers(proj, only=None):
     return meta
 
 
-def place(layer_rgba, meta, anim, f, W, H):
-    """Return premultiplied float RGBA full-frame for frame f, or None."""
+def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None):
+    """Return premultiplied float RGBA full-frame for frame f, or None.
+    Motion: full homography of the original when measured (rotation / perspective), else [dx, dy, scale];
+    then the original's reveal matte and light/colour gain (motion.py)."""
+    from . import motion
     dx = dy = 0.0; sc = 1.0; al = 1.0
     mode = anim.get("mode", "static")
     if mode == "match":
-        fr = anim["frames"]
+        fr = anim.get("frames") or {}
         v = fr.get(str(f))
-        if v is None:  # frames outside the measured range (timing extended by hand): hold the edge
+        if v is None and fr:  # frames outside the measured range (timing extended by hand): hold the edge
             keys = sorted(int(k) for k in fr)
-            if not keys:
-                return None
             k = keys[0] if f < keys[0] else keys[-1] if f > keys[-1] else min(keys, key=lambda x: abs(x - f))
             v = fr[str(k)]
             if f < keys[0] or f > keys[-1]:
                 v = [v[0], v[1], v[2], 1.0]
-        dx, dy, sc, al = v
+        if v is not None:
+            dx, dy, sc, al = v
     elif mode == "fade":
         a, b = anim["in"], anim["out"]
         fi, fo = anim.get("fade_in", 0), anim.get("fade_out", 0)
@@ -352,16 +374,54 @@ def place(layer_rgba, meta, anim, f, W, H):
             al = (f - a + 1) / (fi + 1)
         if fo and f > b - fo:
             al = min(al, (b - f + 1) / (fo + 1))
-    if al <= 0.001:
-        return None
     ss = meta["ss"]; ax, ay = meta["anchor"]; tx, ty = meta["target"]
-    k = sc / ss
-    M = np.float32([[k, 0, tx + dx - ax * k], [0, k, ty + dy - ay * k]])
-    out = cv2.warpAffine(layer_rgba, M, (W, H), flags=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR,
-                         borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
-    out[..., 3] *= al
-    out[..., :3] *= al
+    Hm = motion.homography(anim, f, part) if mode == "match" else None
+    if Hm is not None:
+        A0 = np.array([[1 / ss, 0, tx - ax / ss], [0, 1 / ss, ty - ay / ss], [0, 0, 1]], np.float64)
+        M = Hm @ A0
+        k = np.sqrt(abs(np.linalg.det(M[:2, :2])))
+        out = cv2.warpPerspective(layer_rgba, M, (W, H), flags=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR,
+                                  borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+    else:
+        k = sc / ss
+        M = np.float32([[k, 0, tx + dx - ax * k], [0, k, ty + dy - ay * k]])
+        out = cv2.warpAffine(layer_rgba, M, (W, H), flags=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR,
+                             borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+    out, matted = motion.apply_maps(out, proj, tid, anim, f, W, H) if (proj and tid) else (out, False)
+    if not matted:
+        if al <= 0.001:
+            return None
+        out *= al
     return out
+
+
+def title_layers(proj, t, meta, cache, f, W, H):
+    """Every premultiplied full-frame layer of title t at frame f (text, image, layered logo, sequence)."""
+    if not t.get("translate", True) or t.get("mode") == "remove" or t["id"] not in meta:
+        return []
+    lay = t.get("layer") or {"type": "text"}
+    if lay["type"] == "sequence":
+        p = os.path.join(proj, lay["dir"], f"{f:06d}.png")
+        return [load_layer(p)] if os.path.exists(p) else []
+    if not (t["in"] <= f <= t["out"]):
+        return []
+    anim = dict(t.get("anim", {"mode": "static"}))
+    anim.setdefault("in", t["in"]); anim.setdefault("out", t["out"])
+    m = meta[t["id"]]
+    out = []
+    if "parts" in m:
+        for i, pm in enumerate(m["parts"]):
+            key = f"{t['id']}#{i}"
+            if key not in cache:
+                cache[key] = load_layer(pm["file"])
+            L = place(cache[key], pm, anim, f, W, H, proj, t["id"], part=i)
+            if L is not None:
+                out.append(L)
+        return out
+    if t["id"] not in cache:
+        cache[t["id"]] = load_layer(m["file"])
+    L = place(cache[t["id"]], m, anim, f, W, H, proj, t["id"])
+    return [L] if L is not None else []
 
 
 def load_layer(path):

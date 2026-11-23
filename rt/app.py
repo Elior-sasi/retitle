@@ -156,6 +156,8 @@ def dirty_groups(T):
             want = [t["in"], t["out"], bool(t.get("translate", True))]
             if t.get("translate", True) and t.get("built") != want:
                 out.add(gid)
+            if t.get("translate", True) and t.get("built_region") and t.get("region") and list(t["built_region"]) != list(t["region"]):
+                out.add(gid)                          # the card's area changed (e.g. "whole logo")
             if not t.get("translate", True) and (t.get("built") or [0, 0, False])[2]:
                 out.add(gid)
     return out
@@ -165,7 +167,7 @@ def needs_extract(T):
     for t in T["titles"]:
         if not t.get("translate", True):
             continue
-        if "mask" not in t or "cache" not in t:
+        if "mask" not in t or "cache" not in t or t.get("reextract"):
             return True
         if t["in"] < t["cache"][0] or t["out"] > t["cache"][1]:
             return True
@@ -209,9 +211,13 @@ def build_steps(proxy=True):
     st = {}
 
     def do_extract():
+        before = {t["id"]: (t.get("region"), t.get("reextract")) for t in vio.load_json(P("titles.json"))["titles"]}
         extract.run(proj, progress=prog)
         thumbs()
-        st["dirty"] = dirty_groups(vio.load_json(P("titles.json")))
+        T2 = vio.load_json(P("titles.json"))
+        changed = {t["group"] for t in T2["titles"] if t["id"] in before and
+                   (before[t["id"]][0] != t.get("region") or before[t["id"]][1])}
+        st["dirty"] = dirty_groups(T2) | changed
 
     def do_clean():
         d = st.get("dirty", dirty)
@@ -403,10 +409,21 @@ UPDATE = {}
 
 def job_update():
     from . import update
+    STATE.update(stage="מוריד את הגרסה החדשה", step=1, steps=2)
     log("מוריד את הגרסה החדשה...")
-    update.apply(UPDATE, settings().get("gh_token", ""), progress=prog)
+    update.apply(UPDATE, settings().get("gh_token", ""),
+                 progress=lambda x: (STATE.update(stage="מתקין ופותח מחדש", step=2) if x >= 0.999 else None, prog(x)))
+    STATE.update(stage="מתקין ופותח מחדש - התוכנה תיסגר ותיפתח לבד", step=2)
     log("הגרסה החדשה תיפתח עכשיו.")
-    threading.Timer(1.0, lambda: os._exit(0)).start()
+    # leave right away: the installer is waiting for this program to close
+    def bye():
+        try:
+            if WINDOW is not None:
+                WINDOW.destroy()
+        except Exception:
+            pass
+        os._exit(0)
+    threading.Timer(0.6, bye).start()
 
 
 JOBS = {"analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
@@ -443,7 +460,8 @@ PICK = {"video": ("Video (*.mp4;*.mov;*.mkv;*.m4v;*.avi;*.webm)", "Video", "*.mp
         "srt": ("Subtitles (*.srt)", "SRT", "*.srt"),
         "png": ("PNG image (*.png)", "PNG", "*.png"),
         "retitle": ("Retitle project (*.retitle)", "Retitle", "*.retitle"),
-        "font": ("Fonts (*.ttf;*.otf;*.ttc)", "Fonts", "*.ttf *.otf *.ttc")}
+        "font": ("Fonts (*.ttf;*.otf;*.ttc)", "Fonts", "*.ttf *.otf *.ttc"),
+        "layers": ("Photoshop or PNG layers (*.psd;*.png)", "Layers", "*.psd *.png")}
 
 
 def pick_files(kind):
@@ -504,7 +522,7 @@ def pick_file(kind="video"):
 
 def _activate(rfile, data):
     from . import project
-    if STATE["running"]:
+    if STATE["running"] and STATE["job"] != "update":
         raise RuntimeError("פעולה אחרת עדיין רצה - חכה שתסתיים או בטל אותה")
     STATE["proj"] = data
     STATE["file"] = rfile
@@ -622,6 +640,24 @@ def apply_titles(edits):
                 t["translate"] = bool(e["translate"]); relayer.add(t["id"])
             if "mode" in e and e["mode"] in ("replace", "remove") and e["mode"] != t.get("mode", "replace"):
                 t["mode"] = e["mode"]; relayer.add(t["id"])
+            if "logo_full" in e and bool(e["logo_full"]) != bool(t.get("logo_full")):
+                t["logo_full"] = bool(e["logo_full"]); t["reextract"] = True; t.pop("logo_bg_done", None)
+                if not t["logo_full"]:                  # back to the text only
+                    for k in ("logo_bg",):
+                        t.pop(k, None)
+                    if "text_box" in t:
+                        t["box"] = t.pop("text_box")
+                    if "text_ref_box" in t:
+                        t["ref_box"] = t.pop("text_ref_box")
+                for o in T["titles"]:                   # the card's region is recomputed
+                    if o.get("group") == t.get("group"):
+                        o.pop("region", None)
+                relayer.add(t["id"])
+            if e.get("reveal_dir") in ("auto", "mirror", "same") and e["reveal_dir"] != t.get("reveal_dir", "auto"):
+                from . import motion
+                t["reveal_dir"] = e["reveal_dir"]
+                if t.get("anim"):
+                    t["anim"]["mirror"] = motion.mirror_default(t) if e["reveal_dir"] == "auto" else e["reveal_dir"] == "mirror"
             if "layer" in e and e["layer"] != t.get("layer"):
                 if e["layer"]:
                     t["layer"] = e["layer"]
@@ -1020,6 +1056,23 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/logo":
             import shutil
             tid = b["id"]
+            if b.get("layers"):
+                from . import motion, render
+                paths = pick_files("layers")
+                if not paths:
+                    return self._send(200, {"ok": False})
+                try:
+                    files = motion.import_layers(STATE["proj"], tid, paths)
+                except Exception as e:
+                    return self._send(200, {"ok": False, "error": str(e)})
+                apply_titles([{"id": tid, "layer": {"type": "parts", "files": files, "t": time.time()}}])
+                T = vio.load_json(P("titles.json"))
+                t = next(x for x in T["titles"] if x["id"] == tid)
+                if os.path.isdir(P("clean", t["group"])):          # each layer gets the motion of the part under it
+                    render.track(STATE["proj"], only={t["group"]})
+                if os.path.exists(P("layers", "meta.json")):
+                    render.build_layers(STATE["proj"], only={tid})
+                return self._send(200, {"ok": True, "n": len(files)})
             if b.get("clear"):
                 apply_titles([{"id": tid, "layer": None}])
                 return self._send(200, {"ok": True})

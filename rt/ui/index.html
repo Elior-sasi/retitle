@@ -122,6 +122,8 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 #welcome{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px;background:#0d0d0d}
 #busy{position:absolute;inset-inline:0;bottom:14px;margin:auto;width:min(560px,calc(100% - 28px));background:rgba(24,24,28,.94);border:1px solid #3a3a44;border-radius:8px;padding:14px 18px;box-shadow:0 8px 28px rgba(0,0,0,.55);z-index:5;color:#fff}
 #busy[hidden]{display:none}
+#busy{top:50%;bottom:auto;transform:translateY(-50%)}
+#stage:has(#busy:not([hidden])) #welcome{visibility:hidden}
 #busy h3{margin:0;font-size:1.15em;display:flex;align-items:baseline;gap:10px}
 #busy h3 .left{margin-inline-start:auto;font-size:1.25em;font-variant-numeric:tabular-nums;color:#fff;font-weight:600}
 #busy h3 .pct{font-size:1.6em;font-variant-numeric:tabular-nums;color:#8ec5ff}
@@ -177,7 +179,9 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 .fmh{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.fmn{font-weight:700}.fms{color:#cfcfcf;font-size:.9em}
 .fmp{font-size:1.8em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fmd{color:#d6d6d6;font-size:.92em}.chip.rec{color:#9fd8a8}
-.chip.warn{color:var(--warn)}.chip.ser{color:#b9a6ff}.chip.ser.warn{color:var(--warn)}.chip.off{color:var(--mut)}
+.chip.warn{color:var(--warn)}
+.prop .v .mini{height:auto;min-height:30px;white-space:normal;line-height:1.3;padding:4px 10px;text-align:start}
+.prop .v{flex-wrap:wrap}.prop .seg{flex-wrap:wrap}.chip.ser{color:#b9a6ff}.chip.ser.warn{color:var(--warn)}.chip.off{color:var(--mut)}
 .pfoot{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #1a1a1a}
 .pfoot .qbtn{flex:1;justify-content:center}
 
@@ -533,9 +537,14 @@ function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;con
   const md=el('div',{class:'seg',role:'group','aria-label':'מה לעשות עם הטקסט במקור'});
   for(const[v,n]of[['replace','עברית'],['remove','מחיקה'],['keep','להשאיר']]){const bb=el('button',{text:n,'aria-pressed':curMode===v?'true':'false',
     onclick:()=>{oneShot(()=>{t.translate=v!=='keep';t.mode=v==='remove'?'remove':'replace'});saveTitle(t.id,0);renderAll();refreshFrameSoon(300)}});md.append(bb)}
-  const isImg=t.layer&&t.layer.type==='image';
+  const isImg=t.layer&&(t.layer.type==='image'||t.layer.type==='parts');const isParts=t.layer&&t.layer.type==='parts';
   const logo=el('span',{class:'v'},
     el('button',{class:'mini',text:isImg?'החלף תמונה...':'תמונה (PNG) במקום טקסט...',onclick:async()=>{const r=await api('/api/logo',{id:t.id});if(r.ok){await reloadData(false);renderAll();refreshFrame();say('התמונה הוצבה')}}}),
+    el('button',{class:'mini',text:isParts?'החלף שכבות...':'לוגו בשכבות (PSD / PNG)...',title:'כל שכבה זזה כמו החלק של הלוגו המקורי שמתחתיה',onclick:async()=>{say('בוחר קבצים...');const r=await api('/api/logo',{id:t.id,layers:true});
+      if(r.error)return say(r.error,true);if(r.ok){await reloadData(false);renderAll();refreshFrame();say(`הלוגו נטען ב-${r.n} שכבות, וכל שכבה קיבלה את התנועה של החלק שמתחתיה`)}}}),
+    el('button',{class:'mini','aria-pressed':String(!!d.logo_full),text:d.logo_full?'כולל את כל הלוגו':'כל הלוגו, כולל סמלים',title:'גם הגרפיקה שמופיעה יחד עם הטקסט נמחקת, נמדדת וזזה',
+      onclick:async()=>{await flush();await api('/api/titles',{titles:[{id:t.id,logo_full:!d.logo_full}]});await reloadData(false);renderAll();
+        say(!d.logo_full?'כל הלוגו ייכלל - יחול בבנייה הבאה (Enter)':'רק הטקסט - יחול בבנייה הבאה (Enter)')}}),
     isImg?el('button',{class:'mini',text:'חזור לטקסט',onclick:async()=>{await api('/api/logo',{id:t.id,clear:true});await reloadData(false);renderAll();refreshFrame()}}):null);
   const he=el('textarea',{class:'he',id:'i-he',rows:'2',dir:'rtl',lang:'he','aria-label':'טקסט בעברית'});he.value=t.he;
   he.addEventListener('focus',beginEdit);he.addEventListener('blur',endEdit);
@@ -543,7 +552,14 @@ function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;con
   box.append(group('טקסט',true,prop('מקור',null,el('span',{class:'v'},md)),
     el('p',{class:'note',text:curMode==='remove'?'הטקסט במקור יימחק בלי להוסיף עברית (למשל כתוביות צרובות - העברית תהיה ב-SRT).':'להשאיר: קרדיטים, לוגואים של אולפנים, סמלי דירוג, שמות באנגלית.'}),
     curMode==='replace'&&!isImg?he:null,curMode==='replace'?prop('לוגו',null,logo):null,
-    isImg?el('p',{class:'note',text:'במקום הטקסט מוצגת תמונה שקופה, ברוחב הטקסט המקורי ועם אותה אנימציה. "גודל" משנה את הרוחב.'}):null));
+    isImg?el('p',{class:'note',text:isParts?'השכבות מוצבות כמו בקובץ, ברוחב הלוגו המקורי. כל שכבה זזה, מסתובבת ונחשפת כמו החלק של המקור שמתחתיה.':'במקום הטקסט מוצגת תמונה שקופה, ברוחב הטקסט המקורי ועם אותה אנימציה. "גודל" משנה את הרוחב.'}):null));
+  {const A=d.anim||{};const Hs=Object.values(A.H||{});const rot=Hs.some(v=>Math.abs(v[1])>0.01||Math.abs(v[3])>0.01||Math.abs(v[6])>1e-5||Math.abs(v[7])>1e-5);
+   const found=[(A.mode==='match')?'תזוזה וזום':'',rot?'סיבוב או הטיה':'',(A.matte||[]).length?`חשיפה הדרגתית (${A.matte.length} פריימים)`:'',(A.gain||[]).length?`אור או שינוי צבע (${A.gain.length} פריימים)`:''].filter(Boolean);
+   const rd=t.reveal_dir||d.reveal_dir||'auto';const seg=el('div',{class:'seg',role:'group','aria-label':'כיוון החשיפה'});
+   for(const[v,n]of[['auto','אוטומטי'],['mirror','הפוך (לעברית)'],['same','כמו במקור']])seg.append(el('button',{text:n,'aria-pressed':String(rd===v),onclick:async()=>{await api('/api/titles',{titles:[{id:t.id,reveal_dir:v}]});t.reveal_dir=v;await reloadData(true);renderInsp();refreshFrame();say('כיוון החשיפה: '+n)}}));
+   box.append(group('תנועה מהמקור',false,el('p',{class:'note',text:found.length?'זוהה במקור והועבר לעברית: '+found.join(', ')+'.':(A.mode?'הכותרת במקור לא זזה.':'יימדד בבנייה (Enter).')}),
+     (A.matte||[]).length?prop('כיוון החשיפה',null,el('span',{class:'v'},seg)):null,
+     (A.matte||[]).length?el('p',{class:'note',text:'אוטומטי: חשיפה של טקסט באנגלית משמאל לימין הופכת לימין לשמאל בעברית. "כמו במקור" מתאים לחפץ שעובר מול הכותרת.'}):null))}
   if(S.series&&d.kind!=='sub'){const sb=[];
     if(d.series_override){sb.push(el('p',{class:'note',text:`שינית את הכותרת הזאת רק בפרק הזה. בסדרה "${S.series}" שמורה גרסה אחרת.`}),
       el('div',{class:'row2'},el('button',{class:'mini',text:'עדכן בכל הסדרה',onclick:()=>seriesAct('push',t.id)}),el('button',{class:'mini',text:'חזור לגרסת הסדרה',onclick:()=>seriesAct('revert',t.id)})))}
@@ -738,10 +754,10 @@ async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
   $('#logbox').textContent=s.log.join('\n');S.running=s.running;
   if(s.proj&&s.proj!==S.proj&&!S.loading){S.loading=true;try{await loadProject(s.proj)}finally{S.loading=false}}S.proj=s.proj;
   for(const id of['q-analyze','q-trans','q-build','q-export'])$('#'+id).disabled=!s.proj||s.running;
-  const pb=$('#pbar');if(s.running){pb.style.display='inline-block';if(s.progress!=null)pb.value=s.progress;else pb.removeAttribute('value')}else pb.style.display='none';
+  $('#pbar').style.display='none';     // progress lives in the card over the video only
   S.job=s.job;showBusy(s);const an=$('#asrnote'),A=s.asr||{};
   an.textContent=A.state==='downloading'?`${A.what==='gpu'?'מוריד תמיכה בכרטיס המסך לתמלול':'מכין מנוע תמלול'} ${Math.floor((A.progress||0)*100)}%`:A.state==='error'?'מנוע התמלול לא ירד - ינסה שוב בתמלול':'';
-  if(s.running){const last=s.log.length?s.log[s.log.length-1].slice(10):'';say(`${JOBN[s.job]||s.job}: ${s.stage||last}${s.progress!=null?` ${Math.round(s.progress*100)}%`:''}`)}
+  if(s.running){if(!wasRunning)say(`${JOBN[s.job]||s.job} - ההתקדמות מוצגת בחלון שמעל הסרטון`)}
   else if(wasRunning&&s.cancelled){await reloadData(false);renderAll();say(`${JOBN[s.job]||''} בוטל`)}
   else if(wasRunning){await reloadData(false);renderAll();setMode(S.mode);
     if(s.error)say(`שגיאה ב${JOBN[s.job]||''}: ${s.error}`,true);else say(`${JOBN[s.job]||''} הסתיים. ${s.log.length?s.log[s.log.length-1].slice(10):''}`);

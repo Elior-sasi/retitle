@@ -24,26 +24,12 @@ def frame_result(proj, f, frame, T, meta, cache, W, H):
         p = os.path.join(proj, "clean", gid, f"{f:06d}.png")
         if os.path.exists(p):
             x0, y0, x1, y1 = act[0]["region"]
-            out[y0:y1, x0:x1] = cv2.imread(p)
+            c = cv2.imread(p)
+            if c is not None and c.shape[:2] == out[y0:y1, x0:x1].shape[:2]:   # stale until the card is rebuilt
+                out[y0:y1, x0:x1] = c
     lays = []
     for t in T["titles"]:
-        if not t.get("translate", True) or t["id"] not in meta:
-            continue
-        lay = t.get("layer") or {"type": "text"}
-        if lay["type"] == "sequence":
-            p = os.path.join(proj, lay["dir"], f"{f:06d}.png")
-            if os.path.exists(p):
-                lays.append(render.load_layer(p))
-            continue
-        if not (t["in"] <= f <= t["out"]):
-            continue
-        if t["id"] not in cache:
-            cache[t["id"]] = render.load_layer(meta[t["id"]]["file"])
-        anim = dict(t.get("anim", {"mode": "static"}))
-        anim.setdefault("in", t["in"]); anim.setdefault("out", t["out"])
-        L = render.place(cache[t["id"]], meta[t["id"]], anim, f, W, H)
-        if L is not None:
-            lays.append(L)
+        lays += render.title_layers(proj, t, meta, cache, f, W, H)
     return _overlay(out, lays)
 
 
@@ -82,21 +68,9 @@ def overlay_frame(proj, f, T, meta, cache, W, H):
     """Hebrew layers only, premultiplied BGRA float, or None when nothing is on screen."""
     out = None
     for t in T["titles"]:
-        if not t.get("translate", True) or t.get("mode") == "remove" or t["id"] not in meta:
+        if t.get("mode") == "remove":
             continue
-        lay = t.get("layer") or {"type": "text"}
-        L = None
-        if lay["type"] == "sequence":
-            p = os.path.join(proj, lay["dir"], f"{f:06d}.png")
-            if os.path.exists(p):
-                L = render.load_layer(p)
-        elif t["in"] <= f <= t["out"]:
-            if t["id"] not in cache:
-                cache[t["id"]] = render.load_layer(meta[t["id"]]["file"])
-            anim = dict(t.get("anim", {"mode": "static"}))
-            anim.setdefault("in", t["in"]); anim.setdefault("out", t["out"])
-            L = render.place(cache[t["id"]], meta[t["id"]], anim, f, W, H)
-        if L is not None:
+        for L in render.title_layers(proj, t, meta, cache, f, W, H):
             out = L if out is None else L + out * (1 - L[..., 3:4])
     return out
 

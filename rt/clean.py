@@ -19,12 +19,34 @@ def _load(proj, gid, f):
     return _IMG[k]
 
 
-def line_mask(img, t, reg):
-    bx = t["box"]
+_BG = {}
+_CTX = {}
+
+
+def line_mask(img, t, reg, f=None, proj=None, gid=None):
+    bx = t.get("text_box", t["box"])
     h = bx[3] - bx[1]
     s = t.get("search", h)
     box = [bx[0] - reg[0] - s, bx[1] - reg[1] - s, bx[2] - reg[0] + s, bx[3] - reg[1] + s]
-    return masks.make(img, t["mask"], box)
+    m = masks.make(img, t["mask"], box)
+    if t.get("logo_bg") is not None and proj and f is not None:
+        # whole logo: everything that differs from the background without the title, around the logo box
+        from .extract import _bg_plate, logo_diff
+        k = (proj, gid, t["id"], f)
+        if k not in _BG:
+            if len(_BG) > 64:
+                _BG.clear()
+            S = vio.load_json(os.path.join(proj, "shots.json"), {})
+            _BG[k] = _bg_plate(proj, t, gid, S, f)[0]
+        bg = _BG[k]
+        if bg is not None and bg.shape == img.shape:
+            lb = t["box"]; hh = max(8, (t.get("text_ref_box", lb)[3] - t.get("text_ref_box", lb)[1]) // 2)
+            lim = np.zeros(img.shape[:2], np.uint8)
+            lim[max(0, lb[1] - reg[1] - hh):max(0, lb[3] - reg[1] + hh), max(0, lb[0] - reg[0] - hh):max(0, lb[2] - reg[0] + hh)] = 1
+            g = logo_diff(img, bg) & lim
+            g = cv2.dilate(g, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * t["mask"].get("grow", 3) + 1,) * 2))
+            m = m | (g * 255)
+    return m
 
 
 def frame_mask(img, f, lines, reg, margin=0):
@@ -40,7 +62,7 @@ def _frame_mask(img, f, lines, reg, margin=0):
     m = np.zeros(img.shape[:2], np.uint8)
     for t in lines:
         if t.get("translate", True) and "mask" in t and t["in"] - margin <= f <= t["out"] + margin:
-            m |= line_mask(img, t, reg)
+            m |= line_mask(img, t, reg, f, _CTX.get("proj"), _CTX.get("gid"))
     return m
 
 
@@ -172,7 +194,7 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
         if t.get("translate", True) and "mask" in t:
             ri = _load(proj, gid, t["ref"])
             if ri is not None:
-                refm[t["id"]] = cv2.dilate(line_mask(ri, t, reg), np.ones((5, 5), np.uint8))
+                refm[t["id"]] = cv2.dilate(line_mask(ri, t, reg, t["ref"], proj, gid), np.ones((5, 5), np.uint8))
     stack, okm = [], []
     used = 0
     # nearest clean frames first, but never more than 2K of them: when they all fail the colour
@@ -336,6 +358,7 @@ def run(proj, only=None, progress=None):
         d = os.path.join(proj, "clean", gid)
         shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
         _IMG.clear(); _MSK.clear(); SYNTH.clear()
+        _CTX.update(proj=proj, gid=gid)
         a = min(t["in"] for t in act); b = max(t["out"] for t in act)
         ids = {t["id"] for t in lines}
         others = [o for o in T["titles"] if o["id"] not in ids and
@@ -354,10 +377,12 @@ def run(proj, only=None, progress=None):
                       "synth_max": round(float(np.max(fr)), 3)}
         for t in lines:
             built[t["id"]] = [t["in"], t["out"], bool(t.get("translate", True))]
+            built[t["id"] + "#reg"] = list(t.get("region") or [])
         print(gid, stats[gid])
     vio.save_json(os.path.join(proj, "clean_stats.json"), stats)
     T2 = vio.load_json(os.path.join(proj, "titles.json"))  # re-read: the editor may have saved meanwhile
     for t in T2["titles"]:
         if t["id"] in built:
             t["built"] = built[t["id"]]
+            t["built_region"] = built.get(t["id"] + "#reg")
     vio.save_json(os.path.join(proj, "titles.json"), T2)

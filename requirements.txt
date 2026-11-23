@@ -6,3 +6,4 @@ fonttools
 rapidocr_onnxruntime
 faster-whisper
 pywebview
+psd-tools

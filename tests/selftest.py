@@ -60,6 +60,7 @@ def main():
     never_seen_test(d)
     qa_test()
     fontmatch_test()
+    motion_test(d)
     print("SELFTEST OK")
 
 
@@ -122,6 +123,43 @@ def never_seen_test(d):
     white = float((outs[1][m].min(1) > 235).mean())
     print(f"never-seen: synth {st['synth_max']}, error {err:.1f}, flicker {flick:.1f}, white left {white:.3f}, {time.time() - t0:.0f}s")
     assert st["synth_max"] > 0.8 and err < 20 and flick < 8 and white < 0.01, (st, err, flick, white)
+
+
+def motion_test(d):
+    """Wipe reveal, rotation and a light flash of the original are measured and carried to the Hebrew."""
+    import time
+    import numpy as np
+    from rt import app
+    v = os.path.join(d, "logo.mp4")
+    subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "make_logo.py"), v, "0.5"], check=True)
+    t0 = time.time()
+    app.STATE["running"] = False
+    app.open_project(v)
+    p = app.STATE["proj"]
+    app.job_analyze()
+    T = vio.load_json(os.path.join(p, "titles.json"))
+    assert T["titles"], "logo title not found"
+    for t in T["titles"]:
+        t["he"] = "נמר"
+    vio.save_json(os.path.join(p, "titles.json"), T)
+    app.job_build()
+    t = vio.load_json(os.path.join(p, "titles.json"))["titles"][0]
+    a = t["anim"]
+    rot = lambda f: np.degrees(np.arctan2(-a["H"][str(f)][3], a["H"][str(f)][0]))
+    r_ref = (t["ref"] - 40) * 0.6 if t["ref"] > 40 else 0
+    print(f"motion: ref {t['ref']}, rot@90 {rot(90):.1f} (want {18 - r_ref:.1f}), matte {len(a.get('matte', []))}, light {a.get('gain')}")
+    assert abs(rot(90) - (18 - r_ref)) < 2.5, "rotation not measured"
+    assert any(10 <= f <= 29 for f in a.get("matte", [])), "wipe reveal not measured"
+    assert a.get("gain") and all(58 <= f <= 69 for f in a["gain"]), "flash not measured"
+    # the wipe runs left to right on the English: the Hebrew is revealed right to left
+    meta = vio.load_json(os.path.join(p, "layers", "meta.json")); info = vio.load_json(os.path.join(p, "project.json"))["info"]
+    from rt import render
+    L = render.title_layers(p, t, meta, {}, 20, info["width"], info["height"])[0][..., 3]
+    ys, xs = np.nonzero(L > 0.5)
+    cx = (t["ref_box"][0] + t["ref_box"][2]) / 2
+    print(f"motion: visible Hebrew at frame 20 from x={xs.min()} to {xs.max()}, centre {cx:.0f} ({time.time() - t0:.0f}s)")
+    assert xs.size and xs.min() > cx - 10, "the Hebrew reveal should start on the right"
+    print("motion: ok")
 
 
 def fontmatch_test():

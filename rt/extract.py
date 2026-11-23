@@ -13,10 +13,12 @@ def groups(T):
 
 
 def _region(lines, W, H):
-    b = np.array([t["box"] for t in lines])
+    b = np.array([t.get("text_box", t["box"]) for t in lines])
     x0, y0, x1, y1 = b[:, 0].min(), b[:, 1].min(), b[:, 2].max(), b[:, 3].max()
     h = max(t["box"][3] - t["box"][1] for t in lines)
     m = int(max(80, 1.2 * h))
+    if any(t.get("logo_full") for t in lines):          # symbols / decorations around the text: look further
+        m = int(max(160, 3.0 * h))
     return [int(max(0, x0 - m)), int(max(0, y0 - m)), int(min(W, x1 + m)), int(min(H, y1 + m))]
 
 
@@ -31,6 +33,8 @@ def run(proj, pad=48, progress=None):
         if not any(t.get("translate", True) for t in lines):
             continue
         reg = lines[0].get("region") or _region(lines, W, H)
+        if any(t.get("logo_full") and not t.get("logo_bg_done") for t in lines):
+            reg = _region(lines, W, H)
         a = min(min(t.get("in_override", t["sample_in"]), t.get("prev_sample", t["sample_in"] - every)) for t in lines) - 2
         b = max(max(t.get("out_override", t["sample_out"]), t.get("next_sample", t["sample_out"] + every)) for t in lines) + 2
         a, b = max(0, a), min(n - 1, b)
@@ -88,7 +92,65 @@ def run(proj, pad=48, progress=None):
                 t.setdefault("style", {}).update({k: v for k, v in est["style"].items()
                                                    if k not in t.get("style_locked", [])})
             refine(proj, t, gid, S, n)
+            if t.get("logo_full"):
+                logo_area(proj, t, gid, S, reg)
+    for t in T["titles"]:
+        t.pop("reextract", None)
     vio.save_json(os.path.join(proj, "titles.json"), T)
+
+
+def _bg_plate(proj, t, gid, S, f):
+    """The background before the title appears (or after it ends), moved with the camera to frame f.
+    Returns (crop, frame index) or (None, None) when the title spans its whole cached range."""
+    lo, hi = t["cache"]
+    pb = None
+    if t["in"] - 4 >= lo:
+        pb = max(lo, t["in"] - 4)
+    elif t["out"] + 4 <= hi:
+        pb = min(hi, t["out"] + 4)
+    if pb is None:
+        return None, None
+    bg = cv2.imread(os.path.join(proj, "cache", gid, f"{pb:06d}.png"))
+    if bg is None:
+        return None, None
+    mo = S.get("motion")
+    if mo and f < len(mo) and pb < len(mo):
+        dx, dy = mo[f][0] - mo[pb][0], mo[f][1] - mo[pb][1]
+        if abs(dx) > 0.5 or abs(dy) > 0.5:
+            bg = cv2.warpAffine(bg, np.float32([[1, 0, dx], [0, 1, dy]]), (bg.shape[1], bg.shape[0]), borderMode=cv2.BORDER_REPLICATE)
+    return bg, pb
+
+
+def logo_diff(img, bg, thr=28):
+    d = np.abs(img.astype(np.int16) - bg.astype(np.int16)).max(2)
+    m = (d > thr).astype(np.uint8)
+    return cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+
+
+def logo_area(proj, t, gid, S, reg):
+    """Whole logo: the graphics that appear together with the text (symbols, frames, ornaments) are found by
+    comparing the reference frame with the background before the title. Extends box/ref_box to them."""
+    ref = cv2.imread(os.path.join(proj, "cache", gid, f"{t['ref']:06d}.png"))
+    bg, pb = _bg_plate(proj, t, gid, S, t["ref"])
+    if ref is None or bg is None:
+        t["warn"] = "אין רקע בלי הכותרת באותו שוט - אי אפשר לזהות את כל הלוגו"
+        return
+    tb = t.setdefault("text_box", t["box"]); trb = t.setdefault("text_ref_box", t["ref_box"])
+    h = trb[3] - trb[1]
+    m = cv2.morphologyEx(logo_diff(ref, bg), cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(m, 8)
+    near = [trb[0] - reg[0] - 1.5 * h, trb[1] - reg[1] - 1.5 * h, trb[2] - reg[0] + 1.5 * h, trb[3] - reg[1] + 1.5 * h]
+    box = [trb[0] - reg[0], trb[1] - reg[1], trb[2] - reg[0], trb[3] - reg[1]]
+    for i in range(1, n):
+        x, y, w, hh, a = st[i]
+        if a < 30 or x > near[2] or x + w < near[0] or y > near[3] or y + hh < near[1]:
+            continue
+        box = [min(box[0], x), min(box[1], y), max(box[2], x + w), max(box[3], y + hh)]
+    lb = [int(box[0] + reg[0]), int(box[1] + reg[1]), int(box[2] + reg[0]), int(box[3] + reg[1])]
+    t["logo_bg"] = pb
+    t["ref_box"] = lb
+    t["box"] = [min(tb[0], lb[0]), min(tb[1], lb[1]), max(tb[2], lb[2]), max(tb[3], lb[3])]
+    t["logo_bg_done"] = True
 
 
 def _grad(img):
