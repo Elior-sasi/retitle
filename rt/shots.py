@@ -1,6 +1,6 @@
 """Pass 1: shot cuts + sampled full-res frames for OCR."""
 import os, cv2, numpy as np
-from . import vio
+from . import vio, live
 
 
 def run(proj, every=None, progress=None):
@@ -60,6 +60,7 @@ def run(proj, every=None, progress=None):
             changed = last_s is None or float(np.abs(sm - last_s).max()) > 6 or i - last_f >= 10 * fps
             if changed:
                 cv2.imwrite(os.path.join(sdir, f"{i:06d}.jpg"), f, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                live.show(proj, f"סורק את הווידאו - פריים {i}", f, every=0.7, width=960)
                 samples.append(i); last_s = sm; last_f = i
         n = i + 1
         if progress and i % 200 == 0:

@@ -5,6 +5,10 @@ import cv2, numpy as np
 _LAST = [0.0]
 
 
+def due(every=0.5):
+    return time.time() - _LAST[0] >= every
+
+
 def show(proj, label, *panels, every=0.5, width=720):
     """Write live.jpg (panels side by side) at most every `every` seconds. Never raises."""
     now = time.time()

@@ -9,9 +9,50 @@ from . import vio
 _ENGINE = None
 
 
+GPU = {"on": False}
+
+
+def _gpu_patch():
+    """Run the OCR networks on the graphics card when onnxruntime has DirectML (the Windows
+    build ships onnxruntime-directml: any DX12 card - NVIDIA, AMD, Intel - nothing to install).
+    Same models and same input, so the text found is the same; only faster."""
+    if os.environ.get("RT_NO_GPU"):
+        return False
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        return False
+    if "DmlExecutionProvider" not in ort.get_available_providers() or getattr(ort, "_rt_dml", False):
+        return getattr(ort, "_rt_dml", False)
+    base = ort.InferenceSession
+
+    class DmlSession(base):
+        def __init__(self, path, sess_options=None, providers=None, **kw):
+            so = sess_options or ort.SessionOptions()
+            so.enable_mem_pattern = False                        # required by DirectML
+            so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            try:
+                super().__init__(path, so, providers=["DmlExecutionProvider", "CPUExecutionProvider"], **kw)
+                GPU["on"] = GPU["on"] or "DmlExecutionProvider" in self.get_providers()
+            except Exception:                                    # driver too old etc.: CPU as before
+                super().__init__(path, so, providers=providers or ["CPUExecutionProvider"], **kw)
+    ort.InferenceSession = DmlSession
+    ort._rt_dml = True
+    return True
+
+
+def gpu_available():
+    try:
+        import onnxruntime as ort
+        return "DmlExecutionProvider" in ort.get_available_providers() and not os.environ.get("RT_NO_GPU")
+    except ImportError:
+        return False
+
+
 def _rapid(img):
     global _ENGINE
     if _ENGINE is None:
+        _gpu_patch()
         from rapidocr_onnxruntime import RapidOCR
         _ENGINE = RapidOCR()
     r, _ = _ENGINE(img)
@@ -155,6 +196,21 @@ def tsim(a, b):
     return max(sm.ratio(), m / min(len(a), len(b)) if min(len(a), len(b)) >= 4 else 0)
 
 
+def _live(proj, f, words):
+    from . import live
+    if not live.due():
+        return
+    img = cv2.imread(f)
+    if img is None:
+        return
+    sh = img.shape[1] / max(1.0, vio.load_json(os.path.join(proj, "project.json"))["info"]["width"])
+    for w in words:
+        x, y, ww, hh = (int(w[k] * sh) for k in ("x", "y", "w", "h"))
+        cv2.rectangle(img, (x - 3, y - 3), (x + ww + 3, y + hh + 3), (60, 200, 255), 2)
+    fr = int(os.path.basename(f)[:-4])
+    live.show(proj, f"מחפש טקסט - פריים {fr}" + (f" - נמצא: {' '.join(w['text'] for w in words)[:40]}" if words else ""), img, width=960)
+
+
 def run(proj, langs="eng", workers=None, scale=None, progress=None):
     P = vio.load_json(os.path.join(proj, "project.json"))
     S = vio.load_json(os.path.join(proj, "shots.json"))
@@ -162,13 +218,18 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None):
     W = P["info"]["width"]
     if scale is None:  # detection works well at ~1280 px; faster for 4K / long material
         scale = min(1.0, 1280 / W)
-    workers = workers or max(1, min(4, (os.cpu_count() or 2) - 1))
+    gpu = gpu_available()
+    # on the graphics card fewer processes are better (they share one card); the CPU does the rest
+    workers = workers or (2 if gpu else max(1, min(4, (os.cpu_count() or 2) - 1)))
+    print("OCR:", "graphics card (DirectML)" if gpu else "CPU", workers, "processes")
     res = {}
     with Pool(workers) as pool:
         for k, (f, r) in enumerate(pool.imap_unordered(_ocr, [(f, langs, scale) for f in files], chunksize=4)):
             res[f] = r
             if progress and k % 10 == 0:
                 progress(k / max(1, len(files)))
+            if r or k % 8 == 0:
+                _live(proj, f, r)
     every = S["every"]
     order = S.get("samples") or sorted(int(os.path.basename(f)[:-4]) for f in files)
     sidx = {fr: k for k, fr in enumerate(order)}
