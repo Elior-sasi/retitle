@@ -1,0 +1,7 @@
+numpy
+opencv-contrib-python-headless
+pillow
+python-bidi
+fonttools
+rapidocr_onnxruntime
+faster-whisper

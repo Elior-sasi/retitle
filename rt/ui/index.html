@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Retitle - לוקליזציה של טריילרים</title>
+<style>
+:root{color-scheme:dark;--bg:#101114;--card:#1b1d22;--line:#4a4e57;--fg:#f4f4f5;--mut:#c9cbd1;--acc:#ffb020;--focus:#8cc8ff;--bad:#ff8a8a;--ok:#7be38f}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",Arial,sans-serif;font-size:1.15rem;line-height:1.6;background:var(--bg);color:var(--fg)}
+main{max-width:1200px;margin:auto;padding:1rem 1.25rem 4rem}
+h1{font-size:2rem;margin:.5rem 0}
+h2{font-size:1.5rem;margin:0 0 .75rem}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1.25rem;margin:1.25rem 0}
+button{font:inherit;font-weight:600;min-height:48px;min-width:48px;padding:.5rem 1.1rem;border-radius:10px;border:2px solid var(--acc);background:var(--acc);color:#111;cursor:pointer;margin:.25rem 0 .25rem .5rem}
+button.sec{background:transparent;color:var(--fg);border-color:var(--line)}
+button:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+input,select,textarea{font:inherit;color:var(--fg);background:#0c0d10;border:2px solid var(--line);border-radius:8px;padding:.45rem .6rem;min-height:44px}
+textarea{width:100%;resize:vertical}
+label{display:block;font-weight:600;margin:.4rem 0 .2rem}
+.row{display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end}
+.row>div{flex:1 1 160px}
+.title{border:1px solid var(--line);border-radius:10px;padding:1rem;margin:.75rem 0}
+.title img{max-width:100%;height:auto;display:block;border-radius:6px;background:#000}
+.src{direction:ltr;text-align:left;font-size:1.25rem;font-weight:700}
+.mut{color:var(--mut)}
+#log{background:#0c0d10;border-radius:8px;padding:.75rem;max-height:14rem;overflow:auto;white-space:pre-wrap;font-size:1rem}
+.status{font-weight:700;font-size:1.2rem}
+.err{color:var(--bad)}
+.ok{color:var(--ok)}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid var(--line);padding:.5rem;vertical-align:top;text-align:right}
+td.ltr{direction:ltr;text-align:left}
+figure{margin:1rem 0}figure img{max-width:100%;border-radius:6px}
+details summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<main>
+<h1>Retitle</h1>
+<p class="mut">כותרות על המסך מוחלפות לעברית בתוך הסרטון, והדיאלוג יוצא כקובץ SRT נפרד.</p>
+
+<section aria-labelledby="h-status">
+  <h2 id="h-status">מצב</h2>
+  <p id="status" class="status" role="status" aria-live="polite">אין פרויקט פתוח</p>
+  <details><summary>יומן פעולות</summary><div id="log" tabindex="0" aria-label="יומן פעולות"></div></details>
+</section>
+
+<section aria-labelledby="h1s">
+  <h2 id="h1s">1. סרטון</h2>
+  <button id="pick">בחר סרטון</button>
+  <p id="vinfo" class="mut"></p>
+  <details>
+    <summary>הגדרות</summary>
+    <div class="row">
+      <div><label for="s-lang">שפת הכותרות במקור</label>
+        <select id="s-lang"><option value="eng">אנגלית</option><option value="jpn">יפנית</option><option value="kor">קוריאנית</option><option value="chi_sim">סינית</option><option value="fra">צרפתית</option><option value="spa">ספרדית</option><option value="deu">גרמנית</option><option value="ita">איטלקית</option><option value="rus">רוסית</option></select></div>
+      <div><label for="s-wlang">שפת הדיבור (ריק = זיהוי אוטומטי)</label><input id="s-wlang" placeholder="ja / en"></div>
+      <div><label for="s-wmodel">מודל Whisper</label><select id="s-wmodel"><option>large-v3</option><option>medium</option><option>small</option></select></div>
+    </div>
+    <label for="s-gloss">תעתיק שמות (שורה לכל שם: מקור = עברית)</label>
+    <textarea id="s-gloss" rows="4" placeholder="Madoka = מאדוקה&#10;Homura Akemi = הומורה אקמי"></textarea>
+    <div class="row">
+      <div><label for="s-key">מפתח API של Anthropic (לתרגום אוטומטי, לא חובה)</label><input id="s-key" type="password" autocomplete="off"><span id="keyset" class="mut"></span></div>
+      <div><label for="s-model">מודל תרגום</label><input id="s-model"></div>
+    </div>
+    <button id="save-settings" class="sec">שמור הגדרות</button>
+  </details>
+</section>
+
+<section aria-labelledby="h2s">
+  <h2 id="h2s">2. כותרות על המסך</h2>
+  <button id="analyze" disabled>נתח כותרות</button>
+  <button id="tr-titles" class="sec" disabled>תרגם אוטומטית (ריקים בלבד)</button>
+  <div id="titles"></div>
+  <button id="save-titles" class="sec" disabled>שמור</button>
+  <button id="build" disabled>בנה תצוגה מקדימה</button>
+  <button id="relayer" class="sec" disabled>עדכן עברית בלבד</button>
+  <div id="previews"></div>
+</section>
+
+<section aria-labelledby="h3s">
+  <h2 id="h3s">3. דיאלוג (SRT)</h2>
+  <button id="transcribe" disabled>תמלל</button>
+  <button id="tr-dialog" class="sec" disabled>תרגם אוטומטית (ריקים בלבד)</button>
+  <div id="cues"></div>
+  <button id="save-dialog" class="sec" disabled>שמור</button>
+  <button id="srt" disabled>צור SRT</button>
+</section>
+
+<section aria-labelledby="h4s">
+  <h2 id="h4s">4. ייצוא ובדיקה</h2>
+  <button id="export" disabled>ייצא סרטון</button>
+  <button id="reveal" class="sec" disabled>פתח תיקיית פלט</button>
+  <ul id="outputs"></ul>
+  <div id="checks"></div>
+</section>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+const api=async(p,b)=>{const r=await fetch(p,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json()};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let FONTS={},DATA=null,wasRunning=false,FPS=24;
+const tc=f=>{const s=f/FPS;return Math.floor(s/60)+':'+(s%60).toFixed(2).padStart(5,'0')};
+const hex=b=>b?'#'+[b[2],b[1],b[0]].map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''):'#ffffff';
+const bgr=h=>[parseInt(h.slice(5,7),16),parseInt(h.slice(3,5),16),parseInt(h.slice(1,3),16)];
+
+async function loadSettings(){const s=await api('/api/settings');$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';$('#s-gloss').value=s.glossary||'';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור':'';}
+$('#save-settings').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim()});$('#s-key').value='';loadSettings();say('ההגדרות נשמרו');};
+function say(t,cls=''){const e=$('#status');e.textContent=t;e.className='status '+cls}
+
+function fontOptions(cur){return Object.entries(FONTS).map(([n,v])=>`<option value="${esc(n)}" ${n===cur?'selected':''}>${esc(n)} - ${esc(v.tags)}</option>`).join('')}
+
+function renderTitles(){
+  const T=(DATA.titles||{}).titles||[];
+  if(!T.length){$('#titles').innerHTML='<p class="mut">עדיין לא נותחו כותרות.</p>';return}
+  $('#titles').innerHTML=T.map(t=>{const st=t.style||{};const id=esc(t.id);return `
+  <div class="title" role="group" aria-labelledby="lbl-${id}">
+    <p id="lbl-${id}"><strong>${id}</strong> · כרטיס ${esc(t.group)} · <span dir="ltr">${tc(t.in)} - ${tc(t.out)}</span></p>
+    <img src="/api/file?p=thumbs/${id}.jpg&t=${Date.now()}" alt="הכותרת במקור: ${esc(t.src)}">
+    <p class="src" lang="und">${esc(t.src)}</p>
+    <label><input type="checkbox" data-k="translate" data-id="${id}" ${t.translate!==false?'checked':''}> להחליף לעברית (לא לסמן: קרדיטים, לוגואים, שמות באנגלית)</label>
+    <label for="he-${id}">עברית</label>
+    <textarea id="he-${id}" data-k="he" data-id="${id}" rows="2" dir="rtl" lang="he">${esc(t.he||'')}</textarea>
+    <div class="row">
+      <div><label for="f-${id}">גופן</label><select id="f-${id}" data-k="font" data-id="${id}">${fontOptions(st.font||'Heebo')}</select></div>
+      <div><label for="w-${id}">משקל (100-900)</label><input id="w-${id}" type="number" min="100" max="900" step="100" data-k="weight" data-id="${id}" value="${st.weight||''}"></div>
+      <div><label for="z-${id}">גודל ביחס למקור</label><input id="z-${id}" type="number" step="0.05" min="0.3" max="3" data-k="size_ratio" data-id="${id}" value="${st.size_ratio||0.9}"></div>
+      <div><label for="c-${id}">צבע</label><input id="c-${id}" type="color" data-k="fill" data-id="${id}" value="${hex(st.fill)}"></div>
+      <div><label for="a-${id}">יישור</label><select id="a-${id}" data-k="align" data-id="${id}">${[['center','מרכז'],['right','ימין'],['left','שמאל']].map(([v,n])=>`<option value="${v}" ${st.align===v?'selected':''}>${n}</option>`).join('')}</select></div>
+      <div><label for="x-${id}">הזזה אופקית (פיקסלים)</label><input id="x-${id}" type="number" data-k="nudge_x" data-id="${id}" value="${st.nudge_x||0}"></div>
+      <div><label for="y-${id}">הזזה אנכית (פיקסלים)</label><input id="y-${id}" type="number" data-k="nudge_y" data-id="${id}" value="${st.nudge_y||0}"></div>
+    </div>
+    <p class="mut">צל: ${st.shadow?'יש':'אין'} · קו מתאר: ${st.outline?'יש':'אין'} · אנימציה: ${esc((t.anim||{}).mode||'טרם נמדדה')}</p>
+  </div>`}).join('');
+}
+function collectTitles(){const m={};document.querySelectorAll('#titles [data-id]').forEach(e=>{const id=e.dataset.id,k=e.dataset.k;m[id]=m[id]||{id,style:{}};
+  if(k==='translate')m[id].translate=e.checked;else if(k==='he')m[id].he=e.value.trim();
+  else if(k==='fill')m[id].style.fill=bgr(e.value);
+  else if(['weight','size_ratio','nudge_x','nudge_y'].includes(k)){if(e.value!=='')m[id].style[k]=Number(e.value)}
+  else m[id].style[k]=e.value});
+  // only send colour if it was changed
+  return Object.values(m)}
+
+function renderCues(){const C=(DATA.dialog||{}).cues||[];
+  if(!C.length){$('#cues').innerHTML='<p class="mut">עדיין אין תמלול.</p>';return}
+  $('#cues').innerHTML=`<table><caption class="sr">כתוביות</caption><thead><tr><th scope="col">#</th><th scope="col">זמן</th><th scope="col">מקור</th><th scope="col">עברית</th></tr></thead><tbody>${C.map(c=>`<tr><td>${c.n}</td><td class="ltr">${c.start.toFixed(2)} - ${c.end.toFixed(2)}</td><td class="ltr" lang="und">${esc(c.src)}</td><td><label class="sr" for="cue-${c.n}">עברית לכתובית ${c.n}</label><textarea id="cue-${c.n}" data-n="${c.n}" rows="2" dir="rtl" lang="he">${esc(c.he||'')}</textarea></td></tr>`).join('')}</tbody></table>`}
+
+function renderOut(){
+  $('#previews').innerHTML=(DATA.previews||[]).map(p=>`<figure><img src="/api/file?p=${encodeURIComponent(p)}&t=${Date.now()}" alt="תצוגה מקדימה ${esc(p)}: משמאל המקור, מימין העברית"><figcaption>${esc(p)}</figcaption></figure>`).join('');
+  $('#outputs').innerHTML=(DATA.outputs||[]).map(o=>`<li dir="ltr">${esc(o)}</li>`).join('');
+  $('#checks').innerHTML=(DATA.checks||[]).map(p=>`<figure><img src="/api/file?p=check/${encodeURIComponent(p)}&t=${Date.now()}" alt="בדיקה ${esc(p)}: פריים לפני הכניסה עד אחרי היציאה, מקור משמאל ותוצאה מימין"><figcaption>בדיקה ${esc(p)}</figcaption></figure>`).join('');
+}
+
+async function refresh(){DATA=await api('/api/project');if(DATA.error)return;const i=DATA.project.info;FPS=i.fps;
+  $('#vinfo').textContent=`${DATA.project.video} · ${i.width}x${i.height} · ${i.fps.toFixed(3)} פריימים לשנייה · ${i.duration.toFixed(1)} שניות`;
+  renderTitles();renderCues();renderOut();}
+
+async function run(job){if(['build','layers','export','translate_titles'].includes(job)&&DATA&&DATA.titles&&DATA.titles.titles.length)await api('/api/titles',{titles:collectTitles()});
+  if(['srt','translate_dialog'].includes(job))await saveDialog();
+  const r=await api('/api/run',{job});if(!r.started)say('פעולה אחרת עדיין רצה','err')}
+async function saveDialog(){const cues=[...document.querySelectorAll('#cues textarea')].map(e=>({n:+e.dataset.n,he:e.value.trim()}));if(cues.length)await api('/api/dialog',{cues})}
+
+$('#pick').onclick=async()=>{say('בוחר סרטון...');const r=await api('/api/pick',{});if(r.proj){await refresh();say('הפרויקט נפתח')}else say('לא נבחר סרטון')};
+$('#analyze').onclick=()=>run('analyze');
+$('#build').onclick=()=>run('build');
+$('#relayer').onclick=()=>run('layers');
+$('#tr-titles').onclick=()=>run('translate_titles');
+$('#save-titles').onclick=async()=>{await api('/api/titles',{titles:collectTitles()});say('נשמר','ok')};
+$('#transcribe').onclick=()=>run('transcribe');
+$('#tr-dialog').onclick=()=>run('translate_dialog');
+$('#save-dialog').onclick=async()=>{await saveDialog();say('נשמר','ok')};
+$('#srt').onclick=()=>run('srt');
+$('#export').onclick=()=>run('export');
+$('#reveal').onclick=()=>api('/api/reveal',{});
+
+const NAMES={analyze:'ניתוח כותרות',build:'בניית תצוגה מקדימה',layers:'עדכון עברית',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום דיאלוג'};
+async function poll(){const s=await api('/api/status');$('#log').textContent=s.log.join('\n');
+  const has=!!s.proj;document.querySelectorAll('section button:not(#pick):not(#save-settings)').forEach(b=>b.disabled=!has||s.running);
+  if(s.running)say(`${NAMES[s.job]||s.job}... ${s.log.length?s.log[s.log.length-1].slice(10):''}`);
+  else if(wasRunning){await refresh();say(s.error?`שגיאה: ${s.error}`:`${NAMES[s.job]||''} הסתיים`,s.error?'err':'ok')}
+  wasRunning=s.running}
+(async()=>{FONTS=await api('/api/fonts');await loadSettings();const s=await api('/api/status');if(s.proj)await refresh();setInterval(poll,1000);poll()})();
+</script>
+</body>
+</html>
