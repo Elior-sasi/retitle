@@ -5,496 +5,560 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Retitle</title>
 <style>
-:root{color-scheme:dark;--bg:#0e0f12;--panel:#17191e;--panel2:#1f2228;--line:#3a3e47;--fg:#f3f4f6;--mut:#b9bcc4;
---acc:#ffb020;--acc-fg:#111;--focus:#8cc8ff;--title:#3d7bff;--cue:#20b486;--warn:#ffcf5a;--bad:#ff8a8a;--sel:#ffffff;
---fs:16px}
+:root{color-scheme:dark;
+--app:#161616;--panel:#232323;--panel2:#2b2b2b;--head:#1d1d1d;--line:#353535;--line2:#444;
+--fg:#e3e3e3;--mut:#a9a9a9;--dim:#7d7d7d;--blue:#2d8ceb;--hot:#5aa9f7;--cta:#1473e6;--cta2:#0d66d0;
+--clipT:#b5659e;--clipC:#3d9c6b;--warn:#f0b43c;--bad:#ff7b72;--fs:14px;--row:32px}
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;font-family:"Segoe UI","Segoe UI Variable",Arial,sans-serif;font-size:var(--fs);line-height:1.45;background:var(--bg);color:var(--fg);overflow:hidden}
+body{margin:0;font-family:"Segoe UI","Segoe UI Variable Text",system-ui,Arial,sans-serif;font-size:var(--fs);line-height:1.4;background:var(--app);color:var(--fg);overflow:hidden;user-select:none}
+input,textarea,select{user-select:text}
 button,input,select,textarea{font:inherit;color:inherit}
-:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
 .sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-bdi.path{direction:ltr;unicode-bidi:isolate}
+svg{width:18px;height:18px;fill:currentColor;flex:none}
+kbd{font-family:inherit;font-size:.85em;color:var(--mut)}
 
-/* app grid */
-#app{display:grid;height:100vh;grid-template-rows:auto 1fr auto auto;grid-template-columns:330px 1fr 380px;
-grid-template-areas:"bar bar bar" "list player insp" "tl tl tl" "status status status"}
-header{grid-area:bar;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;padding:.45rem .7rem;background:var(--panel);border-bottom:1px solid var(--line)}
-header h1{font-size:1.15rem;margin:0 .2rem 0 .8rem;letter-spacing:.02em}
-header .proj{color:var(--mut);max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-inline-start:.2rem}
-header .sp{flex:1}
-.btn{min-height:44px;min-width:44px;padding:.35rem .9rem;border-radius:8px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:.4rem}
-.btn:hover:not(:disabled){border-color:#6b707b}
-.btn.pri{background:var(--acc);border-color:var(--acc);color:var(--acc-fg)}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.btn .k{font-size:.75em;opacity:.75;border:1px solid currentColor;border-radius:4px;padding:0 .3em}
-.sep{width:1px;height:28px;background:var(--line);margin:0 .2rem}
+/* ---------- frame ---------- */
+#app{display:grid;height:100vh;grid-template-rows:38px minmax(0,1.35fr) 4px minmax(0,1fr) 26px;grid-template-columns:minmax(300px,var(--left,380px)) 4px minmax(0,1fr);
+grid-template-areas:"top top top" "insp vs prog" "hs hs hs" "proj vs2 tl" "status status status";gap:0;padding:0 4px}
+#top{grid-area:top;display:flex;align-items:center;gap:2px;padding:0 4px}
+.brand{font-weight:800;letter-spacing:.04em;margin-inline-end:10px;color:#fff;display:flex;align-items:center;gap:6px}
+.brand i{display:inline-block;width:18px;height:18px;border-radius:4px;background:linear-gradient(135deg,#2d8ceb,#7b5cf0)}
+#workspace{flex:1;text-align:center;color:var(--mut);font-size:.92em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp{flex:1}
+[role=menubar]{display:flex;gap:0}
+.mbtn{background:none;border:0;padding:0 10px;height:30px;border-radius:4px;cursor:default;color:var(--fg)}
+.mbtn:hover,.mbtn[aria-expanded=true]{background:#3a3a3a}
+[role=menu]{position:fixed;z-index:50;min-width:270px;background:#2e2e2e;border:1px solid #4a4a4a;border-radius:6px;padding:4px 0;box-shadow:0 8px 24px rgba(0,0,0,.55);display:none}
+[role=menu].open{display:block}
+#menu [role=menuitem]{display:flex;align-items:center;gap:18px;width:100%;background:none;border:0;padding:0 14px;height:30px;text-align:start;cursor:default;color:var(--fg)}
+#menu [role=menuitem]:hover,#menu [role=menuitem]:focus{background:var(--cta);outline:none;color:#fff}
+#menu [role=menuitem]:disabled{color:var(--dim);background:none}
+#menu [role=menuitem] .k{margin-inline-start:auto;color:var(--mut);direction:ltr;font-size:.9em}
+#menu [role=menuitem]:hover .k,#menu [role=menuitem]:focus .k{color:#e8f1ff}
+[role=separator]{height:1px;background:#454545;margin:4px 0}
+.cta{background:var(--cta);border:0;color:#fff;font-weight:700;height:30px;padding:0 14px;border-radius:15px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.cta:hover{background:var(--cta2)}.cta:disabled{background:#3a3a3a;color:var(--dim);cursor:not-allowed}
+.qbtn{background:none;border:1px solid var(--line2);color:var(--fg);height:30px;padding:0 12px;border-radius:15px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.qbtn:hover:not(:disabled){background:#333}.qbtn:disabled{color:var(--dim);border-color:var(--line);cursor:not-allowed}
 
-/* list */
-#list{grid-area:list;background:var(--panel);border-inline-end:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
-[role=tablist]{display:flex;border-bottom:1px solid var(--line)}
-[role=tab]{flex:1;min-height:44px;background:none;border:0;border-bottom:3px solid transparent;cursor:pointer;font-weight:700;color:var(--mut)}
-[role=tab][aria-selected=true]{color:var(--fg);border-bottom-color:var(--acc)}
-.items{overflow:auto;flex:1;padding:.4rem;margin:0;list-style:none}
-.item{display:grid;grid-template-columns:72px 1fr;gap:.55rem;width:100%;text-align:start;background:var(--panel2);border:2px solid transparent;border-radius:8px;padding:.45rem;margin-bottom:.35rem;cursor:pointer;min-height:56px}
-.item.cue{grid-template-columns:1fr}
-.item[aria-current=true]{border-color:var(--sel);background:#2a2e36}
-.item img{width:72px;height:40px;object-fit:cover;border-radius:4px;background:#000}
-.item .src{direction:ltr;text-align:left;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.item .he{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.item .meta{color:var(--mut);font-size:.85em;display:flex;gap:.5rem;flex-wrap:wrap}
-.chip{border:1px solid currentColor;border-radius:999px;padding:0 .45em;font-size:.8em}
-.chip.warn{color:var(--warn)}.chip.off{color:var(--mut)}.chip.bad{color:var(--bad)}
-.empty{color:var(--mut);padding:1rem;text-align:center}
+/* ---------- panels ---------- */
+.panel{background:var(--panel);border:1px solid #111;border-radius:4px;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
+.panel:focus-within{border-color:var(--blue)}
+.ph{display:flex;align-items:center;gap:4px;height:30px;padding:0 8px;background:var(--head);border-bottom:1px solid #111;border-radius:4px 4px 0 0;flex:none}
+.ph .tab{background:none;border:0;color:var(--mut);height:30px;padding:0 8px;cursor:pointer;font-weight:600;border-bottom:2px solid transparent}
+.ph .tab[aria-selected=true]{color:#fff;border-bottom-color:var(--blue)}
+.ph .ttl{color:#fff;font-weight:600;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pb{flex:1;min-height:0;overflow:auto}
+#insp{grid-area:insp}#prog{grid-area:prog}#proj{grid-area:proj}#tl{grid-area:tl}
+.vsplit{grid-area:vs;cursor:col-resize}.vsplit2{grid-area:vs2;cursor:col-resize}.hsplit{grid-area:hs;cursor:row-resize}
+.vsplit:hover,.vsplit2:hover,.hsplit:hover,.vsplit:focus,.vsplit2:focus,.hsplit:focus{background:var(--blue);outline:none}
 
-/* player */
-#player{grid-area:player;display:flex;flex-direction:column;min-width:0;min-height:0;background:#000}
-#stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
+/* ---------- effect controls ---------- */
+.ec{padding:6px 0}
+.ec .empty{color:var(--mut);padding:16px;text-align:center}
+.ec-head{display:flex;gap:8px;align-items:center;padding:4px 10px 8px}
+.ec-head img{width:120px;height:56px;object-fit:cover;border-radius:3px;background:#000;flex:none}
+.ec-head .src{direction:ltr;text-align:left;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis}
+.ec-head .sub{color:var(--mut);font-size:.9em;direction:ltr;text-align:left}
+details.grp{border-top:1px solid #1a1a1a}
+details.grp>summary{list-style:none;display:flex;align-items:center;gap:8px;height:var(--row);padding:0 10px;cursor:pointer;font-weight:700;color:#fff;background:#262626}
+details.grp>summary::-webkit-details-marker{display:none}
+details.grp>summary::before{content:"";width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-right:6px solid var(--mut)}
+details.grp[open]>summary::before{border-right:5px solid transparent;border-left:5px solid transparent;border-top:6px solid var(--mut);border-bottom:0}
+.prop{display:grid;grid-template-columns:minmax(100px,38%) 1fr;align-items:center;min-height:var(--row);padding:2px 10px;gap:8px}
+.prop>label,.prop>.pl{color:var(--mut);padding-inline-start:16px}
+.prop .v{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.hot{background:transparent;border:0;border-bottom:1px dashed transparent;color:var(--hot);width:6.5ch;padding:2px 0;cursor:ew-resize;font-variant-numeric:tabular-nums;direction:ltr;text-align:left;-moz-appearance:textfield}
+.hot:hover{border-bottom-color:var(--hot)}.hot:focus{cursor:text;background:#101010;border-bottom-color:var(--blue);outline:none}
+.hot::-webkit-inner-spin-button,.hot::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.unit{color:var(--dim);font-size:.9em}
+textarea.he{width:calc(100% - 20px);margin:4px 10px 6px;min-height:64px;background:#141414;border:1px solid var(--line2);border-radius:3px;padding:6px 8px;resize:vertical;font-size:1.3em;line-height:1.35;color:#fff}
+textarea.he:focus{border-color:var(--blue);outline:none}
+select.sel{background:#141414;border:1px solid var(--line2);border-radius:3px;height:28px;padding:0 6px;max-width:100%;min-width:0;flex:1}
+.swatch{width:40px;height:24px;border:1px solid var(--line2);border-radius:3px;padding:0;background:none;cursor:pointer}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:3px;overflow:hidden}
+.seg button{background:#1b1b1b;border:0;height:26px;min-width:44px;padding:0 8px;cursor:pointer;color:var(--fg)}
+.seg button+button{border-inline-start:1px solid var(--line2)}
+.seg button[aria-pressed=true]{background:var(--cta);color:#fff}
+.mini{background:#1b1b1b;border:1px solid var(--line2);border-radius:3px;height:26px;min-width:30px;padding:0 7px;cursor:pointer;color:var(--fg);direction:ltr}
+.mini:hover{border-color:#777}
+.tcv{font-variant-numeric:tabular-nums;direction:ltr;color:var(--hot);min-width:11ch;display:inline-block}
+.chk{display:flex;align-items:center;gap:8px;cursor:pointer}
+.chk input{width:18px;height:18px;accent-color:var(--blue)}
+.note{color:var(--mut);font-size:.9em;padding:4px 10px;margin:0}
+.warn{color:var(--warn);font-size:.92em;padding:4px 10px;margin:0}
+
+/* ---------- program monitor ---------- */
+#stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:#0d0d0d;position:relative;overflow:hidden}
 #frame{position:relative;max-width:100%;max-height:100%;aspect-ratio:16/9;width:100%}
 #frame video,#frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
 #still{display:none}
-#badge{position:absolute;top:.6rem;inset-inline-start:.6rem;background:rgba(0,0,0,.75);border:1px solid var(--line);border-radius:6px;padding:.15rem .55rem;font-weight:700;font-size:.9em}
-#hint{position:absolute;bottom:.6rem;inset-inline-start:.6rem;inset-inline-end:.6rem;text-align:center;color:var(--warn);background:rgba(0,0,0,.75);border-radius:6px;padding:.2rem .5rem;display:none}
-#subs{position:absolute;left:8%;right:8%;bottom:6%;text-align:center;font-weight:700;font-size:clamp(14px,2.6vw,34px);line-height:1.25;color:#fff;white-space:pre-line;direction:rtl;
+#subs{position:absolute;left:8%;right:8%;bottom:6%;text-align:center;font-weight:700;font-size:clamp(13px,2.4vw,32px);line-height:1.25;color:#fff;white-space:pre-line;direction:rtl;
 text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2px 2px #000,-2px 2px 2px #000;pointer-events:none}
-#welcome{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;text-align:center;padding:2rem}
-#welcome h2{margin:0;font-size:1.6rem}
-.transport{display:flex;align-items:center;gap:.35rem;padding:.4rem .6rem;background:var(--panel);border-top:1px solid var(--line);flex-wrap:wrap;direction:ltr}
-.transport .tc{font-variant-numeric:tabular-nums;font-size:1.1rem;font-weight:700;min-width:12ch;text-align:center}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;direction:rtl}
-.seg button{min-height:44px;padding:.3rem .9rem;border:0;background:var(--panel2);cursor:pointer;font-weight:700}
-.seg button[aria-pressed=true]{background:var(--acc);color:var(--acc-fg)}
+#hint{position:absolute;top:8px;left:8px;right:8px;text-align:center;color:var(--warn);background:rgba(0,0,0,.72);border-radius:3px;padding:2px 8px;display:none;font-size:.92em}
+#welcome{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px;background:#0d0d0d}
+#welcome h2{margin:0;font-size:1.5em;color:#fff}
+#welcome p{color:var(--mut);margin:0}
+.mbar{display:flex;align-items:center;gap:10px;padding:4px 10px;direction:ltr;flex:none}
+.tcbig{color:var(--blue);font-size:1.35em;font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:.02em}
+.dur{color:var(--mut);font-variant-numeric:tabular-nums}
+.transport{display:flex;align-items:center;justify-content:center;gap:2px;padding:2px 8px 6px;direction:ltr;flex:none}
+.ib{background:none;border:0;width:36px;height:32px;border-radius:4px;color:#d0d0d0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.ib:hover{background:#383838;color:#fff}.ib:disabled{color:#555}
+.ib.play{width:44px}
+.tsep{width:1px;height:20px;background:var(--line2);margin:0 8px}
 
-/* inspector */
-#insp{grid-area:insp;background:var(--panel);border-inline-start:1px solid var(--line);overflow:auto;padding:.8rem}
-#insp h2{font-size:1.15rem;margin:.1rem 0 .6rem}
-#insp img.big{width:100%;border-radius:6px;background:#000;display:block}
-#insp .src{direction:ltr;text-align:left;font-weight:700;font-size:1.1rem;margin:.4rem 0}
-.f{margin:.65rem 0}
-.f>label,.f>.lbl{display:block;font-weight:700;margin-bottom:.25rem}
-.f input[type=text],.f input[type=number],.f select,.f textarea{width:100%;min-height:44px;background:#0b0c0f;border:1px solid var(--line);border-radius:8px;padding:.4rem .55rem}
-.f textarea{resize:vertical;font-size:1.25rem;line-height:1.4}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
-.row{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap}
-.row input[type=range]{flex:1;min-width:120px;height:44px}
-.row input[type=number]{width:6.5em}
-input[type=color]{width:64px;height:44px;border:1px solid var(--line);border-radius:8px;background:#0b0c0f;padding:2px}
-.toggle{display:flex;align-items:center;gap:.7rem;min-height:48px;cursor:pointer;font-weight:700}
-.toggle input{width:28px;height:28px;accent-color:var(--acc)}
-.timing{border:1px solid var(--line);border-radius:8px;padding:.5rem;margin:.6rem 0}
-.timing .tcv{direction:ltr;font-variant-numeric:tabular-nums;font-weight:700}
-.note{color:var(--mut);font-size:.9em}
-.warnbox{color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:.4rem .6rem;margin:.5rem 0}
+/* ---------- project panel ---------- */
+.ptools{display:flex;gap:6px;align-items:center;padding:6px 8px;border-bottom:1px solid #1a1a1a}
+.search{flex:1;background:#141414;border:1px solid var(--line2);border-radius:14px;height:28px;padding:0 10px}
+.items{list-style:none;margin:0;padding:4px;overflow:auto}
+.item{display:grid;grid-template-columns:64px 1fr;gap:8px;width:100%;text-align:start;background:none;border:1px solid transparent;border-radius:3px;padding:4px 6px;cursor:pointer;color:var(--fg);min-height:44px;align-items:center}
+.item.cue{grid-template-columns:1fr}
+.item:hover{background:#2c2c2c}
+.item[aria-current=true]{background:#24456b;border-color:var(--blue)}
+.item img{width:64px;height:36px;object-fit:cover;border-radius:2px;background:#000}
+.item .src{direction:ltr;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;display:block}
+.item .he{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff}
+.item .meta{color:var(--mut);font-size:.85em;display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid currentColor;border-radius:9px;padding:0 6px;font-size:.82em;line-height:1.35}
+.chip.warn{color:var(--warn)}.chip.off{color:var(--mut)}
+.pfoot{display:flex;gap:6px;padding:6px 8px;border-top:1px solid #1a1a1a}
+.pfoot .qbtn{flex:1;justify-content:center}
 
-/* timeline */
-#tl{grid-area:tl;background:var(--panel);border-top:1px solid var(--line);display:flex;flex-direction:column;height:230px;min-height:150px}
-.tlbar{display:flex;align-items:center;gap:.35rem;padding:.25rem .6rem;border-bottom:1px solid var(--line)}
-.tlbar .lbl{color:var(--mut);font-size:.9em}
-#tlwrap{position:relative;flex:1;overflow-x:auto;overflow-y:hidden;direction:ltr}
-#tlinner{position:relative;height:100%}
-.ruler{position:absolute;top:0;left:0;height:28px;border-bottom:1px solid var(--line);cursor:pointer}
-.tick{position:absolute;top:0;height:100%;border-left:1px solid #555;font-size:.75em;color:var(--mut);padding-left:3px;white-space:nowrap}
-.cut{position:absolute;top:28px;bottom:0;width:0;border-left:1px dashed #6a6f7a;pointer-events:none}
-.lane{position:absolute;left:0;height:46px}
-.lanelbl{position:sticky;left:0;z-index:3;display:inline-block;background:var(--panel);color:var(--mut);font-size:.8em;padding:0 .4rem;direction:rtl}
-.blk{position:absolute;top:3px;height:40px;border-radius:6px;border:2px solid rgba(255,255,255,.35);color:#fff;font-size:.85em;font-weight:700;overflow:hidden;white-space:nowrap;padding:0 12px;display:flex;align-items:center;cursor:pointer;direction:rtl;text-shadow:0 1px 2px #000}
-.blk.t{background:var(--title)}.blk.c{background:var(--cue)}
-.blk.off{background:repeating-linear-gradient(45deg,#444,#444 6px,#3a3a3a 6px,#3a3a3a 12px)}
-.blk[aria-current=true]{border-color:var(--sel);box-shadow:0 0 0 2px var(--sel)}
-.blk .h{position:absolute;top:0;bottom:0;width:10px;cursor:ew-resize;background:rgba(255,255,255,.25)}
+/* ---------- timeline ---------- */
+.tlhead{display:flex;align-items:center;gap:8px;padding:4px 8px;direction:ltr;border-bottom:1px solid #1a1a1a;flex:none}
+.tlbody{flex:1;min-height:0;display:flex;direction:ltr;overflow:hidden}
+.tracks{width:140px;flex:none;background:#202020;border-right:1px solid #111;padding-top:30px;overflow:hidden}
+.trk{height:48px;display:flex;align-items:center;gap:6px;padding:0 8px;border-bottom:1px solid #1a1a1a;color:var(--mut);justify-content:space-between}
+.trk b{color:#fff;font-weight:600}
+.trk .tag{background:#3a3a3a;color:#fff;border-radius:2px;padding:0 5px;font-size:.82em}
+#tlwrap{position:relative;flex:1;overflow:auto}
+#tlinner{position:relative}
+.ruler{position:sticky;top:0;left:0;height:30px;background:#1e1e1e;border-bottom:1px solid #111;cursor:pointer;z-index:2}
+.tick{position:absolute;bottom:0;height:12px;border-left:1px solid #777;font-size:.75em;color:var(--mut);white-space:nowrap;line-height:1}
+.tick span{position:absolute;bottom:13px;left:3px}
+.mtick{position:absolute;bottom:0;height:5px;border-left:1px solid #4a4a4a}
+.lane{position:absolute;left:0;height:48px;border-bottom:1px solid #1a1a1a}
+.cut{position:absolute;top:30px;bottom:0;width:0;border-left:1px dashed #555;pointer-events:none}
+.blk{position:absolute;height:40px;border-radius:2px;color:#fff;font-size:.85em;overflow:hidden;white-space:nowrap;padding:3px 10px;display:flex;align-items:flex-start;cursor:pointer;border:1px solid rgba(0,0,0,.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
+.blk.t{background:var(--clipT)}.blk.c{background:var(--clipC)}
+.blk.off{background:repeating-linear-gradient(45deg,#4a4a4a,#4a4a4a 6px,#404040 6px,#404040 12px);color:#ccc}
+.blk[aria-current=true]{outline:2px solid #fff;outline-offset:-2px;filter:brightness(1.12)}
+.blk .h{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize}
 .blk .h.l{left:0}.blk .h.r{right:0}
-.blk.dirty::after{content:"!";position:absolute;top:2px;left:14px;font-weight:900;color:var(--warn)}
-#playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);pointer-events:none;z-index:4}
-#playhead::before{content:"";position:absolute;top:0;left:-6px;border:7px solid transparent;border-top-color:var(--acc)}
+.blk:hover .h{background:rgba(255,255,255,.3)}
+.blk .lbl{unicode-bidi:plaintext;overflow:hidden;text-overflow:ellipsis}
+.blk.dirty::before{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--warn)}
+#playhead{position:absolute;top:0;bottom:0;width:1px;background:var(--blue);pointer-events:none;z-index:3}
+#playhead::before{content:"";position:absolute;top:14px;left:-7px;width:15px;height:15px;background:var(--blue);clip-path:polygon(0 0,100% 0,100% 55%,50% 100%,0 55%)}
+.zoomlbl{color:var(--mut);font-size:.9em}
 
-/* status */
-#status{grid-area:status;display:flex;align-items:center;gap:.8rem;padding:.3rem .7rem;background:#0b0c0f;border-top:1px solid var(--line);min-height:40px}
+/* ---------- status ---------- */
+#status{grid-area:status;display:flex;align-items:center;gap:10px;padding:0 6px;color:var(--mut);font-size:.92em}
 #msg{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #msg.err{color:var(--bad)}
-#pbar{width:220px;height:14px;display:none}
+#pbar{width:200px;height:6px;display:none;accent-color:var(--blue)}
 #dirtynote{color:var(--warn);display:none}
+.linkbtn{background:none;border:0;color:var(--mut);cursor:pointer;padding:0 6px;height:24px}
+.linkbtn:hover{color:#fff}
 
-dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:12px;padding:1.2rem;max-width:min(900px,94vw);max-height:90vh;overflow:auto}
-dialog::backdrop{background:rgba(0,0,0,.6)}
-dialog h2{margin-top:0}
-dialog table{border-collapse:collapse;width:100%}
-dialog td,dialog th{border:1px solid var(--line);padding:.4rem .6rem;text-align:start}
-kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 .35em;background:#0b0c0f;font-family:inherit}
-#logbox{white-space:pre-wrap;background:#0b0c0f;border-radius:8px;padding:.6rem;max-height:50vh;overflow:auto}
-.checks img{max-width:100%;border-radius:6px;margin:.4rem 0}
+/* ---------- dialogs ---------- */
+dialog{background:#2b2b2b;color:var(--fg);border:1px solid #4a4a4a;border-radius:6px;padding:0;max-width:min(920px,94vw);max-height:90vh;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+.dh{padding:14px 18px 6px;font-size:1.15em;font-weight:700;color:#fff;margin:0}
+.db{padding:6px 18px 10px;overflow:auto;max-height:70vh}
+.df{display:flex;gap:8px;justify-content:flex-end;padding:10px 18px 14px}
+.frm{display:grid;grid-template-columns:200px 1fr;gap:8px 12px;align-items:center}
+.frm label{color:var(--mut)}
+.frm input,.frm select,.frm textarea{background:#141414;border:1px solid var(--line2);border-radius:3px;min-height:30px;padding:4px 8px}
+.kt{border-collapse:collapse;width:100%}
+.kt td{padding:4px 8px;border-bottom:1px solid #3a3a3a}
+.kt td:first-child{direction:ltr;text-align:left;white-space:nowrap;color:var(--hot);width:40%}
+.kt th{text-align:start;padding:12px 8px 4px;color:#fff}
+#logbox{white-space:pre-wrap;background:#141414;border-radius:3px;padding:8px;font-size:.92em}
+.checks img{max-width:100%;border-radius:3px;margin:6px 0}
 
-@media (max-width:1250px){#app{grid-template-columns:270px 1fr 330px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
-@media (forced-colors:active){.blk{forced-color-adjust:none}}
+@media (forced-colors:active){.blk,.cta{forced-color-adjust:none}}
 </style>
 </head>
 <body>
 <div id="app">
-<header>
-  <h1>Retitle</h1>
-  <button class="btn" id="b-open">פתח סרטון</button>
-  <span class="proj" id="projname"></span>
-  <span class="sep" aria-hidden="true"></span>
-  <button class="btn" id="b-analyze" disabled>נתח כותרות</button>
-  <button class="btn" id="b-transcribe" disabled>תמלל דיאלוג</button>
-  <button class="btn" id="b-translate" disabled>תרגם אוטומטית</button>
-  <span class="sep" aria-hidden="true"></span>
-  <button class="btn pri" id="b-build" disabled>בנה תצוגה</button>
-  <button class="btn pri" id="b-export" disabled>ייצא סרטון + SRT</button>
-  <span class="sp"></span>
-  <button class="btn" id="b-undo" disabled aria-keyshortcuts="Control+Z" title="בטל (Ctrl+Z)">בטל</button>
-  <button class="btn" id="b-redo" disabled aria-keyshortcuts="Control+Y" title="בצע שוב (Ctrl+Y)">בצע שוב</button>
-  <button class="btn" id="b-checks" disabled>בדיקה</button>
-  <button class="btn" id="b-reveal" disabled>תיקיית פלט</button>
-  <button class="btn" id="b-settings">הגדרות</button>
-  <button class="btn" id="b-help" aria-keyshortcuts="Shift+?">קיצורים</button>
+<header id="top">
+  <span class="brand"><i aria-hidden="true"></i>Retitle</span>
+  <div role="menubar" aria-label="תפריט ראשי" id="menubar"></div>
+  <span id="workspace"></span>
+  <button class="qbtn" id="q-analyze" disabled>נתח כותרות</button>
+  <button class="qbtn" id="q-trans" disabled>תמלל</button>
+  <button class="qbtn" id="q-build" disabled title="Enter">בנה תצוגה</button>
+  <button class="cta" id="q-export" disabled title="Ctrl+M">ייצוא</button>
 </header>
 
-<nav id="list" aria-label="פריטים">
-  <div role="tablist" aria-label="סוג">
-    <button role="tab" id="tab-t" aria-selected="true" aria-controls="items">כותרות <span id="cnt-t"></span></button>
-    <button role="tab" id="tab-c" aria-selected="false" aria-controls="items">כתוביות <span id="cnt-c"></span></button>
-  </div>
-  <div class="row" id="bulk" style="padding:.4rem;gap:.35rem">
-    <button class="btn" id="b-all" style="flex:1">להחליף הכל</button>
-    <button class="btn" id="b-none" style="flex:1">לא להחליף אף אחת</button>
-  </div>
-  <ul class="items" id="items" role="tabpanel" aria-labelledby="tab-t"></ul>
-</nav>
+<section class="panel" id="insp" aria-labelledby="h-insp">
+  <div class="ph"><span class="ttl" id="h-insp">בקרות</span><span class="sp"></span><span class="ttl" id="insp-name" style="color:var(--mut);font-weight:400"></span></div>
+  <div class="pb ec" id="ec"><p class="empty">בחר כותרת או כתובית.</p></div>
+</section>
+<div class="vsplit" role="separator" aria-orientation="vertical" aria-label="שינוי רוחב פאנלים" tabindex="0" data-split="v"></div>
 
-<main id="player" aria-label="נגן">
+<section class="panel" id="prog" aria-labelledby="h-prog">
+  <div class="ph"><span class="ttl" id="h-prog">תוכנית:</span><span class="ttl" id="prog-name" style="color:var(--mut);font-weight:400"></span><span class="sp"></span>
+    <div class="seg" role="group" aria-label="תצוגה">
+      <button id="m-src" aria-pressed="true">מקור</button><button id="m-res" aria-pressed="false" title="T">תוצאה</button>
+    </div>
+  </div>
   <div id="stage">
     <div id="frame">
       <video id="vid" preload="auto" playsinline aria-label="הסרטון"></video>
       <img id="still" alt="">
-      <span id="badge" aria-hidden="true">מקור</span>
-      <span id="hint" role="note"></span>
       <div id="subs" aria-hidden="true"></div>
+      <span id="hint" role="note"></span>
     </div>
     <div id="welcome">
       <h2>לוקליזציה של וידאו לעברית</h2>
-      <p class="note">טריילרים, פרקים, דוקו, ריאליטי ואנימה. פותחים סרטון, מנתחים כותרות, מקלידים עברית ובונים.</p>
-      <button class="btn pri" id="b-open2">פתח סרטון</button>
+      <p>טריילרים, פרקים, דוקו, ריאליטי ואנימה</p>
+      <button class="cta" id="w-open">ייבוא סרטון <kbd style="color:#dbe9ff">Ctrl+I</kbd></button>
     </div>
   </div>
-  <div class="transport" role="group" aria-label="בקרת ניגון">
-    <button class="btn" id="t-start" aria-label="להתחלה" aria-keyshortcuts="Home">⏮</button>
-    <button class="btn" id="t-secm" aria-label="שנייה אחורה" aria-keyshortcuts="Shift+ArrowLeft">−1s</button>
-    <button class="btn" id="t-frm" aria-label="פריים אחורה" aria-keyshortcuts="ArrowLeft">◀︎ פריים</button>
-    <button class="btn pri" id="t-play" aria-label="נגן" aria-keyshortcuts="Space">▶︎</button>
-    <button class="btn" id="t-frp" aria-label="פריים קדימה" aria-keyshortcuts="ArrowRight">פריים ▶︎</button>
-    <button class="btn" id="t-secp" aria-label="שנייה קדימה" aria-keyshortcuts="Shift+ArrowRight">+1s</button>
-    <span class="tc" id="tc" aria-live="off">0:00.00</span>
-    <span class="note" id="fnum"></span>
-    <span style="flex:1"></span>
-    <div class="seg" role="group" aria-label="מה להציג">
-      <button id="m-src" aria-pressed="true">מקור</button>
-      <button id="m-res" aria-pressed="false" aria-keyshortcuts="T">תוצאה</button>
+  <div class="mbar"><span class="tcbig" id="tc" aria-label="זמן נוכחי">00:00:00:00</span><span class="sp"></span><span class="dur" id="dur" aria-label="אורך"></span></div>
+  <div class="transport" role="toolbar" aria-label="בקרת ניגון">
+    <button class="ib" id="t-markin" aria-label="סמן כניסה לפריט הנבחר (I)" title="סמן כניסה (I)"><svg viewBox="0 0 24 24"><path d="M9 4h6v2h-4v12h4v2H9z"/></svg></button>
+    <button class="ib" id="t-markout" aria-label="סמן יציאה לפריט הנבחר (O)" title="סמן יציאה (O)"><svg viewBox="0 0 24 24"><path d="M15 4H9v2h4v12H9v2h6z"/></svg></button>
+    <span class="tsep"></span>
+    <button class="ib" id="t-goin" aria-label="עבור לכניסה (Shift+I)" title="עבור לכניסה (Shift+I)"><svg viewBox="0 0 24 24"><path d="M4 4h2v16H4zm4 8 10-7v14z"/></svg></button>
+    <button class="ib" id="t-back" aria-label="פריים אחורה (חץ שמאלה)" title="פריים אחורה (←)"><svg viewBox="0 0 24 24"><path d="M15 5v14L6 12z"/><path d="M17 5h2v14h-2z"/></svg></button>
+    <button class="ib play" id="t-play" aria-label="נגן (רווח)" title="נגן / עצור (רווח)"><svg viewBox="0 0 24 24" id="playico"><path d="M7 4v16l13-8z"/></svg></button>
+    <button class="ib" id="t-fwd" aria-label="פריים קדימה (חץ ימינה)" title="פריים קדימה (→)"><svg viewBox="0 0 24 24"><path d="M9 5v14l9-7z"/><path d="M5 5h2v14H5z"/></svg></button>
+    <button class="ib" id="t-goout" aria-label="עבור ליציאה (Shift+O)" title="עבור ליציאה (Shift+O)"><svg viewBox="0 0 24 24"><path d="M18 4h2v16h-2zm-2 8L6 5v14z"/></svg></button>
+    <span class="tsep"></span>
+    <button class="ib" id="t-prevedit" aria-label="נקודת עריכה קודמת (חץ למעלה)" title="נקודת עריכה קודמת (↑)"><svg viewBox="0 0 24 24"><path d="M11 6v12l-8-6zm9 0v12l-8-6z"/></svg></button>
+    <button class="ib" id="t-nextedit" aria-label="נקודת עריכה הבאה (חץ למטה)" title="נקודת עריכה הבאה (↓)"><svg viewBox="0 0 24 24"><path d="M4 6v12l8-6zm9 0v12l8-6z"/></svg></button>
+  </div>
+</section>
+
+<div class="hsplit" role="separator" aria-orientation="horizontal" aria-label="שינוי גובה פאנלים" tabindex="0" data-split="h"></div>
+
+<section class="panel" id="proj" aria-label="פריטים">
+  <div class="ph" role="tablist" aria-label="סוג פריטים" id="h-proj">
+    <button class="tab" role="tab" id="tab-t" aria-selected="true" aria-controls="items">כותרות <span id="cnt-t"></span></button>
+    <button class="tab" role="tab" id="tab-c" aria-selected="false" aria-controls="items">כתוביות <span id="cnt-c"></span></button>
+  </div>
+  <div class="ptools"><label class="sr" for="search">חיפוש</label><input class="search" id="search" type="search" placeholder="חיפוש"></div>
+  <ul class="items pb" id="items" role="tabpanel" aria-labelledby="tab-t"></ul>
+  <div class="pfoot" id="bulk"><button class="qbtn" id="b-all">להחליף הכל</button><button class="qbtn" id="b-none">לא להחליף אף אחת</button></div>
+</section>
+<div class="vsplit2" role="separator" aria-orientation="vertical" aria-label="שינוי רוחב פאנלים" tabindex="0" data-split="v"></div>
+
+<section class="panel" id="tl" aria-labelledby="h-tl">
+  <div class="ph"><span class="ttl" id="h-tl">ציר זמן:</span><span class="ttl" id="tl-name" style="color:var(--mut);font-weight:400"></span></div>
+  <div class="tlhead">
+    <span class="tcbig" id="tc2" aria-hidden="true">00:00:00:00</span>
+    <span class="sp"></span>
+    <span class="zoomlbl">זום</span>
+    <button class="ib" id="z-out" aria-label="הקטן זום (-)" title="הקטן זום (-)"><svg viewBox="0 0 24 24"><path d="M5 11h14v2H5z"/></svg></button>
+    <button class="ib" id="z-fit" aria-label="התאם לחלון (\)" title="התאם לחלון (\)"><svg viewBox="0 0 24 24"><path d="M3 8V3h5v2H5v3zm13-5h5v5h-2V5h-3zM3 16h2v3h3v2H3zm16 3v-3h2v5h-5v-2z"/></svg></button>
+    <button class="ib" id="z-in" aria-label="הגדל זום (=)" title="הגדל זום (=)"><svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg></button>
+  </div>
+  <div class="tlbody">
+    <div class="tracks" aria-hidden="true">
+      <div class="trk" id="trk-t"><span class="tag">T1</span><b>כותרות</b></div>
+      <div class="trk" id="trk-c"><span class="tag">C1</span><b>כתוביות</b></div>
     </div>
+    <div id="tlwrap" aria-label="רצועות"><div id="tlinner"></div></div>
   </div>
-</main>
-
-<aside id="insp" aria-label="מאפיינים"><p class="empty">בחר כותרת או כתובית מהרשימה או מציר הזמן.</p></aside>
-
-<section id="tl" aria-label="ציר זמן">
-  <div class="tlbar">
-    <span class="lbl">ציר זמן</span>
-    <button class="btn" id="z-out" aria-label="הקטן זום" aria-keyshortcuts="-">−</button>
-    <button class="btn" id="z-fit">כל הסרטון</button>
-    <button class="btn" id="z-in" aria-label="הגדל זום" aria-keyshortcuts="+">+</button>
-    <span class="lbl" id="tlhelp">גרור קצוות של בלוק לשינוי זמנים · לחיצה על הסרגל מזיזה את הנגן</span>
-  </div>
-  <div id="tlwrap"><div id="tlinner"></div></div>
 </section>
 
 <footer id="status">
   <span id="msg" role="status" aria-live="polite">אין פרויקט פתוח</span>
-  <span id="dirtynote">יש שינויי זמנים שדורשים בנייה</span>
+  <span id="dirtynote">שינויי זמנים ממתינים לבנייה (Enter)</span>
   <progress id="pbar" max="1" aria-label="התקדמות"></progress>
-  <button class="btn" id="b-log">יומן</button>
+  <button class="linkbtn" id="b-log">יומן</button>
 </footer>
 </div>
 
+<div role="menu" id="menu" aria-orientation="vertical"></div>
+
 <dialog id="d-settings" aria-labelledby="ds-h">
-  <h2 id="ds-h">הגדרות</h2>
-  <div class="two">
-    <div class="f"><label for="s-lang">שפת הכותרות במקור</label>
-      <select id="s-lang"><option value="eng">אנגלית</option><option value="jpn">יפנית</option><option value="kor">קוריאנית</option><option value="chi_sim">סינית</option><option value="fra">צרפתית</option><option value="spa">ספרדית</option><option value="deu">גרמנית</option><option value="ita">איטלקית</option><option value="rus">רוסית</option></select></div>
-    <div class="f"><label for="s-wlang">שפת הדיבור (ריק = זיהוי אוטומטי)</label><input type="text" id="s-wlang" dir="ltr" placeholder="ja / en"></div>
-    <div class="f"><label for="s-wmodel">מודל תמלול</label><select id="s-wmodel"><option value="large-v3">large-v3 (מדויק, איטי)</option><option value="medium">medium</option><option value="small">small (מהיר)</option></select></div>
-    <div class="f"><label for="s-model">מודל תרגום</label><input type="text" id="s-model" dir="ltr"></div>
-    <div class="f"><label for="s-content">סוג התוכן (משפיע על סגנון התרגום האוטומטי)</label>
-      <select id="s-content"><option value="trailer">טריילר</option><option value="series">סדרה</option><option value="anime">אנימה</option><option value="documentary">דוקו</option><option value="reality">ריאליטי</option><option value="other">אחר</option></select></div>
-  </div>
-  <div class="f"><label for="s-gloss">תעתיק שמות (שורה לכל שם: מקור = עברית)</label>
-    <textarea id="s-gloss" rows="5" placeholder="Madoka = מאדוקה&#10;Homura Akemi = הומורה אקמי"></textarea></div>
-  <div class="f"><label for="s-key">מפתח API של Anthropic (לתרגום אוטומטי, לא חובה)</label>
-    <input type="password" id="s-key" dir="ltr" autocomplete="off" aria-describedby="keyset"><span id="keyset" class="note"></span></div>
-  <div class="f"><label for="s-fs">גודל טקסט בממשק</label>
-    <select id="s-fs"><option value="16">רגיל</option><option value="18">גדול</option><option value="20">גדול מאוד</option></select></div>
-  <div class="row"><button class="btn pri" id="s-save">שמור</button><button class="btn" data-close>סגור</button></div>
+  <h2 class="dh" id="ds-h">העדפות</h2>
+  <div class="db"><div class="frm">
+    <label for="s-content">סוג התוכן</label>
+    <select id="s-content"><option value="trailer">טריילר</option><option value="series">סדרה</option><option value="anime">אנימה</option><option value="documentary">דוקו</option><option value="reality">ריאליטי</option><option value="other">אחר</option></select>
+    <label for="s-lang">שפת הכותרות במקור</label>
+    <select id="s-lang"><option value="eng">אנגלית</option><option value="jpn">יפנית</option><option value="kor">קוריאנית</option><option value="chi_sim">סינית</option><option value="fra">צרפתית</option><option value="spa">ספרדית</option><option value="deu">גרמנית</option><option value="ita">איטלקית</option><option value="rus">רוסית</option></select>
+    <label for="s-wlang">שפת הדיבור</label><input type="text" id="s-wlang" dir="ltr" placeholder="ריק = זיהוי אוטומטי (ja / en)">
+    <label for="s-wmodel">מודל תמלול</label><select id="s-wmodel"><option value="large-v3">large-v3 (מדויק, איטי)</option><option value="medium">medium</option><option value="small">small (מהיר)</option></select>
+    <label for="s-gloss">תעתיק שמות<br><span class="unit">שורה לכל שם: מקור = עברית</span></label>
+    <textarea id="s-gloss" rows="5" placeholder="Madoka = מאדוקה&#10;Homura Akemi = הומורה אקמי"></textarea>
+    <label for="s-key">מפתח API של Anthropic<br><span class="unit">לתרגום אוטומטי, לא חובה</span></label>
+    <div><input type="password" id="s-key" dir="ltr" autocomplete="off" aria-describedby="keyset" style="width:100%"><div id="keyset" class="unit"></div></div>
+    <label for="s-model">מודל תרגום</label><input type="text" id="s-model" dir="ltr">
+    <label for="s-fs">גודל טקסט בממשק</label>
+    <select id="s-fs"><option value="13">קטן (כמו Adobe)</option><option value="14">רגיל</option><option value="16">גדול</option><option value="18">גדול מאוד</option></select>
+  </div></div>
+  <div class="df"><button class="qbtn" data-close>ביטול</button><button class="cta" id="s-save">אישור</button></div>
 </dialog>
 
 <dialog id="d-help" aria-labelledby="dh-h">
-  <h2 id="dh-h">קיצורי מקלדת</h2>
-  <table><tbody>
-    <tr><td><kbd>רווח</kbd></td><td>נגן / עצור</td></tr>
-    <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>פריים אחורה / קדימה</td></tr>
-    <tr><td><kbd>Shift</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>שנייה אחורה / קדימה</td></tr>
-    <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>התחלה / סוף</td></tr>
-    <tr><td><kbd>T</kbd></td><td>מעבר בין מקור לתוצאה</td></tr>
-    <tr><td><kbd>I</kbd> / <kbd>O</kbd></td><td>כניסה / יציאה של הפריט הנבחר = הפריים הנוכחי</td></tr>
-    <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>פריט קודם / הבא</td></tr>
-    <tr><td><kbd>Enter</kbd></td><td>עבור לשדה העברית של הפריט הנבחר</td></tr>
-    <tr><td><kbd>Esc</kbd></td><td>יציאה משדה טקסט</td></tr>
-    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>בטל / בצע שוב</td></tr>
-    <tr><td><kbd>+</kbd> <kbd>−</kbd></td><td>זום בציר הזמן</td></tr>
-  </tbody></table>
-  <p class="note">בתוך שדה טקסט הקיצורים לא פעילים, חוץ מ-Esc.</p>
-  <button class="btn" data-close>סגור</button>
+  <h2 class="dh" id="dh-h">קיצורי מקלדת</h2>
+  <div class="db"><p class="note" style="padding:0 0 6px">קיצורי Premiere Pro. עובדים גם כשהמקלדת בעברית. בתוך שדה טקסט הם לא פעילים, ו-Esc יוצא מהשדה.</p>
+  <table class="kt"><tbody id="keys"></tbody></table></div>
+  <div class="df"><button class="cta" data-close>סגור</button></div>
 </dialog>
-
-<dialog id="d-log" aria-labelledby="dl-h"><h2 id="dl-h">יומן פעולות</h2><div id="logbox" tabindex="0"></div><button class="btn" data-close>סגור</button></dialog>
-<dialog id="d-checks" aria-labelledby="dc-h"><h2 id="dc-h">בדיקה: מקור מול תוצאה</h2><p class="note">בכל תמונה: משמאל המקור, מימין התוצאה, מהפריים שלפני הכניסה עד שאחרי היציאה.</p><div class="checks" id="checks"></div><button class="btn" data-close>סגור</button></dialog>
+<dialog id="d-log" aria-labelledby="dl-h"><h2 class="dh" id="dl-h">יומן פעולות</h2><div class="db"><div id="logbox" tabindex="0"></div></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
+<dialog id="d-checks" aria-labelledby="dc-h"><h2 class="dh" id="dc-h">בדיקה: מקור מול תוצאה</h2><div class="db"><p class="note" style="padding:0">בכל תמונה: משמאל המקור, מימין התוצאה, מהפריים שלפני הכניסה עד שאחרי היציאה.</p><div class="checks" id="checks"></div></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
 
 <script>
 "use strict";
 const $=s=>document.querySelector(s);
 const el=(tag,attrs={},...kids)=>{const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==='class')e.className=v;else if(k==='text')e.textContent=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!==null&&v!==undefined&&v!==false)e.setAttribute(k,v===true?'':v)}for(const c of kids)if(c!=null)e.append(c);return e};
 const api=async(p,b)=>{const r=await fetch(p,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json()};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
-// ---------------------------------------------------------------- state
-const S={proj:null,data:null,fps:24,n:1,frame:0,mode:'source',tab:'t',sel:null,zoom:4,fonts:{},
-  model:{titles:[],cues:[]},undo:[],redo:[],editBase:null,running:false,proxyStamp:0};
+// ================================================================ state
+const S={proj:null,data:null,fps:24,n:1,frame:0,mode:'source',tab:'t',sel:null,zoom:4,fonts:{},filter:'',
+  model:{titles:[],cues:[]},undo:[],redo:[],editBase:null,running:false,proxyStamp:0,shuttle:0,shuttleTimer:null,kDown:false};
 const STYLE=['font','weight','size_ratio','fill','align','nudge_x','nudge_y'];
 const ANIM={static:'קבועה',match:'כמו במקור (נמדדה פריים-פריים)',fade:'הופעה הדרגתית'};
-const tc=f=>{const s=Math.max(0,f)/S.fps;const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return (h?h+':'+String(m).padStart(2,'0'):m)+':'+(s%60).toFixed(2).padStart(5,'0')};
+function tc(f){f=Math.max(0,Math.round(f));const r=Math.round(S.fps)||24;const ff=f%r,s=Math.floor(f/r);
+  const p=n=>String(n).padStart(2,'0');return `${p(Math.floor(s/3600))}:${p(Math.floor(s%3600/60))}:${p(s%60)}:${p(ff)}`}
 const hex=b=>b?'#'+[b[2],b[1],b[0]].map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''):'#ffffff';
 const bgr=h=>[parseInt(h.slice(5,7),16),parseInt(h.slice(3,5),16),parseInt(h.slice(1,3),16)];
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function say(t,err){const m=$('#msg');m.textContent=t;m.classList.toggle('err',!!err)}
+const NIQ=/[֑-ׇֽֿׁׂׅׄ]/g;
 
-// ---------------------------------------------------------------- model / undo
+// ================================================================ model / undo
 function modelFromData(){const T=(S.data.titles||{}).titles||[];
   S.model.titles=T.map(t=>({id:t.id,he:t.he||'',translate:t.translate!==false,in:t.in,out:t.out,
     style:Object.fromEntries(STYLE.map(k=>[k,(t.style||{})[k]]).filter(([k,v])=>v!==undefined))}));
-  S.model.cues=((S.data.dialog||{}).cues||[]).map(c=>({n:c.n,he:c.he||'',start:c.start,end:c.end}));}
+  S.model.cues=((S.data.dialog||{}).cues||[]).map(c=>({n:c.n,he:c.he||'',start:c.start,end:c.end}))}
 const snap=()=>JSON.stringify(S.model);
 function beginEdit(){if(S.editBase===null)S.editBase=snap()}
-function endEdit(){if(S.editBase!==null&&S.editBase!==snap()){S.undo.push(S.editBase);if(S.undo.length>200)S.undo.shift();S.redo=[];}S.editBase=null;undoBtns()}
-function undoBtns(){$('#b-undo').disabled=!S.undo.length;$('#b-redo').disabled=!S.redo.length}
-async function restore(str){S.model=JSON.parse(str);await pushAll();renderAll();refreshFrame();}
-async function undo(){if(!S.undo.length)return;S.redo.push(snap());await restore(S.undo.pop());undoBtns();say('בוטל')}
-async function redo(){if(!S.redo.length)return;S.undo.push(snap());await restore(S.redo.pop());undoBtns();say('בוצע שוב')}
-async function pushAll(){await api('/api/titles',{titles:S.model.titles});if(S.model.cues.length)await api('/api/dialog',{cues:S.model.cues});await reloadData(true)}
+function endEdit(){if(S.editBase!==null&&S.editBase!==snap()){S.undo.push(S.editBase);if(S.undo.length>300)S.undo.shift();S.redo=[]}S.editBase=null}
+function oneShot(fn){beginEdit();fn();endEdit()}
+async function restore(str){S.model=JSON.parse(str);await api('/api/titles',{titles:S.model.titles});if(S.model.cues.length)await api('/api/dialog',{cues:S.model.cues});await reloadData(true);renderAll();refreshFrame()}
+async function undo(){if(!S.undo.length)return say('אין מה לבטל');S.redo.push(snap());await restore(S.undo.pop());say('בוטל')}
+async function redo(){if(!S.redo.length)return say('אין מה לבצע שוב');S.undo.push(snap());await restore(S.redo.pop());say('בוצע שוב')}
 const saveTimers={};
-function saveTitle(id,delay=300){clearTimeout(saveTimers[id]);saveTimers[id]=setTimeout(async()=>{const t=S.model.titles.find(x=>x.id===id);if(!t)return;
-  await api('/api/titles',{titles:[t]});await reloadData(true);refreshFrame();},delay)}
-function saveCue(n,delay=300){clearTimeout(saveTimers['c'+n]);saveTimers['c'+n]=setTimeout(async()=>{const c=S.model.cues.find(x=>x.n===n);if(c){await api('/api/dialog',{cues:[c]});}},delay)}
-function mt(id){return S.model.titles.find(x=>x.id===id)}
-function dt(id){return ((S.data.titles||{}).titles||[]).find(x=>x.id===id)}
-function mc(n){return S.model.cues.find(x=>x.n===n)}
-function dc(n){return ((S.data.dialog||{}).cues||[]).find(x=>x.n===n)}
+function saveTitle(id,delay=300){clearTimeout(saveTimers[id]);saveTimers[id]=setTimeout(async()=>{delete saveTimers[id];const t=mt(id);if(!t)return;
+  await api('/api/titles',{titles:[t]});await reloadData(true);refreshFrame()},delay)}
+function saveCue(n,delay=300){clearTimeout(saveTimers['c'+n]);saveTimers['c'+n]=setTimeout(async()=>{delete saveTimers['c'+n];const c=mc(n);if(c)await api('/api/dialog',{cues:[c]})},delay)}
+async function flush(){for(const k of Object.keys(saveTimers)){clearTimeout(saveTimers[k]);delete saveTimers[k]}
+  if(!S.proj)return;await api('/api/titles',{titles:S.model.titles});if(S.model.cues.length)await api('/api/dialog',{cues:S.model.cues});await reloadData(true)}
+const mt=id=>S.model.titles.find(x=>x.id===id), mc=n=>S.model.cues.find(x=>x.n===n);
+const dt=id=>((S.data&&S.data.titles||{}).titles||[]).find(x=>x.id===id), dc=n=>((S.data&&S.data.dialog||{}).cues||[]).find(x=>x.n===n);
 
-// ---------------------------------------------------------------- data
+// ================================================================ data
 async function reloadData(keepModel){const d=await api('/api/project');if(d.error)return;S.data=d;S.fps=d.project.info.fps;S.n=d.n_frames||1;
-  if(!keepModel)modelFromData();else{ // merge server-only fields (new titles after analyze) without losing local model
-    const ids=new Set(S.model.titles.map(t=>t.id));if(((d.titles||{}).titles||[]).some(t=>!ids.has(t.id))||((d.dialog||{}).cues||[]).length!==S.model.cues.length)modelFromData();}
-  $('#projname').replaceChildren(el('bdi',{class:'path',text:d.project.video.split(/[\\/]/).pop()}));$('#projname').title=d.project.video;
+  if(!keepModel)modelFromData();else{const ids=new Set(S.model.titles.map(t=>t.id));
+    if(((d.titles||{}).titles||[]).some(t=>!ids.has(t.id))||((d.dialog||{}).cues||[]).length!==S.model.cues.length)modelFromData()}
+  const name=d.project.video.split(/[\\/]/).pop();
+  $('#workspace').textContent=name;$('#prog-name').replaceChildren(el('bdi',{dir:'ltr',text:name}));$('#tl-name').replaceChildren(el('bdi',{dir:'ltr',text:name}));$('#workspace').title=d.project.video;
   $('#frame').style.aspectRatio=`${d.project.info.width}/${d.project.info.height}`;
+  $('#dur').textContent=tc(S.n);
   $('#dirtynote').style.display=d.dirty.length?'inline':'none';
-  $('#b-checks').disabled=!d.checks.length;$('#b-reveal').disabled=false;
-  if(d.proxy&&d.proxy_mtime!==S.proxyStamp){S.proxyStamp=d.proxy_mtime;if(S.mode==='result')setSrc();}
-}
+  if(d.proxy&&d.proxy_mtime!==S.proxyStamp){S.proxyStamp=d.proxy_mtime;if(S.mode==='result')setSrc()}}
 function setSrc(){if(!S.proj)return;const v=$('#vid');const want=(S.mode==='result'&&S.data&&S.data.proxy)?`/api/video?which=proxy&t=${S.proxyStamp}`:'/api/video?which=src';
   if(v.dataset.src===want)return;const t=v.currentTime||0;const playing=!v.paused;v.dataset.src=want;v.src=want;
-  v.addEventListener('loadedmetadata',()=>{v.currentTime=t;if(playing)v.play()},{once:true});}
+  v.addEventListener('loadedmetadata',()=>{v.currentTime=t;if(playing)v.play()},{once:true})}
 
-// ---------------------------------------------------------------- render: list
-function items(){return S.tab==='t'?S.model.titles.map(t=>({k:'t',id:t.id,a:t.in,b:t.out})):S.model.cues.map(c=>({k:'c',id:c.n,a:Math.round(c.start*S.fps),b:Math.round(c.end*S.fps)}))}
-function isSel(k,id){return S.sel&&S.sel.k===k&&S.sel.id===id}
-function renderList(){const ul=$('#items');ul.replaceChildren();$('#bulk').style.display=(S.tab==='t'&&S.model.titles.length>1)?'flex':'none';
+// ================================================================ project panel
+function items(){return S.tab==='t'?S.model.titles.map(t=>({k:'t',id:t.id})):S.model.cues.map(c=>({k:'c',id:c.n}))}
+const isSel=(k,id)=>S.sel&&S.sel.k===k&&S.sel.id===id;
+function renderList(){const ul=$('#items');ul.replaceChildren();
   $('#cnt-t').textContent=S.model.titles.length?`(${S.model.titles.length})`:'';$('#cnt-c').textContent=S.model.cues.length?`(${S.model.cues.length})`:'';
-  $('#tab-t').setAttribute('aria-selected',S.tab==='t');$('#tab-c').setAttribute('aria-selected',S.tab==='c');
-  ul.setAttribute('aria-labelledby',S.tab==='t'?'tab-t':'tab-c');
-  const dirty=new Set((S.data&&S.data.dirty)||[]);
+  $('#tab-t').setAttribute('aria-selected',S.tab==='t');$('#tab-c').setAttribute('aria-selected',S.tab==='c');ul.setAttribute('aria-labelledby',S.tab==='t'?'tab-t':'tab-c');
+  $('#bulk').style.display=(S.tab==='t'&&S.model.titles.length>1)?'flex':'none';
+  const q=S.filter.trim().toLowerCase();const dirty=new Set((S.data&&S.data.dirty)||[]);
   if(S.tab==='t'){
-    if(!S.model.titles.length){ul.append(el('li',{class:'empty',text:S.proj?'עדיין לא נותחו כותרות. לחץ "נתח כותרות".':'פתח סרטון כדי להתחיל.'}));return}
-    for(const t of S.model.titles){const d=dt(t.id)||{};const chips=[];
-      if(!t.translate)chips.push(el('span',{class:'chip off',text:'לא מוחלף'}));
-      else if(!t.he)chips.push(el('span',{class:'chip warn',text:'חסר תרגום'}));
+    if(!S.model.titles.length){ul.append(el('li',{class:'note',style:'padding:14px;text-align:center',text:S.proj?'אין עדיין כותרות. "נתח כותרות" מזהה את הטקסט על המסך.':'ייבא סרטון כדי להתחיל.'}));return}
+    for(const t of S.model.titles){const d=dt(t.id)||{};if(q&&!((d.src||'')+' '+t.he).toLowerCase().includes(q))continue;const chips=[];
+      if(!t.translate)chips.push(el('span',{class:'chip off',text:'לא מוחלף'}));else if(!t.he)chips.push(el('span',{class:'chip warn',text:'חסר תרגום'}));
       if(t.translate&&dirty.has(d.group))chips.push(el('span',{class:'chip warn',text:'דורש בנייה'}));
-      const b=el('button',{class:'item','aria-current':isSel('t',t.id)?'true':'false',onclick:()=>select('t',t.id,true),
-        'aria-label':`${d.src||''}. ${t.he?'עברית: '+t.he:'בלי תרגום'}. ${tc(t.in)} עד ${tc(t.out)}`},
+      ul.append(el('li',{},el('button',{class:'item','aria-current':isSel('t',t.id)?'true':'false',onclick:()=>select('t',t.id,true),
+        'aria-label':`${d.src||''}. ${t.he?'עברית: '+t.he:'בלי תרגום'}. ${tc(t.in)} עד ${tc(t.out)}${chips.length?'. '+chips.map(c=>c.textContent).join(', '):''}`},
         el('img',{src:`/api/file?p=thumbs/${t.id}.jpg`,alt:''}),
-        el('span',{},el('div',{class:'src',lang:'und',text:d.src||''}),el('div',{class:'he',text:t.he||'—'}),
-          el('div',{class:'meta'},el('bdi',{dir:'ltr',text:`${tc(t.in)} - ${tc(t.out)}`}),...chips)));
-      ul.append(el('li',{},b));}
+        el('span',{style:'min-width:0'},el('span',{class:'src',lang:'und',text:d.src||''}),el('div',{class:'he',text:t.he||'—'}),
+          el('div',{class:'meta'},el('bdi',{dir:'ltr',text:tc(t.in)}),...chips)))))}
   }else{
-    if(!S.model.cues.length){ul.append(el('li',{class:'empty',text:S.proj?'עדיין אין תמלול. לחץ "תמלל דיאלוג".':'פתח סרטון כדי להתחיל.'}));return}
-    for(const c of S.model.cues){const d=dc(c.n)||{};const chips=[];if(!c.he)chips.push(el('span',{class:'chip warn',text:'חסר תרגום'}));
-      const b=el('button',{class:'item cue','aria-current':isSel('c',c.n)?'true':'false',onclick:()=>select('c',c.n,true),
+    if(!S.model.cues.length){ul.append(el('li',{class:'note',style:'padding:14px;text-align:center',text:S.proj?'אין עדיין תמלול. "תמלל" יוצר כתוביות מהדיבור.':'ייבא סרטון כדי להתחיל.'}));return}
+    for(const c of S.model.cues){const d=dc(c.n)||{};if(q&&!((d.src||'')+' '+c.he).toLowerCase().includes(q))continue;const chips=[];if(!c.he)chips.push(el('span',{class:'chip warn',text:'חסר תרגום'}));
+      ul.append(el('li',{},el('button',{class:'item cue','aria-current':isSel('c',c.n)?'true':'false',onclick:()=>select('c',c.n,true),
         'aria-label':`כתובית ${c.n}. ${d.src||''}. ${c.he?'עברית: '+c.he:'בלי תרגום'}`},
-        el('span',{},el('div',{class:'src',lang:'und',text:d.src||''}),el('div',{class:'he',text:c.he||'—'}),
-          el('div',{class:'meta'},el('span',{text:'#'+c.n}),el('bdi',{dir:'ltr',text:`${c.start.toFixed(2)} - ${c.end.toFixed(2)}`}),...chips)));
-      ul.append(el('li',{},b));}
+        el('span',{style:'min-width:0'},el('span',{class:'src',lang:'und',text:d.src||''}),el('div',{class:'he',text:c.he||'—'}),
+          el('div',{class:'meta'},el('span',{text:'#'+c.n}),el('bdi',{dir:'ltr',text:tc(Math.round(c.start*S.fps))}),...chips)))))}
   }
-  const cur=ul.querySelector('[aria-current=true]');if(cur)cur.scrollIntoView({block:'nearest'});
-}
+  const cur=ul.querySelector('[aria-current=true]');if(cur)cur.scrollIntoView({block:'nearest'})}
 
-// ---------------------------------------------------------------- render: inspector
-function field(label,input,id){return el('div',{class:'f'},el('label',{for:id,text:label}),input)}
-function bindEdit(inp,apply,save){inp.addEventListener('focus',beginEdit);inp.addEventListener('input',()=>{beginEdit();apply();save()});inp.addEventListener('change',()=>{apply();save();endEdit()});inp.addEventListener('blur',endEdit)}
-function oneShot(fn){beginEdit();fn();endEdit();}
-function renderInsp(){const box=$('#insp');box.replaceChildren();
-  if(!S.sel){box.append(el('p',{class:'empty',text:'בחר כותרת או כתובית מהרשימה או מציר הזמן.'}));return}
-  if(S.sel.k==='t')inspTitle(box);else inspCue(box);}
-function timingBox(getA,getB,setA,setB,unitFrames){
-  const mk=(lbl,get,set)=>{const v=el('span',{class:'tcv','aria-live':'polite'});const upd=()=>{v.textContent=tc(get())+` (פריים ${get()})`};upd();
-    const btn=(t,al,d)=>el('button',{class:'btn',text:t,dir:t.length<4?'ltr':null,'aria-label':al,onclick:()=>{oneShot(()=>set(d(get())));upd();}});
-    return el('div',{class:'f'},el('div',{class:'lbl',text:lbl}),el('div',{class:'row'},v),
-      el('div',{class:'row'},btn('−1',`${lbl} פריים אחד מוקדם יותר`,x=>x-1),btn('+1',`${lbl} פריים אחד מאוחר יותר`,x=>x+1),
-        btn('= הפריים הנוכחי',`${lbl} = הפריים הנוכחי`,()=>S.frame),
-        el('button',{class:'btn',text:'קפוץ','aria-label':`קפוץ אל ה${lbl}`,onclick:()=>seek(get())})))};
-  return el('div',{class:'timing',role:'group','aria-label':'תזמון'},mk('כניסה',getA,setA),mk('יציאה',getB,setB));}
-function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;const st=d.style||{};
-  box.append(el('h2',{text:`כותרת ${t.id}`}),el('img',{class:'big',src:`/api/file?p=thumbs/${t.id}.jpg`,alt:`הכותרת במקור: ${d.src}`}),el('p',{class:'src',lang:'und',text:d.src}));
+// ================================================================ effect controls
+function hot(id,val,step,min,max,onval,label,unit){
+  const i=el('input',{class:'hot',type:'number',id,step:String(step),min:String(min),max:String(max),value:val,'aria-label':label});
+  i.addEventListener('focus',beginEdit);i.addEventListener('input',()=>{if(i.value!==''){beginEdit();onval(+i.value)}});
+  i.addEventListener('change',()=>{if(i.value!=='')onval(clamp(+i.value,min,max));endEdit()});i.addEventListener('blur',endEdit);
+  i.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();i.blur()}});
+  // Adobe "hot text": drag sideways to scrub the value, click to type
+  i.addEventListener('pointerdown',e=>{if(document.activeElement===i)return;e.preventDefault();const x0=e.clientX,v0=+i.value||0;let moved=false;beginEdit();
+    const mv=ev=>{const dx=ev.clientX-x0;if(Math.abs(dx)>2)moved=true;if(!moved)return;const v=clamp(+(v0+Math.round(dx/2)*step*(ev.shiftKey?10:1)).toFixed(3),min,max);i.value=v;onval(v)};
+    const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up);if(!moved){i.focus();i.select()}else endEdit()};
+    addEventListener('pointermove',mv);addEventListener('pointerup',up)});
+  return el('span',{class:'v'},i,unit?el('span',{class:'unit',text:unit}):null)}
+function prop(label,forId,valueEl){return el('div',{class:'prop'},forId?el('label',{for:forId,text:label}):el('span',{class:'pl',text:label}),valueEl)}
+function group(title,open,...rows){const d=el('details',{class:'grp'},el('summary',{text:title}),...rows);if(open)d.open=true;return d}
+function timingRows(getA,getB,setA,setB){
+  const row=(lbl,get,set,key)=>{const v=el('span',{class:'tcv','aria-live':'polite'});const upd=()=>v.textContent=tc(get());upd();
+    const b=(t,al,fn)=>el('button',{class:'mini',text:t,'aria-label':`${lbl}: ${al}`,title:al,onclick:()=>{oneShot(()=>set(fn(get())));upd()}});
+    return prop(lbl,null,el('span',{class:'v'},v,b('−1','פריים מוקדם יותר',x=>x-1),b('+1','פריים מאוחר יותר',x=>x+1),
+      b(key,'= מיקום הנגן',()=>S.frame),el('button',{class:'mini',text:'⇥','aria-label':`עבור ל${lbl}`,title:'עבור',onclick:()=>seek(get())})))};
+  return [row('כניסה',getA,setA,'I'),row('יציאה',getB,setB,'O')]}
+function renderInsp(){const box=$('#ec');box.replaceChildren();$('#insp-name').textContent='';
+  if(!S.sel){box.append(el('p',{class:'empty',text:S.proj?'בחר כותרת או כתובית ברשימה או בציר הזמן.':'אין פריט נבחר.'}));return}
+  if(S.sel.k==='t')inspTitle(box);else inspCue(box)}
+function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;const st=d.style||{};$('#insp-name').textContent=t.id;
+  box.append(el('div',{class:'ec-head'},el('img',{src:`/api/file?p=thumbs/${t.id}.jpg`,alt:`הכותרת במקור: ${d.src}`}),
+    el('div',{style:'min-width:0'},el('div',{class:'src',lang:'und',text:d.src}),el('div',{class:'sub',text:`${tc(t.in)} - ${tc(t.out)}`}))));
   const tg=el('input',{type:'checkbox',id:'i-tr'});tg.checked=t.translate;
-  tg.addEventListener('change',()=>{oneShot(()=>t.translate=tg.checked);saveTitle(t.id,0);renderList();renderTimeline();});
-  box.append(el('label',{class:'toggle',for:'i-tr'},tg,el('span',{text:'להחליף לעברית'})),el('p',{class:'note',text:'לא להחליף: קרדיטים, לוגואים של אולפנים, סמלי דירוג, שמות באנגלית.'}));
-  const he=el('textarea',{id:'i-he',rows:'2',dir:'rtl',lang:'he'});he.value=t.he;
-  bindEdit(he,()=>{t.he=he.value.replace(/[֑-ׇֽֿׁׂׅׄ]/g,'');renderListSoon()},()=>saveTitle(t.id,450));
-  box.append(field('עברית (Enter לשורה חדשה)',he,'i-he'));
-  const fs=el('select',{id:'i-font'});for(const[n,v]of Object.entries(S.fonts)){fs.append(el('option',{value:n,text:`${n} - ${v.he||v.tags}`}))}fs.value=t.style.font||'Heebo';
-  bindEdit(fs,()=>t.style.font=fs.value,()=>saveTitle(t.id,0));box.append(field('גופן',fs,'i-font'));
-  const w=el('input',{type:'number',id:'i-w',min:'100',max:'900',step:'100',value:t.style.weight??''});
-  bindEdit(w,()=>{if(w.value!=='')t.style.weight=+w.value},()=>saveTitle(t.id,400));
-  const col=el('input',{type:'color',id:'i-col',value:hex(t.style.fill||st.fill)});
-  bindEdit(col,()=>t.style.fill=bgr(col.value),()=>saveTitle(t.id,250));
-  box.append(el('div',{class:'two'},field('משקל (100-900)',w,'i-w'),field('צבע מילוי',col,'i-col')));
-  const zr=el('input',{type:'range',id:'i-zr',min:'0.3',max:'2.5',step:'0.01',value:t.style.size_ratio??0.9,'aria-describedby':'i-zn'});
-  const zn=el('input',{type:'number',id:'i-zn',min:'0.3',max:'2.5',step:'0.05',value:t.style.size_ratio??0.9,'aria-label':'גודל במספר'});
-  const setZ=v=>{t.style.size_ratio=+v;zr.value=v;zn.value=v};
-  bindEdit(zr,()=>setZ(zr.value),()=>saveTitle(t.id,200));bindEdit(zn,()=>setZ(zn.value),()=>saveTitle(t.id,300));
-  box.append(el('div',{class:'f'},el('label',{for:'i-zr',text:'גודל ביחס לאותיות המקור'}),el('div',{class:'row'},zr,zn)));
+  tg.addEventListener('change',()=>{oneShot(()=>t.translate=tg.checked);saveTitle(t.id,0);renderList();renderTimeline()});
+  const he=el('textarea',{class:'he',id:'i-he',rows:'2',dir:'rtl',lang:'he','aria-label':'טקסט בעברית'});he.value=t.he;
+  he.addEventListener('focus',beginEdit);he.addEventListener('blur',endEdit);
+  he.addEventListener('input',()=>{beginEdit();const p=he.selectionStart;const v=he.value.replace(NIQ,'');if(v!==he.value){he.value=v;he.selectionStart=he.selectionEnd=Math.max(0,p-1)}t.he=v;softRender();saveTitle(t.id,450)});
+  box.append(group('טקסט',true,el('div',{class:'prop'},el('label',{class:'chk',for:'i-tr',style:'grid-column:1/-1;padding-inline-start:16px'},tg,el('span',{text:'להחליף לעברית'}))),he,
+    el('p',{class:'note',text:'לא להחליף: קרדיטים, לוגואים, סמלי דירוג, שמות באנגלית.'})));
+  const fs=el('select',{class:'sel',id:'i-font'});for(const[n,v]of Object.entries(S.fonts))fs.append(el('option',{value:n,text:`${n} - ${v.he||v.tags}`}));fs.value=t.style.font||'Heebo';
+  fs.addEventListener('change',()=>{oneShot(()=>t.style.font=fs.value);saveTitle(t.id,0)});
+  const col=el('input',{type:'color',class:'swatch',id:'i-col',value:hex(t.style.fill||st.fill)});
+  col.addEventListener('focus',beginEdit);col.addEventListener('input',()=>{beginEdit();t.style.fill=bgr(col.value);saveTitle(t.id,250)});col.addEventListener('change',endEdit);
+  box.append(group('גופן ומראה',true,
+    prop('גופן','i-font',el('span',{class:'v'},fs)),
+    prop('משקל','i-w',hot('i-w',t.style.weight??400,100,100,900,v=>{t.style.weight=v;saveTitle(t.id,350)},'משקל גופן')),
+    prop('גודל','i-z',hot('i-z',Math.round((t.style.size_ratio??0.9)*100),1,30,250,v=>{t.style.size_ratio=v/100;saveTitle(t.id,250)},'גודל באחוזים ביחס לאותיות המקור','% מהמקור')),
+    prop('צבע מילוי','i-col',el('span',{class:'v'},col)),
+    prop('צל',null,el('span',{class:'v',text:st.shadow?`כמו במקור (${st.shadow.dx}, ${st.shadow.dy})`:'אין'})),
+    prop('קו מתאר',null,el('span',{class:'v',text:st.outline?`כמו במקור (${st.outline.width} px)`:'אין'}))));
   const al=el('div',{class:'seg',role:'group','aria-label':'יישור'});
   for(const[v,n]of[['right','ימין'],['center','מרכז'],['left','שמאל']]){const b=el('button',{text:n,'aria-pressed':(t.style.align||'center')===v?'true':'false',
     onclick:()=>{oneShot(()=>t.style.align=v);al.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b?'true':'false'));saveTitle(t.id,0)}});al.append(b)}
-  box.append(el('div',{class:'f'},el('div',{class:'lbl',text:'יישור'}),al));
-  const nx=el('input',{type:'number',id:'i-nx',step:'1',value:t.style.nudge_x||0}),ny=el('input',{type:'number',id:'i-ny',step:'1',value:t.style.nudge_y||0});
-  bindEdit(nx,()=>t.style.nudge_x=+nx.value||0,()=>saveTitle(t.id,300));bindEdit(ny,()=>t.style.nudge_y=+ny.value||0,()=>saveTitle(t.id,300));
-  box.append(el('div',{class:'two'},field('הזזה אופקית (פיקסלים, חיובי = ימינה)',nx,'i-nx'),field('הזזה אנכית (חיובי = למטה)',ny,'i-ny')));
-  box.append(timingBox(()=>t.in,()=>t.out,v=>{t.in=clamp(v,0,t.out);saveTitle(t.id,0);renderTimeline();renderList()},v=>{t.out=clamp(v,t.in,S.n-1);saveTitle(t.id,0);renderTimeline();renderList()}));
-  const info=[];info.push('צל: '+(st.shadow?`יש (היסט ${st.shadow.dx},${st.shadow.dy})`:'אין'));info.push('קו מתאר: '+(st.outline?`יש (${st.outline.width}px)`:'אין'));
-  info.push('אנימציה: '+(ANIM[(d.anim||{}).mode]||'תימדד בבנייה'));
-  box.append(el('p',{class:'note',text:info.join(' · ')}));
-  if(d.warn_shrunk)box.append(el('p',{class:'warnbox',text:'הטקסט רחב מדי למסך והוקטן אוטומטית. כדאי לקצר.'}));
-  const sm=((S.data.stats||{})[d.group]||{}).synth_max;if(sm>0.15)box.append(el('p',{class:'warnbox',text:`${Math.round(sm*100)}% מהרקע מאחורי הטקסט לא נראה באף פריים אחר והושלם. כדאי לבדוק בתוצאה.`}));
-}
-function inspCue(box){const c=mc(S.sel.id),d=dc(S.sel.id);if(!c||!d)return;
-  box.append(el('h2',{text:`כתובית ${c.n}`}),el('p',{class:'src',lang:'und',text:d.src}));
-  const he=el('textarea',{id:'i-che',rows:'3',dir:'rtl',lang:'he'});he.value=c.he;
+  box.append(group('מיקום',true,prop('יישור',null,el('span',{class:'v'},al)),
+    prop('מיקום X','i-nx',hot('i-nx',t.style.nudge_x||0,1,-4000,4000,v=>{t.style.nudge_x=v;saveTitle(t.id,250)},'הזזה אופקית בפיקסלים','px')),
+    prop('מיקום Y','i-ny',hot('i-ny',t.style.nudge_y||0,1,-4000,4000,v=>{t.style.nudge_y=v;saveTitle(t.id,250)},'הזזה אנכית בפיקסלים','px'))));
+  box.append(group('תזמון',true,...timingRows(()=>t.in,()=>t.out,
+    v=>{t.in=clamp(v,0,t.out);saveTitle(t.id,0);softRender()},v=>{t.out=clamp(v,t.in,S.n-1);saveTitle(t.id,0);softRender()}),
+    prop('אנימציה',null,el('span',{class:'v',text:ANIM[(d.anim||{}).mode]||'תימדד בבנייה'}))));
+  if(d.warn_shrunk)box.append(el('p',{class:'warn',text:'הטקסט רחב מדי למסך והוקטן אוטומטית. כדאי לקצר.'}));
+  const sm=((S.data.stats||{})[d.group]||{}).synth_max;if(sm>0.15)box.append(el('p',{class:'warn',text:`${Math.round(sm*100)}% מהרקע מאחורי הטקסט לא נראה באף פריים אחר והושלם. כדאי לבדוק במצב תוצאה.`}))}
+function inspCue(box){const c=mc(S.sel.id),d=dc(S.sel.id);if(!c||!d)return;$('#insp-name').textContent='#'+c.n;
+  box.append(el('div',{class:'ec-head'},el('div',{style:'min-width:0'},el('div',{class:'src',lang:'und',text:d.src}),el('div',{class:'sub',text:`#${c.n}`}))));
+  const he=el('textarea',{class:'he',id:'i-che',rows:'3',dir:'rtl',lang:'he','aria-label':'כתובית בעברית'});he.value=c.he;
   const cnt=el('p',{class:'note','aria-live':'polite'});
-  const upd=()=>{const lines=c.he.split('\n');const ch=c.he.replace(/\n/g,'').length;const dur=Math.max(0.01,c.end-c.start);
-    cnt.textContent=`${ch} תווים · ${(ch/dur).toFixed(1)} תווים לשנייה${ch/dur>17?' (מהיר מדי, מעל 17)':''} · שורה ארוכה: ${Math.max(...lines.map(l=>l.length))}/42`};
-  bindEdit(he,()=>{c.he=he.value;upd();renderListSoon()},()=>saveCue(c.n,400));upd();
-  box.append(field('עברית',he,'i-che'),cnt);
-  const F=1/S.fps;
-  box.append(timingBox(()=>Math.round(c.start*S.fps),()=>Math.round(c.end*S.fps),
-    v=>{c.start=clamp(v,0,Math.round(c.end*S.fps)-1)/S.fps;saveCue(c.n,0);renderTimeline();upd()},
-    v=>{c.end=clamp(v,Math.round(c.start*S.fps)+1,S.n)/S.fps;saveCue(c.n,0);renderTimeline();upd()}));
-  box.append(el('p',{class:'note',text:'זמנים שתשנה ידנית יישמרו בדיוק. לשאר הכתוביות ה-SRT מחיל: מינימום שנייה, 0.3 שנ\' אחרי הדיבור, הצמדה לחיתוכים ו-2 פריימים בין כתוביות.'}));
-}
-let listTimer=null;function renderListSoon(){clearTimeout(listTimer);listTimer=setTimeout(()=>{renderList();renderTimeline()},250)}
+  const upd=()=>{const lines=c.he.split('\n');const ch=c.he.replace(/\n/g,'').length;const dur=Math.max(0.01,c.end-c.start);const cps=ch/dur;const ml=Math.max(...lines.map(l=>l.length));
+    cnt.textContent=`${ch} תווים · ${cps.toFixed(1)} תווים לשנייה${cps>17?' (מעל 17)':''} · שורה ארוכה ${ml}/42${lines.length>2?' · יותר משתי שורות':''}`;cnt.className=(cps>17||lines.length>2||ml>42)?'warn':'note'};
+  he.addEventListener('focus',beginEdit);he.addEventListener('blur',endEdit);
+  he.addEventListener('input',()=>{beginEdit();c.he=he.value;upd();updSubs();softRender();saveCue(c.n,400)});upd();
+  box.append(group('טקסט',true,he,cnt));
+  box.append(group('תזמון',true,...timingRows(()=>Math.round(c.start*S.fps),()=>Math.round(c.end*S.fps)-1,
+    v=>{c.start=clamp(v,0,Math.round(c.end*S.fps)-1)/S.fps;saveCue(c.n,0);softRender();upd()},
+    v=>{c.end=(clamp(v,Math.round(c.start*S.fps),S.n-1)+1)/S.fps;saveCue(c.n,0);softRender();upd()}),
+    el('p',{class:'note',text:'זמנים שתשנה ידנית נשמרים בדיוק. לשאר: מינימום שנייה, 0.3 שנ\' אחרי הדיבור, הצמדה לחיתוכים ו-2 פריימים בין כתוביות.'})))}
+let softT=null;function softRender(){clearTimeout(softT);softT=setTimeout(()=>{renderList();renderTimeline()},200)}
 
-// ---------------------------------------------------------------- timeline
-const LANE=46,RULER=28;
-function pxf(){return S.zoom}
+// ================================================================ timeline
+const LANE=48,RULER=30;const pxf=()=>S.zoom;
 function renderTimeline(){const inner=$('#tlinner');inner.replaceChildren();if(!S.data)return;
-  const W=Math.max(S.n*pxf(),$('#tlwrap').clientWidth);inner.style.width=W+'px';
+  const W=Math.max(S.n*pxf()+40,$('#tlwrap').clientWidth);inner.style.width=W+'px';
   const ruler=el('div',{class:'ruler',style:`width:${W}px`,'aria-hidden':'true'});
-  const secPx=S.fps*pxf();const step=[0.5,1,2,5,10,15,30,60,120,300,600,900,1800].find(s=>s*secPx>=80)||1800;
-  for(let s=0;s*S.fps<S.n;s+=step)ruler.append(el('div',{class:'tick',style:`left:${s*secPx}px`,text:tc(Math.round(s*S.fps)).replace(/\.00$/,'')}));
-  ruler.addEventListener('pointerdown',e=>{const r=inner.getBoundingClientRect();const go=ev=>seek(Math.round((ev.clientX-r.left)/pxf()));go(e);
-    const mv=ev=>go(ev),up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up)};addEventListener('pointermove',mv);addEventListener('pointerup',up)});
+  const R=Math.round(S.fps)||24;const secPx=R*pxf();const step=[1/R,0.25,0.5,1,2,5,10,15,30,60,120,300,600,900,1800].find(s=>s*secPx>=90)||1800;
+  const minor=step>=1?step/5:step/2;
+  for(let s=0;s*R<S.n;s+=minor){const x=s*secPx;const major=Math.abs(s/step-Math.round(s/step))<1e-6;
+    ruler.append(major?el('div',{class:'tick',style:`left:${x}px`},el('span',{text:tc(Math.round(s*R))})):el('div',{class:'mtick',style:`left:${x}px`}))}
+  ruler.addEventListener('pointerdown',e=>{const r=inner.getBoundingClientRect();const go=ev=>seek(Math.floor((ev.clientX-r.left)/pxf()),true);go(e);
+    const mv=ev=>go(ev),up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up);refreshFrame()};addEventListener('pointermove',mv);addEventListener('pointerup',up)});
   inner.append(ruler);
   for(const c of S.data.cuts||[])if(c>0)inner.append(el('div',{class:'cut',style:`left:${c*pxf()}px`}));
-  // lanes: titles (stacked when overlapping), then cues
-  const lanesT=[];const place=(a,b,lanes)=>{for(let i=0;i<lanes.length;i++)if(lanes[i]<a){lanes[i]=b;return i}lanes.push(b);return lanes.length-1};
-  const tl=S.model.titles.map(t=>({t,l:place(t.in,t.out,lanesT)}));
-  const lanesC=[];const cl=S.model.cues.map(c=>{const a=Math.round(c.start*S.fps),b=Math.round(c.end*S.fps);return{c,a,b,l:place(a,b,lanesC)}});
-  const nT=Math.max(1,lanesT.length),nC=Math.max(1,lanesC.length);
-  inner.style.height=(RULER+(nT+nC)*LANE+8)+'px';
-  inner.append(el('div',{class:'lane',style:`top:${RULER}px;width:${W}px`},el('span',{class:'lanelbl',text:'כותרות'})));
-  inner.append(el('div',{class:'lane',style:`top:${RULER+nT*LANE}px;width:${W}px`},el('span',{class:'lanelbl',text:'כתוביות'})));
+  const place=(a,b,lanes)=>{for(let i=0;i<lanes.length;i++)if(lanes[i]<a){lanes[i]=b;return i}lanes.push(b);return lanes.length-1};
+  const lt=[],lc=[];const tl=S.model.titles.map(t=>({t,l:place(t.in,t.out,lt)}));
+  const cl=S.model.cues.map(c=>{const a=Math.round(c.start*S.fps),b=Math.round(c.end*S.fps)-1;return{c,a,b,l:place(a,b,lc)}});
+  const nT=Math.max(1,lt.length),nC=Math.max(1,lc.length);
+  inner.style.height=(RULER+(nT+nC)*LANE+10)+'px';
+  $('#trk-t').style.height=(nT*LANE)+'px';$('#trk-c').style.height=(nC*LANE)+'px';
+  for(let i=0;i<nT+nC;i++)inner.append(el('div',{class:'lane',style:`top:${RULER+i*LANE}px;width:${W}px;background:${i<nT?'#262626':'#242424'}`}));
   const dirty=new Set(S.data.dirty||[]);
-  for(const{t,l}of tl){const d=dt(t.id)||{};const b=block('t',t.id,t.in,t.out,RULER+l*LANE,t.he||d.src||t.id,!t.translate,t.translate&&dirty.has(d.group),
-      `כותרת ${t.id}: ${t.he||d.src||''}, ${tc(t.in)} עד ${tc(t.out)}`);inner.append(b)}
-  for(const{c,a,b,l}of cl){inner.append(block('c',c.n,a,b,RULER+(nT+l)*LANE,c.he||(dc(c.n)||{}).src||'#'+c.n,false,false,`כתובית ${c.n}: ${c.he||''}, ${tc(a)} עד ${tc(b)}`))}
-  inner.append(el('div',{id:'playhead',style:`left:${S.frame*pxf()}px`}));
-}
+  for(const{t,l}of tl){const d=dt(t.id)||{};inner.append(block('t',t.id,t.in,t.out,RULER+l*LANE,t.he||d.src||t.id,!t.translate,t.translate&&dirty.has(d.group),
+    `כותרת ${t.id}: ${t.he||d.src||''}, ${tc(t.in)} עד ${tc(t.out)}`))}
+  for(const{c,a,b,l}of cl)inner.append(block('c',c.n,a,b,RULER+(nT+l)*LANE,c.he||(dc(c.n)||{}).src||'#'+c.n,false,false,`כתובית ${c.n}: ${c.he||''}, ${tc(a)} עד ${tc(b)}`));
+  inner.append(el('div',{id:'playhead',style:`left:${S.frame*pxf()}px`}))}
 function block(k,id,a,b,top,label,off,dirty,aria){
-  const x=a*pxf(),w=Math.max(6,(b-a+1)*pxf());
-  const e=el('div',{class:`blk ${k}${off?' off':''}${dirty?' dirty':''}`,style:`left:${x}px;width:${w}px;top:${top+3}px`,role:'button',tabindex:'0',
+  const x=a*pxf(),w=Math.max(4,(b-a+1)*pxf());
+  const e=el('div',{class:`blk ${k}${off?' off':''}${dirty?' dirty':''}`,style:`left:${x}px;width:${w}px;top:${top+4}px`,role:'button',tabindex:'0',
     'aria-label':aria+(off?', לא מוחלף':'')+(dirty?', דורש בנייה':''),'aria-current':isSel(k,id)?'true':'false',title:aria},
-    el('span',{class:'h l','aria-hidden':'true'}),el('bdi',{dir:'auto',text:label}),el('span',{class:'h r','aria-hidden':'true'}));
+    el('span',{class:'h l','aria-hidden':'true'}),el('span',{class:'lbl',dir:'auto',text:label}),el('span',{class:'h r','aria-hidden':'true'}));
   e.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();ev.stopPropagation();select(k,id,true)}});
-  e.addEventListener('pointerdown',ev=>{ev.preventDefault();const edge=ev.target.classList.contains('l')?'in':ev.target.classList.contains('r')?'out':k==='c'?'move':null;
+  e.addEventListener('pointerdown',ev=>{ev.preventDefault();e.focus({preventScroll:true});const edge=ev.target.classList.contains('l')?'in':ev.target.classList.contains('r')?'out':k==='c'?'move':null;
     select(k,id,!edge);if(!edge)return;const x0=ev.clientX;const it=k==='t'?mt(id):mc(id);
-    const a0=k==='t'?it.in:Math.round(it.start*S.fps),b0=k==='t'?it.out:Math.round(it.end*S.fps);beginEdit();
+    const a0=k==='t'?it.in:Math.round(it.start*S.fps),b0=k==='t'?it.out:Math.round(it.end*S.fps)-1;beginEdit();
     const snapF=f=>{const cand=[...(S.data.cuts||[]),S.frame];let best=f,bd=8/pxf();for(const c of cand){const dd=Math.abs(c-f);if(dd<bd){bd=dd;best=c}}return best};
+    const blkEl=()=>$('#tlinner').querySelector(`.blk.${k}[aria-current=true]`);
     const mv=e2=>{const df=Math.round((e2.clientX-x0)/pxf());let na=a0,nb=b0;
-      if(edge==='in')na=clamp(snapF(a0+df),0,b0-1);else if(edge==='out')nb=clamp(snapF(b0+df+1)-1,a0+1,S.n-1);else{na=clamp(a0+df,0,S.n-1-(b0-a0));nb=na+(b0-a0)}
-      if(k==='t'){it.in=na;it.out=nb}else{it.start=na/S.fps;it.end=nb/S.fps}
-      const bb=$('#tlinner').querySelector(`.blk.${k}[aria-current=true]`);if(bb){bb.style.left=na*pxf()+'px';bb.style.width=Math.max(6,(nb-na+1)*pxf())+'px'}
-      seek(edge==='out'?nb:na,true)};
+      if(edge==='in')na=clamp(snapF(a0+df),0,b0);else if(edge==='out')nb=clamp(snapF(b0+df+1)-1,a0,S.n-1);else{na=clamp(a0+df,0,S.n-1-(b0-a0));nb=na+(b0-a0)}
+      if(k==='t'){it.in=na;it.out=nb}else{it.start=na/S.fps;it.end=(nb+1)/S.fps}
+      const be=blkEl();if(be){be.style.left=na*pxf()+'px';be.style.width=Math.max(4,(nb-na+1)*pxf())+'px'}seek(edge==='out'?nb:na,true)};
     const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up);endEdit();
-      if(k==='t')saveTitle(id,0);else saveCue(id,0);renderTimeline();renderList();renderInsp()};
+      if(k==='t')saveTitle(id,0);else saveCue(id,0);renderTimeline();renderList();renderInsp();refreshFrame()};
     addEventListener('pointermove',mv);addEventListener('pointerup',up)});
   return e}
-function zoomTo(z){const wrap=$('#tlwrap');const centerF=(wrap.scrollLeft+wrap.clientWidth/2)/pxf();S.zoom=clamp(z,0.004,40);renderTimeline();wrap.scrollLeft=centerF*pxf()-wrap.clientWidth/2}
-function fit(){S.zoom=clamp(($('#tlwrap').clientWidth-20)/S.n,0.004,40);renderTimeline()}
+function zoomTo(z){const wrap=$('#tlwrap');S.zoom=clamp(z,0.004,60);renderTimeline();wrap.scrollLeft=S.frame*pxf()-wrap.clientWidth/2}
+function fit(){S.zoom=clamp(($('#tlwrap').clientWidth-30)/S.n,0.004,60);renderTimeline();$('#tlwrap').scrollLeft=0}
 
-// ---------------------------------------------------------------- player
+// ================================================================ program monitor
 const vid=$('#vid'),still=$('#still');let frameTok=0,stillTimer=null;
-function seek(f,quiet){f=clamp(Math.round(f),0,S.n-1);S.frame=f;vid.currentTime=(f+0.5)/S.fps;updTime();if(!quiet)refreshFrameSoon();else refreshFrameSoon(120)}
-function updSubs(){const t=S.frame/S.fps;const c=S.model.cues.find(c=>t>=c.start&&t<c.end&&c.he);$('#subs').textContent=c?c.he:''}
-function updTime(){updSubs();$('#tc').textContent=tc(S.frame);$('#fnum').textContent=`פריים ${S.frame} מתוך ${S.n-1}`;const ph=$('#playhead');if(ph)ph.style.left=S.frame*pxf()+'px'}
+function seek(f,quiet){stopShuttle();f=clamp(Math.round(f),0,S.n-1);S.frame=f;vid.currentTime=(f+0.5)/S.fps;updTime();refreshFrameSoon(quiet?150:40);follow()}
+function follow(){const wrap=$('#tlwrap'),x=S.frame*pxf();if(x<wrap.scrollLeft+10||x>wrap.scrollLeft+wrap.clientWidth-30)wrap.scrollLeft=x-wrap.clientWidth/3}
+function updSubs(){const t=(S.frame+0.5)/S.fps;const c=S.model.cues.find(c=>t>=c.start&&t<c.end&&c.he);$('#subs').textContent=c?c.he:''}
+function updTime(){updSubs();$('#tc').textContent=tc(S.frame);$('#tc2').textContent=tc(S.frame);const ph=$('#playhead');if(ph)ph.style.left=S.frame*pxf()+'px'}
 function refreshFrameSoon(d=40){clearTimeout(stillTimer);stillTimer=setTimeout(refreshFrame,d)}
-function refreshFrame(){if(!S.proj||!vid.paused||S.mode!=='result'){still.style.display='none';return}
+function refreshFrame(){if(!S.proj||!vid.paused||S.shuttle||S.mode!=='result'){still.style.display='none';return}
   const tok=++frameTok;const w=Math.round($('#frame').clientWidth*(devicePixelRatio||1));const img=new Image();
   img.onload=()=>{if(tok!==frameTok)return;still.src=img.src;still.style.display='block'};img.src=`/api/frame?f=${S.frame}&mode=result&w=${w}&t=${Date.now()}`}
 function setMode(m){S.mode=m;$('#m-src').setAttribute('aria-pressed',m==='source');$('#m-res').setAttribute('aria-pressed',m==='result');
-  $('#badge').textContent=m==='result'?'תוצאה':'מקור';
-  const h=$('#hint');if(m==='result'&&S.data&&!S.data.built){h.textContent='עדיין לא נבנתה תצוגה. לחץ "בנה תצוגה".';h.style.display='block'}
-  else if(m==='result'&&S.data&&S.data.dirty&&S.data.dirty.length){h.textContent='יש שינויי זמנים: בעצירה רואים עברית, הרקע יתעדכן אחרי "בנה תצוגה".';h.style.display='block'}else h.style.display='none';
-  setSrc();refreshFrame();if(S.proj)say(m==='result'?'מציג תוצאה':'מציג מקור')}
-function play(){if(!S.proj)return;if(vid.paused){still.style.display='none';vid.play()}else vid.pause()}
-vid.addEventListener('play',()=>{$('#t-play').textContent='⏸';$('#t-play').setAttribute('aria-label','עצור');loop()});
-vid.addEventListener('pause',()=>{$('#t-play').textContent='▶︎';$('#t-play').setAttribute('aria-label','נגן');S.frame=clamp(Math.floor(vid.currentTime*S.fps+1e-3),0,S.n-1);updTime();refreshFrame()});
-function loop(){if(vid.paused)return;S.frame=clamp(Math.floor(vid.currentTime*S.fps+1e-3),0,S.n-1);updTime();
-  const wrap=$('#tlwrap'),x=S.frame*pxf();if(x<wrap.scrollLeft||x>wrap.scrollLeft+wrap.clientWidth-40)wrap.scrollLeft=x-60;requestAnimationFrame(loop)}
+  const h=$('#hint');if(m==='result'&&S.data&&!S.data.built){h.textContent='עדיין לא נבנתה תצוגה - Enter או "בנה תצוגה".';h.style.display='block'}
+  else if(m==='result'&&S.data&&S.data.dirty&&S.data.dirty.length){h.textContent='שינויי זמנים ממתינים: הרקע יתעדכן אחרי בנייה (Enter).';h.style.display='block'}else h.style.display='none';
+  setSrc();refreshFrame();if(S.proj)say(m==='result'?'תצוגה: תוצאה':'תצוגה: מקור')}
+const PLAY='<path d="M7 4v16l13-8z"/>',PAUSE='<path d="M6 4h4v16H6zm8 0h4v16h-4z"/>';
+function playIcon(p){$('#playico').innerHTML=p?PAUSE:PLAY;$('#t-play').setAttribute('aria-label',p?'עצור (רווח)':'נגן (רווח)')}
+function play(){if(!S.proj)return;if(S.shuttle){stopShuttle();return}if(vid.paused){still.style.display='none';vid.playbackRate=1;vid.play()}else vid.pause()}
+vid.addEventListener('play',()=>{playIcon(true);loop()});
+vid.addEventListener('pause',()=>{if(S.shuttle<0)return;playIcon(false);S.frame=clamp(Math.floor(vid.currentTime*S.fps+1e-3),0,S.n-1);updTime();refreshFrame()});
+vid.addEventListener('ended',()=>{S.shuttle=0;playIcon(false)});
+function loop(){if(vid.paused)return;S.frame=clamp(Math.floor(vid.currentTime*S.fps+1e-3),0,S.n-1);updTime();follow();requestAnimationFrame(loop)}
+// J / K / L shuttle (Premiere): L forward, again = faster; J backward; K stop
+function shuttle(dir){if(!S.proj)return;still.style.display='none';
+  if(dir>0){if(S.shuttle<0)stopShuttle();S.shuttle=S.shuttle>0?Math.min(S.shuttle*2,8):1;vid.playbackRate=S.shuttle;if(vid.paused)vid.play();say(`ניגון קדימה ×${S.shuttle}`)}
+  else{if(S.shuttle>0){S.shuttle=0;vid.pause()}S.shuttle=S.shuttle<0?Math.max(S.shuttle*2,-8):-1;if(!vid.paused)vid.pause();playIcon(true);clearInterval(S.shuttleTimer);
+    const sp=-S.shuttle;S.shuttleTimer=setInterval(()=>{if(S.frame<=0){stopShuttle();return}S.frame=Math.max(0,S.frame-sp);vid.currentTime=(S.frame+0.5)/S.fps;updTime();follow()},1000/S.fps);say(`ניגון אחורה ×${sp}`)}}
+function stopShuttle(){const was=S.shuttle;if(S.shuttleTimer){clearInterval(S.shuttleTimer);S.shuttleTimer=null}S.shuttle=0;vid.playbackRate=1;
+  if(was<0){playIcon(false);refreshFrame()}else if(was>0&&!vid.paused)vid.pause();if(was)say('עצור')}
+function editPoints(){const s=new Set((S.data&&S.data.cuts)||[]);for(const t of S.model.titles){s.add(t.in);s.add(t.out+1)}for(const c of S.model.cues){s.add(Math.round(c.start*S.fps));s.add(Math.round(c.end*S.fps))}s.add(0);s.add(S.n-1);return[...s].sort((a,b)=>a-b)}
+function gotoEdit(dir){const p=editPoints();const f=dir>0?p.find(x=>x>S.frame):[...p].reverse().find(x=>x<S.frame);if(f!=null)seek(f)}
 
-// ---------------------------------------------------------------- selection
-function select(k,id,jump){S.sel={k,id};if(S.tab!==k){S.tab=k}renderList();renderInsp();
-  $('#tlinner').querySelectorAll('.blk').forEach(b=>b.setAttribute('aria-current','false'));renderTimeline();
-  if(jump){const it=k==='t'?mt(id):mc(id);if(it){const a=k==='t'?it.in:Math.round(it.start*S.fps),b=k==='t'?it.out:Math.round(it.end*S.fps);seek(Math.round((a+b)/2))}}}
-function step(dir){const L=items();if(!L.length)return;let i=S.sel?L.findIndex(x=>x.k===S.sel.k&&x.id===S.sel.id):-1;i=clamp(i+dir,0,L.length-1);select(L[i].k,L[i].id,true)}
+// ================================================================ selection
+function select(k,id,jump){S.sel={k,id};S.tab=k;renderList();renderInsp();renderTimeline();
+  if(jump){const it=k==='t'?mt(id):mc(id);if(it)seek(k==='t'?it.in:Math.round(it.start*S.fps))}}
+function selectAtPlayhead(){const t=S.model.titles.find(t=>S.frame>=t.in&&S.frame<=t.out);if(t)return select('t',t.id,false);
+  const tt=(S.frame+0.5)/S.fps;const c=S.model.cues.find(c=>tt>=c.start&&tt<c.end);if(c)return select('c',c.n,false);say('אין פריט במיקום הנגן')}
 function setEdge(which){if(!S.sel)return say('לא נבחר פריט');beginEdit();
   if(S.sel.k==='t'){const t=mt(S.sel.id);if(which==='in')t.in=Math.min(S.frame,t.out);else t.out=Math.max(S.frame,t.in);saveTitle(t.id,0)}
   else{const c=mc(S.sel.id);if(which==='in')c.start=Math.min(S.frame/S.fps,c.end-1/S.fps);else c.end=Math.max((S.frame+1)/S.fps,c.start+1/S.fps);saveCue(c.n,0)}
-  endEdit();renderTimeline();renderList();renderInsp();say(which==='in'?'נקבעה כניסה':'נקבעה יציאה')}
+  endEdit();renderTimeline();renderList();renderInsp();say(which==='in'?'סומנה כניסה':'סומנה יציאה')}
+function gotoEdge(which){if(!S.sel)return say('לא נבחר פריט');const it=S.sel.k==='t'?mt(S.sel.id):mc(S.sel.id);
+  seek(S.sel.k==='t'?(which==='in'?it.in:it.out):(which==='in'?Math.round(it.start*S.fps):Math.round(it.end*S.fps)-1))}
+function step(dir){const L=items();if(!L.length)return;let i=S.sel?L.findIndex(x=>x.k===S.sel.k&&x.id===S.sel.id):-1;i=clamp(i+dir,0,L.length-1);select(L[i].k,L[i].id,true)}
 
-// ---------------------------------------------------------------- jobs / status
+// ================================================================ jobs / status
 const JOBN={analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
-async function run(job){const r=await api('/api/run',{job});if(!r.started)say('פעולה אחרת עדיין רצה',true)}
+async function run(job){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt'].includes(job))await flush();const r=await api('/api/run',{job});if(!r.started)say('פעולה אחרת עדיין רצה',true)}
 let wasRunning=false;
 async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
-  $('#logbox').textContent=s.log.join('\n');S.running=s.running;
-  const has=!!s.proj;S.proj=s.proj;
-  for(const id of['b-analyze','b-transcribe','b-translate','b-build','b-export'])$('#'+id).disabled=!has||s.running;
-  $('#b-open').disabled=s.running;
-  const pb=$('#pbar');if(s.running&&s.progress!=null){pb.style.display='inline-block';pb.value=s.progress}else if(s.running){pb.style.display='inline-block';pb.removeAttribute('value')}else pb.style.display='none';
+  $('#logbox').textContent=s.log.join('\n');S.running=s.running;S.proj=s.proj;
+  for(const id of['q-analyze','q-trans','q-build','q-export'])$('#'+id).disabled=!s.proj||s.running;
+  const pb=$('#pbar');if(s.running){pb.style.display='inline-block';if(s.progress!=null)pb.value=s.progress;else pb.removeAttribute('value')}else pb.style.display='none';
   if(s.running){const last=s.log.length?s.log[s.log.length-1].slice(10):'';say(`${JOBN[s.job]||s.job}: ${last}${s.progress!=null?` ${Math.round(s.progress*100)}%`:''}`)}
   else if(wasRunning){await reloadData(false);renderAll();setMode(S.mode);
     if(s.error)say(`שגיאה ב${JOBN[s.job]||''}: ${s.error}`,true);else say(`${JOBN[s.job]||''} הסתיים. ${s.log.length?s.log[s.log.length-1].slice(10):''}`);
@@ -502,59 +566,120 @@ async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
   wasRunning=s.running}
 function renderAll(){renderList();renderInsp();renderTimeline();updTime();$('#welcome').style.display=S.proj?'none':'flex'}
 
-// ---------------------------------------------------------------- dialogs
-function openDlg(id){const d=$(id);d.showModal();const f=d.querySelector('input,select,textarea,button');if(f)f.focus()}
+// ================================================================ dialogs
+function openDlg(id){closeMenu(true);const d=$(id);if(d.open)return;d.showModal();const f=d.querySelector('input,select,textarea,button');if(f)f.focus()}
 document.querySelectorAll('dialog [data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog').close()));
 async function loadSettings(){const s=await api('/api/settings');$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
-  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';$('#s-fs').value=String(s.ui_fs||16);
-  document.documentElement.style.setProperty('--fs',(s.ui_fs||16)+'px')}
-$('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,content:$('#s-content').value,
-  model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),ui_fs:+$('#s-fs').value});$('#s-key').value='';await loadSettings();$('#d-settings').close();say('ההגדרות נשמרו')};
-function openChecks(){const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: פריימים מלפני הכניסה עד אחרי היציאה, מקור משמאל ותוצאה מימין`}),el('figcaption',{text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
+  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
+  const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
+$('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
+  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),ui_fs:+$('#s-fs').value});$('#s-key').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
+function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
 
-// ---------------------------------------------------------------- wiring
-async function openVideo(){say('בוחר סרטון...');const r=await api('/api/pick',{});if(!r.proj){say('לא נבחר סרטון');return}
-  S.proj=r.proj;S.undo=[];S.redo=[];undoBtns();S.sel=null;await reloadData(false);const v=$('#vid');v.dataset.src='';setSrc();S.frame=0;fit();renderAll();setMode('source');say('הפרויקט נפתח')}
-$('#b-open').onclick=openVideo;$('#b-open2').onclick=openVideo;
-$('#b-analyze').onclick=()=>run('analyze');$('#b-transcribe').onclick=()=>run('transcribe');
-$('#b-translate').onclick=()=>run(S.tab==='t'?'translate_titles':'translate_dialog');
-$('#b-build').onclick=()=>run('build');$('#b-export').onclick=()=>run('export');
-$('#b-undo').onclick=undo;
-const bulk=v=>{beginEdit();S.model.titles.forEach(t=>t.translate=v);endEdit();api('/api/titles',{titles:S.model.titles.map(t=>({id:t.id,translate:v}))}).then(()=>reloadData(true)).then(()=>{renderAll();refreshFrame()});say(v?'כל הכותרות יוחלפו':'אף כותרת לא תוחלף')};
-$('#b-all').onclick=()=>bulk(true);$('#b-none').onclick=()=>bulk(false);$('#b-redo').onclick=redo;
-$('#b-checks').onclick=openChecks;$('#b-reveal').onclick=()=>api('/api/reveal',{});
-$('#b-settings').onclick=()=>openDlg('#d-settings');$('#b-help').onclick=()=>openDlg('#d-help');$('#b-log').onclick=()=>openDlg('#d-log');
+// ================================================================ menus
+const MENUS=[
+ ['קובץ',[['ייבוא סרטון...','Ctrl+I',()=>openVideo()],['-'],['ייצוא מדיה (סרטון + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks'],['-'],['שמור','Ctrl+S',()=>flush().then(()=>say('נשמר')),'proj']]],
+ ['עריכה',[['בטל','Ctrl+Z',()=>undo(),'undo'],['בצע שוב','Ctrl+Shift+Z',()=>redo(),'redo'],['-'],['בחר פריט במיקום הנגן','D',()=>selectAtPlayhead(),'proj'],['סמן כניסה','I',()=>setEdge('in'),'sel'],['סמן יציאה','O',()=>setEdge('out'),'sel'],['-'],['להחליף את כל הכותרות','',()=>bulk(true),'proj'],['לא להחליף אף כותרת','',()=>bulk(false),'proj'],['-'],['העדפות...','Ctrl+,',()=>openDlg('#d-settings')]]],
+ ['סרטון',[['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
+ ['תצוגה',[['מקור','',()=>setMode('source'),'proj'],['תוצאה','T',()=>setMode('result'),'proj'],['-'],['הגדל זום','=',()=>zoomTo(S.zoom*1.5),'proj'],['הקטן זום','-',()=>zoomTo(S.zoom/1.5),'proj'],['התאם לחלון','\\',()=>fit(),'proj'],['-'],['יומן פעולות','',()=>openDlg('#d-log')]]],
+ ['עזרה',[['קיצורי מקלדת','Ctrl+Alt+K',()=>openDlg('#d-help')]]]];
+const MB=$('#menubar'),MENU=$('#menu');let openIdx=-1;
+MENUS.forEach(([name],i)=>MB.append(el('button',{class:'mbtn',role:'menuitem','aria-haspopup':'true','aria-expanded':'false',id:'mb'+i,text:name,
+  onclick:()=>openIdx===i?closeMenu():openMenu(i,false),onmouseenter:()=>{if(openIdx>=0&&openIdx!==i)openMenu(i,false)},
+  onkeydown:e=>{if(e.key==='ArrowDown'||e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();openMenu(i,true)}else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();const j=(i+(e.key==='ArrowLeft'?1:-1)+MENUS.length)%MENUS.length;$('#mb'+j).focus()}}})));
+function enabledFor(req){if(!req)return true;if(req==='proj')return !!S.proj&&!S.running;if(req==='undo')return S.undo.length>0;if(req==='redo')return S.redo.length>0;if(req==='sel')return !!S.sel;if(req==='checks')return !!(S.data&&S.data.checks&&S.data.checks.length);return true}
+function openMenu(i,focus){closeMenu(true);openIdx=i;const b=$('#mb'+i);b.setAttribute('aria-expanded','true');MENU.replaceChildren();MENU.setAttribute('aria-labelledby','mb'+i);
+  for(const it of MENUS[i][1]){if(it[0]==='-'){MENU.append(el('div',{role:'separator'}));continue}const[lab,k,fn,req]=it;
+    MENU.append(el('button',{role:'menuitem',disabled:!enabledFor(req),onclick:()=>{closeMenu();fn()}},el('span',{text:lab}),el('span',{class:'k',text:k})))}
+  const r=b.getBoundingClientRect();MENU.style.top=(r.bottom+2)+'px';MENU.style.right=(innerWidth-r.right)+'px';MENU.classList.add('open');
+  if(focus){const f=MENU.querySelector('[role=menuitem]:not(:disabled)');if(f)f.focus()}}
+function closeMenu(keep){if(openIdx<0)return;const b=$('#mb'+openIdx);b.setAttribute('aria-expanded','false');MENU.classList.remove('open');if(!keep&&MENU.contains(document.activeElement))b.focus();openIdx=-1}
+MENU.addEventListener('keydown',e=>{e.stopPropagation();const its=[...MENU.querySelectorAll('[role=menuitem]:not(:disabled)')];const i=its.indexOf(document.activeElement);
+  if(e.key==='ArrowDown'){e.preventDefault();its[(i+1)%its.length].focus()}else if(e.key==='ArrowUp'){e.preventDefault();its[(i-1+its.length)%its.length].focus()}
+  else if(e.key==='Escape'){e.preventDefault();closeMenu()}else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const j=(openIdx+(e.key==='ArrowLeft'?1:-1)+MENUS.length)%MENUS.length;openMenu(j,true)}
+  else if(e.key==='Tab'){closeMenu(true)}});
+document.addEventListener('pointerdown',e=>{if(openIdx>=0&&!MENU.contains(e.target)&&!MB.contains(e.target))closeMenu(true)});
+
+// ================================================================ keyboard: Premiere Pro defaults, by physical key (works on a Hebrew layout)
+const KEYS=[
+ ['כללי'],['Ctrl+I','ייבוא סרטון'],['Ctrl+M','ייצוא מדיה'],['Ctrl+S','שמור'],['Ctrl+Z','בטל'],['Ctrl+Shift+Z / Ctrl+Y','בצע שוב'],['Ctrl+,','העדפות'],['Ctrl+Alt+K','קיצורי מקלדת'],
+ ['ניגון'],['Space','נגן / עצור'],['L','נגן קדימה (שוב = מהר יותר)'],['J','נגן אחורה (שוב = מהר יותר)'],['K','עצור'],['K+L / K+J','פריים קדימה / אחורה'],
+ ['← / →','פריים אחורה / קדימה'],['Shift+← / Shift+→','5 פריימים'],['↑ / ↓','נקודת עריכה קודמת / הבאה (חיתוכים, כניסות ויציאות)'],['Home / End','התחלה / סוף'],
+ ['סימון'],['I / O','כניסה / יציאה של הפריט הנבחר = מיקום הנגן'],['Shift+I / Shift+O','עבור לכניסה / ליציאה'],['D','בחר את הפריט שבמיקום הנגן'],
+ ['ציר זמן'],['= / -','הגדל / הקטן זום'],['\\','התאם לחלון'],['Alt+גלגלת','זום'],['Enter','בנה תצוגה (רינדור)'],
+ ['Retitle'],['T','מעבר בין מקור לתוצאה'],['[ / ]','פריט קודם / הבא'],['F2','עבור לשדה העברית'],['Esc','יציאה משדה טקסט / סגירת תפריט']];
+$('#keys').replaceChildren(...KEYS.map(r=>r.length===1?el('tr',{},el('th',{colspan:'2',text:r[0]})):el('tr',{},el('td',{text:r[0]}),el('td',{text:r[1]}))));
+document.addEventListener('keyup',e=>{if(e.code==='KeyK')S.kDown=false});
+document.addEventListener('keydown',e=>{
+  const t=e.target;const typing=!!t.closest('textarea,select,[contenteditable]')||(t.tagName==='INPUT'&&(!t.classList.contains('hot')||document.activeElement===t));
+  if(e.key==='Escape'){if(openIdx>=0){closeMenu();return}if(typing){t.blur();return}}
+  if(document.querySelector('dialog[open]'))return;
+  const c=e.code,ctrl=e.ctrlKey||e.metaKey,sh=e.shiftKey,alt=e.altKey;
+  if(ctrl&&!alt){
+    if(c==='KeyI'){e.preventDefault();openVideo();return}
+    if(c==='KeyM'){e.preventDefault();run('export');return}
+    if(c==='KeyS'){e.preventDefault();flush().then(()=>say('נשמר'));return}
+    if(c==='Comma'){e.preventDefault();openDlg('#d-settings');return}
+    if(!typing&&c==='KeyZ'&&!sh){e.preventDefault();undo();return}
+    if(!typing&&((c==='KeyZ'&&sh)||c==='KeyY')){e.preventDefault();redo();return}
+  }
+  if(ctrl&&alt&&c==='KeyK'){e.preventDefault();openDlg('#d-help');return}
+  if(typing||ctrl||alt)return;
+  if(t.closest('button,[role=button],[role=menuitem],[role=tab]')&&(c==='Space'||c==='Enter'||c==='NumpadEnter'))return;
+  const ok=()=>e.preventDefault();
+  switch(c){
+    case'Space':ok();play();break;
+    case'KeyL':ok();if(S.kDown)seek(S.frame+1);else shuttle(1);break;
+    case'KeyJ':ok();if(S.kDown)seek(S.frame-1);else shuttle(-1);break;
+    case'KeyK':ok();S.kDown=true;stopShuttle();if(!vid.paused)vid.pause();break;
+    case'ArrowLeft':ok();seek(S.frame-(sh?5:1));break;
+    case'ArrowRight':ok();seek(S.frame+(sh?5:1));break;
+    case'ArrowUp':case'PageUp':ok();gotoEdit(-1);break;
+    case'ArrowDown':case'PageDown':ok();gotoEdit(1);break;
+    case'Home':ok();seek(0);break;case'End':ok();seek(S.n-1);break;
+    case'KeyI':ok();sh?gotoEdge('in'):setEdge('in');break;
+    case'KeyO':ok();sh?gotoEdge('out'):setEdge('out');break;
+    case'KeyD':ok();selectAtPlayhead();break;
+    case'KeyT':ok();setMode(S.mode==='result'?'source':'result');break;
+    case'Equal':case'NumpadAdd':ok();zoomTo(S.zoom*1.5);break;
+    case'Minus':case'NumpadSubtract':ok();zoomTo(S.zoom/1.5);break;
+    case'Backslash':ok();fit();break;
+    case'Enter':case'NumpadEnter':ok();run('build');break;
+    case'BracketLeft':ok();step(-1);break;case'BracketRight':ok();step(1);break;
+    case'F2':{const f=$('#i-he')||$('#i-che');if(f){ok();f.focus()}break}
+    case'Slash':if(sh){ok();openDlg('#d-help')}break;
+  }
+});
+
+// ================================================================ splitters (drag or arrow keys)
+document.querySelectorAll('[data-split]').forEach(sp=>{
+  const isV=sp.dataset.split==='v';
+  const apply=px=>{if(isV)document.documentElement.style.setProperty('--left',clamp(px,280,innerWidth*0.55)+'px');
+    else $('#app').style.gridTemplateRows=`38px ${clamp(px,180,innerHeight-220)}px 4px minmax(0,1fr) 26px`;renderTimeline();refreshFrameSoon(200)};
+  sp.addEventListener('pointerdown',e=>{e.preventDefault();const mv=ev=>apply(isV?(innerWidth-ev.clientX-6):(ev.clientY-38));const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up)};addEventListener('pointermove',mv);addEventListener('pointerup',up)});
+  sp.addEventListener('keydown',e=>{const cur=isV?$('#insp').getBoundingClientRect().width:$('#prog').getBoundingClientRect().height;
+    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();e.stopPropagation();const d=(e.key==='ArrowLeft'||e.key==='ArrowDown'?20:-20);apply(isV?cur+d:cur-d)}})});
+
+// ================================================================ wiring
+async function openVideo(){closeMenu(true);say('בוחר סרטון...');const r=await api('/api/pick',{});if(!r.proj){say('לא נבחר סרטון');return}
+  S.proj=r.proj;S.undo=[];S.redo=[];S.sel=null;await reloadData(false);const v=$('#vid');v.dataset.src='';setSrc();S.frame=0;renderAll();fit();setMode('source');say('הפרויקט נפתח')}
+function bulk(v){beginEdit();S.model.titles.forEach(t=>t.translate=v);endEdit();api('/api/titles',{titles:S.model.titles.map(t=>({id:t.id,translate:v}))}).then(()=>reloadData(true)).then(()=>{renderAll();refreshFrame()});say(v?'כל הכותרות יוחלפו':'אף כותרת לא תוחלף')}
+$('#w-open').onclick=openVideo;
+$('#q-analyze').onclick=()=>run('analyze');$('#q-trans').onclick=()=>run('transcribe');$('#q-build').onclick=()=>run('build');$('#q-export').onclick=()=>run('export');
+$('#b-all').onclick=()=>bulk(true);$('#b-none').onclick=()=>bulk(false);$('#b-log').onclick=()=>openDlg('#d-log');
 $('#tab-t').onclick=()=>{S.tab='t';renderList()};$('#tab-c').onclick=()=>{S.tab='c';renderList()};
-$('[role=tablist]').addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){S.tab=S.tab==='t'?'c':'t';renderList();$(S.tab==='t'?'#tab-t':'#tab-c').focus()}});
-$('#t-start').onclick=()=>seek(0);$('#t-secm').onclick=()=>seek(S.frame-Math.round(S.fps));$('#t-secp').onclick=()=>seek(S.frame+Math.round(S.fps));
-$('#t-frm').onclick=()=>seek(S.frame-1);$('#t-frp').onclick=()=>seek(S.frame+1);$('#t-play').onclick=play;
+$('#h-proj').addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();S.tab=S.tab==='t'?'c':'t';renderList();$(S.tab==='t'?'#tab-t':'#tab-c').focus()}});
+$('#search').addEventListener('input',e=>{S.filter=e.target.value;renderList()});
+$('#t-play').onclick=play;$('#t-back').onclick=()=>seek(S.frame-1);$('#t-fwd').onclick=()=>seek(S.frame+1);
+$('#t-markin').onclick=()=>setEdge('in');$('#t-markout').onclick=()=>setEdge('out');$('#t-goin').onclick=()=>gotoEdge('in');$('#t-goout').onclick=()=>gotoEdge('out');
+$('#t-prevedit').onclick=()=>gotoEdit(-1);$('#t-nextedit').onclick=()=>gotoEdit(1);
 $('#m-src').onclick=()=>setMode('source');$('#m-res').onclick=()=>setMode('result');
 $('#z-in').onclick=()=>zoomTo(S.zoom*1.5);$('#z-out').onclick=()=>zoomTo(S.zoom/1.5);$('#z-fit').onclick=fit;
-$('#tlwrap').addEventListener('wheel',e=>{if(e.ctrlKey){e.preventDefault();zoomTo(S.zoom*(e.deltaY<0?1.25:0.8))}},{passive:false});
+$('#tlwrap').addEventListener('wheel',e=>{if(e.altKey||e.ctrlKey){e.preventDefault();zoomTo(S.zoom*(e.deltaY<0?1.25:0.8))}},{passive:false});
 addEventListener('resize',()=>{renderTimeline();refreshFrameSoon(200)});
-document.addEventListener('keydown',e=>{
-  const typing=e.target.closest('input,textarea,select,[contenteditable]');
-  if(e.key==='Escape'&&typing){e.target.blur();return}
-  if(document.querySelector('dialog[open]'))return;
-  if((e.ctrlKey||e.metaKey)&&!typing){if(e.key.toLowerCase()==='z'&&!e.shiftKey){e.preventDefault();undo();return}
-    if(e.key.toLowerCase()==='y'||(e.key.toLowerCase()==='z'&&e.shiftKey)){e.preventDefault();redo();return}}
-  if(typing||e.ctrlKey||e.metaKey||e.altKey)return;
-  if(e.target.closest('button,[role=button]')&&(e.key===' '||e.key==='Enter'))return;
-  const k=e.key;
-  if(k===' '){e.preventDefault();play()}
-  else if(k==='ArrowLeft'){e.preventDefault();seek(S.frame-(e.shiftKey?Math.round(S.fps):1))}
-  else if(k==='ArrowRight'){e.preventDefault();seek(S.frame+(e.shiftKey?Math.round(S.fps):1))}
-  else if(k==='Home'){e.preventDefault();seek(0)}else if(k==='End'){e.preventDefault();seek(S.n-1)}
-  else if(k==='t'||k==='T'||k==='א'){setMode(S.mode==='result'?'source':'result')}
-  else if(k==='i'||k==='I'||k==='ן'){setEdge('in')}else if(k==='o'||k==='O'||k==='ם'){setEdge('out')}
-  else if(k==='['){step(-1)}else if(k===']'){step(1)}
-  else if(k==='+'||k==='='){zoomTo(S.zoom*1.5)}else if(k==='-'){zoomTo(S.zoom/1.5)}
-  else if(k==='?'){openDlg('#d-help')}
-  else if(k==='Enter'&&S.sel){const f=$('#i-he')||$('#i-che');if(f){e.preventDefault();f.focus()}}
-});
 (async()=>{S.fonts=await api('/api/fonts');await loadSettings();const s=await api('/api/status');
-  if(s.proj){S.proj=s.proj;await reloadData(false);setSrc();fit();say('פרויקט פתוח: '+S.data.project.video.split(/[\\/]/).pop())}
-  renderAll();setMode('source');setInterval(poll,800);poll()})();
+  if(s.proj){S.proj=s.proj;await reloadData(false);setSrc();say('פרויקט פתוח: '+S.data.project.video.split(/[\\/]/).pop())}
+  renderAll();if(S.proj)fit();setMode('source');setInterval(poll,800);poll()})();
 </script>
 </body>
 </html>
