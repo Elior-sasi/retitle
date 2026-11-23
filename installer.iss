@@ -21,6 +21,7 @@ CloseApplications=yes
 RestartApplications=no
 UninstallDisplayIcon={app}\Retitle.exe
 SetupLogging=yes
+ChangesAssociations=yes
 SetupIconFile=assets\icon.ico
 WizardSmallImageFile=assets\icon_wizard.bmp
 
@@ -36,6 +37,13 @@ Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
 Source: "dist\Retitle\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Registry]
+; .retitle project files open in Retitle (double-click), with the app icon
+Root: HKA; Subkey: "Software\Classes\.retitle"; ValueType: string; ValueName: ""; ValueData: "Retitle.Project"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\Retitle.Project"; ValueType: string; ValueName: ""; ValueData: "Retitle project"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Retitle.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\Retitle.exe,0"
+Root: HKA; Subkey: "Software\Classes\Retitle.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Retitle.exe"" ""%1"""
 
 [Icons]
 Name: "{group}\Retitle"; Filename: "{app}\Retitle.exe"

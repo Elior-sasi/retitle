@@ -76,3 +76,71 @@ def run(proj, out_name=None, crf=14, preset="veryfast", scale=None, progress=Non
         raise
     wr.close()
     return out
+
+
+def overlay_frame(proj, f, T, meta, cache, W, H):
+    """Hebrew layers only, premultiplied BGRA float, or None when nothing is on screen."""
+    out = None
+    for t in T["titles"]:
+        if not t.get("translate", True) or t.get("mode") == "remove" or t["id"] not in meta:
+            continue
+        lay = t.get("layer") or {"type": "text"}
+        L = None
+        if lay["type"] == "sequence":
+            p = os.path.join(proj, lay["dir"], f"{f:06d}.png")
+            if os.path.exists(p):
+                L = render.load_layer(p)
+        elif t["in"] <= f <= t["out"]:
+            if t["id"] not in cache:
+                cache[t["id"]] = render.load_layer(meta[t["id"]]["file"])
+            anim = dict(t.get("anim", {"mode": "static"}))
+            anim.setdefault("in", t["in"]); anim.setdefault("out", t["out"])
+            L = render.place(cache[t["id"]], meta[t["id"]], anim, f, W, H)
+        if L is not None:
+            out = L if out is None else L + out * (1 - L[..., 3:4])
+    return out
+
+
+def run_overlay(proj, progress=None):
+    """Transparent video with only the Hebrew titles (ProRes 4444 with alpha, .mov), frame-exact with the
+    source, to lay over another cut of the same video (e.g. a textless version) in Premiere/Resolve."""
+    import subprocess
+    P = vio.load_json(os.path.join(proj, "project.json"))
+    T = vio.load_json(os.path.join(proj, "titles.json"))
+    meta = vio.load_json(os.path.join(proj, "layers", "meta.json"), {})
+    for t in T["titles"]:
+        if t.get("layer", {}).get("type") == "sequence":
+            meta.setdefault(t["id"], {})
+    info = P["info"]; W, H = info["width"], info["height"]
+    n = P.get("n_frames") or int(round(info["duration"] * info["fps"]))
+    os.makedirs(os.path.join(proj, "out"), exist_ok=True)
+    base = os.path.splitext(os.path.basename(P["video"]))[0]
+    out = os.path.join(proj, "out", f"{base}_HEB_titles_alpha.mov")
+    cmd = [vio.FFMPEG, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", f"{W}x{H}",
+           "-r", f"{info['fps_num']}/{info['fps_den']}", "-i", "-",
+           "-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-vendor", "apl0",
+           "-movflags", "+write_colr", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", out]
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, **vio.NOWIN)
+    empty = np.zeros((H, W, 4), np.uint8).tobytes()
+    cache = {}
+    try:
+        for f in range(n):
+            L = overlay_frame(proj, f, T, meta, cache, W, H)
+            if L is None:
+                p.stdin.write(empty)
+            else:
+                a = L[..., 3:4]
+                rgb = np.where(a > 1e-4, L[..., :3] / np.maximum(a, 1e-4), 0)   # straight alpha, as editors expect
+                p.stdin.write(np.clip(np.concatenate([rgb, a], 2) * 255 + 0.5, 0, 255).astype(np.uint8).tobytes())
+            if progress and f % 24 == 0:
+                progress(f / n)
+        p.stdin.close(); p.wait()
+    except BaseException:
+        try:
+            p.kill(); p.wait(); os.remove(out)
+        except Exception:
+            pass
+        raise
+    if p.returncode:
+        raise RuntimeError("ffmpeg ProRes encode failed")
+    return out

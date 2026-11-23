@@ -199,6 +199,20 @@ def job_export():
     log(f"הסרטון מוכן: {res['out']}")
 
 
+def job_overlay():
+    """Only the Hebrew titles on a transparent background, to lay over another cut of the same video."""
+    from . import compose
+    T = vio.load_json(P("titles.json"))
+    if not any(t.get("translate", True) and t.get("mode") != "remove" and (t.get("he") or (t.get("layer") or {}).get("type") == "image")
+               for t in T.get("titles", [])):
+        raise RuntimeError("אין כותרות בעברית לייצוא - הקלד עברית לפחות לכותרת אחת")
+    pre = build_steps(False) if (dirty_groups(T) or needs_extract(T) or not os.path.exists(P("layers", "meta.json"))) else []
+    res = {}
+    run_steps(pre + [("מקודד כותרות על רקע שקוף (ProRes 4444)", 0.4, lambda: res.update(out=compose.run_overlay(STATE["proj"], progress=prog)))])
+    log(f"כותרות בלבד, רקע שקוף: {res['out']}")
+    log("להדבקה על סרטון אחר באותו אורך וקצב פריימים (למשל גרסה בלי טקסט): שים את הקובץ ברצועה מעל הסרטון, מתחילת הציר.")
+
+
 def job_transcribe():
     from . import srt
     s = settings()
@@ -268,7 +282,7 @@ def job_update():
 
 
 JOBS = {"analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
-        "transcribe": job_transcribe, "srt": job_srt,
+        "transcribe": job_transcribe, "overlay": job_overlay, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
 
@@ -299,7 +313,23 @@ def start(name):
 
 PICK = {"video": ("Video (*.mp4;*.mov;*.mkv;*.m4v;*.avi;*.webm)", "Video", "*.mp4 *.mov *.mkv *.m4v *.avi *.webm"),
         "srt": ("Subtitles (*.srt)", "SRT", "*.srt"),
-        "png": ("PNG image (*.png)", "PNG", "*.png")}
+        "png": ("PNG image (*.png)", "PNG", "*.png"),
+        "retitle": ("Retitle project (*.retitle)", "Retitle", "*.retitle")}
+
+
+def save_file(name, folder):
+    if WINDOW is not None:
+        import webview
+        r = WINDOW.create_file_dialog(webview.SAVE_DIALOG, directory=folder, save_filename=name,
+                                      file_types=("Retitle project (*.retitle)",))
+        return (r[0] if isinstance(r, (list, tuple)) else r) if r else ""
+    import tkinter as tk
+    from tkinter import filedialog
+    r = tk.Tk(); r.withdraw(); r.attributes("-topmost", True)
+    p = filedialog.asksaveasfilename(initialdir=folder, initialfile=name, defaultextension=".retitle",
+                                     filetypes=[("Retitle", "*.retitle")])
+    r.destroy()
+    return p
 
 
 def pick_file(kind="video"):
@@ -316,17 +346,60 @@ def pick_file(kind="video"):
     return p
 
 
-def open_project(video):
-    proj = os.path.splitext(video)[0] + "_retitle"
-    os.makedirs(proj, exist_ok=True)
-    STATE["proj"] = proj
+def _activate(rfile, data):
+    from . import project
+    if STATE["running"]:
+        raise RuntimeError("פעולה אחרת עדיין רצה - חכה שתסתיים או בטל אותה")
+    STATE["proj"] = data
+    STATE["file"] = rfile
+    STATE["missing_video"] = not os.path.isfile(vio.load_json(os.path.join(data, "project.json"), {}).get("video", ""))
     FRAMES.clear(); LAYERS.clear()
-    if not os.path.exists(P("project.json")):
-        vio.save_json(P("project.json"), {"video": os.path.abspath(video), "info": vio.probe(video)})
     STATE["log"] = []
-    log(f"פרויקט: {proj}")
-    threading.Thread(target=build_media, args=(proj,), daemon=True).start()
-    return proj
+    log(f"פרויקט: {rfile}")
+    s = vio.load_json(CFG, {})
+    s["recent"] = [rfile] + [x for x in s.get("recent", []) if os.path.normcase(x) != os.path.normcase(rfile)][:11]
+    os.makedirs(CFG_DIR, exist_ok=True)
+    vio.save_json(CFG, s)
+    set_title()
+    if not STATE["missing_video"]:
+        threading.Thread(target=build_media, args=(data,), daemon=True).start()
+    return data
+
+
+def set_title():
+    if WINDOW is None:
+        return
+    try:
+        name = os.path.splitext(os.path.basename(STATE["file"]))[0] if STATE.get("file") else ""
+        WINDOW.set_title(f"{name} - Retitle" if name else "Retitle")
+    except Exception:
+        pass
+
+
+def open_project(video):
+    """New project from a video (or the existing one of that video)."""
+    from . import project
+    rfile = project.for_video(video)
+    data, _ = project.read(rfile)
+    return _activate(rfile, data)
+
+
+def open_file(path):
+    """Open a .retitle file, or a video (its project)."""
+    from . import project
+    if not path.lower().endswith(project.EXT):
+        return open_project(path)
+    data, video = project.read(path)
+    return _activate(path, data)
+
+
+def recent():
+    out = []
+    for f in vio.load_json(CFG, {}).get("recent", []):
+        d = vio.load_json(f, {}) if os.path.isfile(f) else {}
+        out.append({"path": f, "name": os.path.splitext(os.path.basename(f))[0], "folder": os.path.dirname(f),
+                    "saved": d.get("saved", ""), "exists": bool(d)})
+    return out
 
 
 # ------------------------------------------------------------------ timeline media (video thumbnails + audio waveform)
@@ -516,8 +589,12 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "text/html; charset=utf-8")
         if u.path == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
+        if u.path == "/api/ping":
+            return self._send(200, {"app": "retitle"})
+        if u.path == "/api/recent":
+            return self._send(200, {"items": recent()})
         if u.path == "/api/status":
-            return self._send(200, {"proj": STATE["proj"], "running": STATE["running"], "job": STATE["job"],
+            return self._send(200, {"proj": STATE["proj"], "file": STATE.get("file"), "missing_video": STATE.get("missing_video", False), "running": STATE["running"], "job": STATE["job"],
                                     "error": STATE["error"], "log": STATE["log"], "progress": STATE["progress"],
                                     "stage": STATE["stage"], "step": STATE["step"], "steps": STATE["steps"],
                                     "elapsed": round((time.time() if STATE["running"] else STATE.get("t1", time.time())) - STATE["t0"], 1) if STATE["t0"] else 0,
@@ -537,7 +614,7 @@ class H(BaseHTTPRequestHandler):
             S = vio.load_json(P("shots.json"), {"cuts": [], "n_frames": 0})
             px = P("proxy.mp4")
             return self._send(200, {
-                "project": PJ, "titles": T, "dialog": vio.load_json(P("dialog.json"), {"cues": []}),
+                "project": PJ, "file": STATE.get("file"), "missing_video": not os.path.isfile(PJ.get("video", "")), "titles": T, "dialog": vio.load_json(P("dialog.json"), {"cues": []}),
                 "cuts": S.get("cuts", []),
                 "n_frames": PJ.get("n_frames") or S.get("n_frames") or int(round(PJ["info"]["duration"] * PJ["info"]["fps"])),
                 "dirty": sorted(dirty_groups(T)) if T["titles"] and any("built" in t for t in T["titles"]) else [],
@@ -584,8 +661,11 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/pick":
             p = pick_file()
             if p:
-                open_project(p)
-            return self._send(200, {"proj": STATE["proj"]})
+                try:
+                    open_project(p)
+                except Exception as e:
+                    return self._send(200, {"proj": None, "error": str(e)})
+            return self._send(200, {"proj": STATE["proj"] if p else None, "file": STATE.get("file")})
         if u.path == "/api/open":
             return self._send(200, {"proj": open_project(b["video"])})
         if u.path == "/api/settings":
@@ -621,6 +701,20 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"error": str(e), "current": update.BUILD})
             UPDATE.clear(); UPDATE.update(r)
             return self._send(200, r)
+        if u.path in ("/api/open_file", "/api/open_project"):
+            path = b.get("path") or pick_file("retitle")
+            if not path:
+                return self._send(200, {"proj": None})
+            try:
+                open_file(path)
+                if WINDOW is not None:
+                    try:
+                        WINDOW.restore(); WINDOW.show()
+                    except Exception:
+                        pass
+            except Exception as e:
+                return self._send(200, {"proj": None, "error": str(e)})
+            return self._send(200, {"proj": STATE["proj"], "file": STATE["file"], "missing_video": STATE["missing_video"]})
         if not STATE["proj"]:
             return self._send(400, {"error": "no project"})
         if u.path == "/api/titles":
@@ -664,6 +758,43 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/qa":
             from . import qa
             return self._send(200, {"issues": qa.run(STATE["proj"])})
+        if u.path == "/api/save":
+            from . import project
+            if not STATE.get("file"):
+                return self._send(200, {"ok": False})
+            pj = vio.load_json(P("project.json"))
+            project.write(STATE["file"], STATE["proj"], pj["video"])
+            return self._send(200, {"ok": True, "file": STATE["file"]})
+        if u.path == "/api/save_as":
+            from . import project
+            if not STATE.get("file"):
+                return self._send(200, {"ok": False})
+            if STATE["running"]:
+                return self._send(200, {"ok": False, "error": "פעולה אחרת עדיין רצה"})
+            cur = STATE["file"]
+            path = save_file(os.path.splitext(os.path.basename(cur))[0] + " - עותק.retitle", os.path.dirname(cur))
+            if not path:
+                return self._send(200, {"ok": False})
+            if os.path.normcase(os.path.abspath(path if path.lower().endswith(".retitle") else path + ".retitle")) == os.path.normcase(os.path.abspath(cur)):
+                project.write(cur, STATE["proj"], vio.load_json(P("project.json"))["video"])
+                return self._send(200, {"ok": True, "file": cur})
+            try:
+                nf, nd = project.save_as(cur, STATE["proj"], path)
+                _activate(nf, nd)
+            except Exception as e:
+                return self._send(200, {"ok": False, "error": str(e)})
+            return self._send(200, {"ok": True, "file": nf, "proj": nd})
+        if u.path == "/api/relink":
+            from . import project
+            path = pick_file("video")
+            if not path:
+                return self._send(200, {"ok": False})
+            try:
+                project.relink(STATE["file"], STATE["proj"], path)
+                _activate(STATE["file"], STATE["proj"])
+            except Exception as e:
+                return self._send(200, {"ok": False, "error": str(e)})
+            return self._send(200, {"ok": True})
         if u.path == "/api/reveal":
             target = P("out") if os.path.isdir(P("out")) else STATE["proj"]
             if sys.platform.startswith("win"):
@@ -686,8 +817,32 @@ def free_port(start=8765):
     return 0
 
 
+def _handoff(path):
+    """If Retitle is already open, ask it to open `path` and return True."""
+    import urllib.request
+    for p in range(8765, 8775):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{p}/api/ping", timeout=0.4) as r:
+                if json.load(r).get("app") != "retitle":
+                    continue
+            req = urllib.request.Request(f"http://127.0.0.1:{p}/api/open_file", data=json.dumps({"path": path}).encode(), method="POST")
+            urllib.request.urlopen(req, timeout=30).read()
+            return True
+        except Exception:
+            continue
+    return False
+
+
 def main():
     global WINDOW
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if args and os.path.isfile(args[0]):
+        if _handoff(os.path.abspath(args[0])):
+            return
+        try:
+            open_file(os.path.abspath(args[0]))
+        except Exception:
+            traceback.print_exc()
     port = free_port()
     srv = ThreadingHTTPServer(("127.0.0.1", port), H)
     srv.daemon_threads = True
