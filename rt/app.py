@@ -707,12 +707,25 @@ def job_auto(opts=None):
         RANGE[:] = [0.0, 1.0]
         STATE.update(stage=name, step=0, steps=0)
         prog(0)
-        if job == "translate_titles":
-            job_translate("titles")
-        elif job == "translate_dialog":
-            job_translate("dialog")
-        else:
-            JOBS[job]()
+        claude_part = job in ("translate_titles", "translate_dialog", "design")
+        if claude_part and PHASE.get("no_claude"):
+            acc += w
+            continue
+        try:
+            if job == "translate_titles":
+                job_translate("titles")
+            elif job == "translate_dialog":
+                job_translate("dialog")
+            else:
+                JOBS[job]()
+        except Cancelled:
+            raise
+        except Exception as e:
+            if not claude_part:
+                raise
+            # no credit / bad key / network: the rest (build, export, SRT) still runs without Claude
+            PHASE["no_claude"] = True
+            log(f"דילגתי על השלבים של Claude: {e}")
         acc += w
     if not settings().get("api_key"):
         log("בלי מפתח Claude דילגתי על התרגום האוטומטי - אפשר לכתוב עברית ולייצא שוב")
@@ -784,6 +797,7 @@ def start(name):
                 pass
             STATE["t1"] = time.time()
             PHASE.update(range=[0.0, 1.0], name="")
+            PHASE.pop("no_claude", None)
             STATE["running"] = False
             STATE["progress"] = None
     threading.Thread(target=run, daemon=True).start()
