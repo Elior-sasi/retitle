@@ -536,8 +536,17 @@ def job_srt():
 def job_translate(kind):
     from . import translate
     s = settings()
-    if not s.get("api_key"):
+    use_dicta = s.get("translate_engine") == "dicta"
+    if not s.get("api_key") and not use_dicta:
         raise RuntimeError("אין מפתח API בהגדרות")
+    engine = "DictaLM" if use_dicta else "Claude"
+
+    def tr(batch, ctx, images=None):
+        if use_dicta:                       # the Hebrew model on this computer (free, slow)
+            from . import dicta
+            return dicta.translate(batch, s.get("glossary", ""), ctx, log=log)
+        return translate.translate(batch, s["api_key"], s.get("glossary", ""), ctx, s.get("model"), images=images)
+    workers = 1 if use_dicta else 4
     if kind == "titles":
         from .detect import junk_reason
         with LOCK:                              # OCR noise is set to stay as it is, not sent to translation
@@ -559,7 +568,7 @@ def job_translate(kind):
         if not items:
             log("אין כותרות שמחכות לתרגום (כולן כבר בעברית או מסומנות \"נשאר\").")
             return
-        STATE.update(stage=f"מתרגם {len(items)} כותרות עם Claude", step=1, steps=1)
+        STATE.update(stage=f"מתרגם {len(items)} כותרות עם {engine}", step=1, steps=1)
         log(f"מתרגם {len(items)} כותרות...")
         # the same lone line again (a repeated caption or name card): translated once, reused - no tokens
         from .detect import norm
@@ -592,10 +601,9 @@ def job_translate(kind):
         batches = [b for b in batches if b]
         prog(0.02)
         from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(4) as ex:              # requests side by side (and one Message Batch in batch mode)
-            futs = [ex.submit(translate.translate, bt, s["api_key"], s.get("glossary", ""),
-                              translate.context(s.get("content"), "titles"), s.get("model"),
-                              images={i: imgs[i] for i in imgs if any(x["id"] == i for x in bt)}) for bt in batches]
+        with ThreadPoolExecutor(workers) as ex:        # requests side by side (and one Message Batch in batch mode)
+            futs = [ex.submit(tr, bt, translate.context(s.get("content"), "titles"),
+                              {i: imgs[i] for i in imgs if any(x["id"] == i for x in bt)}) for bt in batches]
             for k, fu in enumerate(futs):
                 res.update(fu.result())
                 prog((k + 1) / len(batches))
@@ -632,15 +640,14 @@ def job_translate(kind):
         if not items:
             log("אין כתוביות שמחכות לתרגום.")
             return
-        STATE.update(stage=f"מתרגם {len(items)} כתוביות עם Claude", step=1, steps=1)
+        STATE.update(stage=f"מתרגם {len(items)} כתוביות עם {engine}", step=1, steps=1)
         log(f"מתרגם {len(items)} כתוביות...")
         res = {}
         prog(0.02)
         from concurrent.futures import ThreadPoolExecutor
         chunks = [items[i:i + 60] for i in range(0, len(items), 60)]
-        with ThreadPoolExecutor(4) as ex:
-            futs = [ex.submit(translate.translate, ch, s["api_key"], s.get("glossary", ""),
-                              translate.context(s.get("content"), "dialog"), s.get("model")) for ch in chunks]
+        with ThreadPoolExecutor(workers) as ex:
+            futs = [ex.submit(tr, ch, translate.context(s.get("content"), "dialog")) for ch in chunks]
             for k, fu in enumerate(futs):
                 res.update(fu.result())
                 prog((k + 1) / len(chunks))
@@ -651,6 +658,31 @@ def job_translate(kind):
                     c["he"] = res[str(c["n"])]
             vio.save_json(P("dialog.json"), D)
     log("התרגום הושלם. עבור ותקן.")
+
+
+
+def job_translate_compare():
+    """The same titles translated by Claude and by DictaLM, side by side (compare.json); the user picks per line."""
+    from . import translate, dicta
+    s = settings()
+    if not s.get("api_key"):
+        raise RuntimeError("להשוואה צריך גם את Claude (העדפות > Claude)")
+    T = vio.load_json(P("titles.json"))
+    items = [{"id": t["id"], "src": t["src"], "group": t["group"]} for t in T["titles"]
+             if t.get("translate", True) and t.get("kind") != "sub" and t.get("mode") != "remove"]
+    if not items:
+        raise RuntimeError("אין כותרות לתרגום")
+    ctx = translate.context(s.get("content"), "titles")
+    STATE.update(stage="Claude מתרגם")
+    log(f"השוואת תרגום: {len(items)} כותרות")
+    a = translate.translate(items, s["api_key"], s.get("glossary", ""), ctx, s.get("model"))
+    prog(0.2)
+    STATE.update(stage="DictaLM מתרגם (איטי)")
+    b = dicta.translate(items, s.get("glossary", ""), ctx, log=log)
+    rows = [{"id": it["id"], "group": it["group"], "src": it["src"], "claude": a.get(it["id"], ""), "dicta": b.get(it["id"], ""),
+             "he": next((t.get("he", "") for t in T["titles"] if t["id"] == it["id"]), "")} for it in items]
+    vio.save_json(P("compare.json"), {"rows": rows})
+    log("ההשוואה מוכנה: וידאו > השוואת תרגום")
 
 
 UPDATE = {}
@@ -823,6 +855,7 @@ def auto_parts(opts=None):
     T = vio.load_json(P("titles.json"), {"titles": []})["titles"]
     D = vio.load_json(P("dialog.json"), {"cues": []})["cues"]
     key = bool(s.get("api_key"))
+    tkey = key or s.get("translate_engine") == "dicta"
     want_t, want_d = opts.get("titles", True), opts.get("dialog", True)
     parts = []
     if want_t:
@@ -834,13 +867,14 @@ def auto_parts(opts=None):
                 parts.append(("classify", "Claude בודק מה כל טקסט - כותרת, לוגו, קרדיט או רעש", 0.04))
             if any(t.get("translate", True) and t.get("font_auto") and not t.get("font_by_claude") for t in T):
                 parts.append(("fonts", "Claude בוחר גופן לכל כותרת", 0.05))
-        if key:
+        if tkey:
             parts.append(("translate_titles", "תרגום הכותרות", 0.05))
+        if key:
             parts.append(("design", "עיצוב כותרות מעוצבות ולוגואים (Claude)", 0.06))
     if want_d and vio.load_json(P("project.json")).get("info", {}).get("has_audio", True):
         if not D:
             parts.append(("transcribe", "תמלול הדיאלוג", 0.25))
-        if key:
+        if tkey:
             parts.append(("translate_dialog", "תרגום הכתוביות", 0.05))
         parts.append(("srt", "קובץ כתוביות SRT", 0.01))
     if want_t:
@@ -1158,7 +1192,7 @@ def job_queue():
     log("התור הסתיים.")
 
 
-JOBS = {"agent": job_agent, "design": job_design, "design_edit": job_design_edit, "propaint": job_propaint, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
+JOBS = {"translate_compare": job_translate_compare, "agent": job_agent, "design": job_design, "design_edit": job_design_edit, "propaint": job_propaint, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
@@ -1672,6 +1706,11 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200); self.send_header("Content-Type", "image/jpeg")
             self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(data)))
             self.end_headers(); self.wfile.write(data); return
+        if u.path == "/api/dicta":
+            from . import dicta
+            return self._send(200, dicta.status())
+        if u.path == "/api/compare":
+            return self._send(200, vio.load_json(P("compare.json"), {"rows": []}) if STATE.get("proj") else {"rows": []})
         if u.path == "/api/propainter":
             from . import propaint
             return self._send(200, propaint.status())
@@ -1892,9 +1931,27 @@ class H(BaseHTTPRequestHandler):
             if STATE["running"]:
                 return self._send(200, {"started": False})
             STATE["args"] = b.get("args") or {}
-            if b["job"] in ("translate_titles", "translate_dialog", "review", "design", "design_edit") and not settings().get("api_key"):
+            if (b["job"] in ("review", "design", "design_edit", "translate_compare") or
+                    (b["job"] in ("translate_titles", "translate_dialog") and settings().get("translate_engine") != "dicta")) \
+                    and not settings().get("api_key"):
                 return self._send(200, {"started": False, "need": "api_key"})
             return self._send(200, {"started": start(b["job"])})
+        if u.path == "/api/dicta/install":
+            from . import dicta
+            dicta.install_async()
+            return self._send(200, {"ok": True})
+        if u.path == "/api/compare/pick":
+            with LOCK:
+                T = vio.load_json(P("titles.json"))
+                ch = {str(k): v for k, v in (b.get("he") or {}).items()}
+                for t in T["titles"]:
+                    if t["id"] in ch:
+                        t["he"] = ch[t["id"]]
+                vio.save_json(P("titles.json"), T)
+            from . import render
+            if os.path.exists(P("layers", "meta.json")):
+                render.build_layers(STATE["proj"], only=set(ch))
+            return self._send(200, {"ok": True, "n": len(ch)})
         if u.path == "/api/propainter/install":
             from . import propaint
             propaint.install_async()
