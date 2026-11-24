@@ -42,6 +42,17 @@ def ready():
         all(os.path.exists(os.path.join(w, f)) for f in WEIGHT_FILES) and os.path.exists(os.path.join(home(), "ok"))
 
 
+def vram_gb():
+    """Memory of the NVIDIA card in GB (nvidia-smi comes with the driver); 6 when it cannot be read."""
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=10,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        return max(float(x) for x in out.split()) / 1024
+    except Exception:
+        return 6.0
+
+
 def gpu():
     from .asr import has_nvidia
     return has_nvidia()
@@ -150,26 +161,36 @@ def card(proj, gid, log=print, progress=None):
         cv2.imwrite(os.path.join(msk, f"{i:05d}.png"), m)
     h, w = shape[:2]
     on_gpu = gpu()
-    # working size: the GPU takes the card near full size; the CPU only a small copy (slow, but it works)
-    budget = 900 * 900 if on_gpu else 420 * 420
+    # working size by the graphics card's memory (a 6 GB laptop card takes about 0.45 megapixel per frame
+    # in half precision); the CPU only a small copy (slow, but it works). Out of memory: again, smaller.
+    vram = vram_gb() if on_gpu else 0
+    budget = (0.95e6 if vram >= 12 else 0.65e6 if vram >= 8 else 0.45e6) if on_gpu else 0.18e6
+    sub = "40" if vram >= 8 else "24" if on_gpu else "14"
     r = min(1.0, (budget / float(h * w)) ** 0.5)
-    cmd = [_py(), "inference_propainter.py", "-i", src, "-m", msk, "-o", os.path.join(work, "out"), "--save_frames",
-           "--resize_ratio", f"{r:.3f}", "--subvideo_length", "40" if on_gpu else "14", "--neighbor_length", "10" if on_gpu else "6"]
-    if on_gpu:
-        cmd.append("--fp16")
-    log(f"ProPainter על {len(fs)} פריימים" + (" (כרטיס מסך)" if on_gpu else " (מעבד - איטי)"))
-    p = subprocess.Popen(cmd, cwd=code_dir(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    tail = []
-    for line in p.stdout:
-        tail = (tail + [line])[-20:]
-        if progress and "%|" in line:
-            try:
-                progress(min(0.95, float(line.split("%|")[0].split()[-1]) / 100))
-            except ValueError:
-                pass
-    if p.wait() != 0:
-        raise RuntimeError("ProPainter נכשל: " + "".join(tail)[-300:])
+    log(f"ProPainter על {len(fs)} פריימים" + (f" (כרטיס מסך, {vram:.0f}GB)" if on_gpu else " (מעבד - איטי)"))
+    for attempt in range(3):
+        cmd = [_py(), "inference_propainter.py", "-i", src, "-m", msk, "-o", os.path.join(work, "out"), "--save_frames",
+               "--resize_ratio", f"{r:.3f}", "--subvideo_length", sub, "--neighbor_length", "10" if on_gpu else "6"]
+        if on_gpu:
+            cmd.append("--fp16")
+        p = subprocess.Popen(cmd, cwd=code_dir(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        tail = []
+        for line in p.stdout:
+            tail = (tail + [line])[-20:]
+            if progress and "%|" in line:
+                try:
+                    progress(min(0.95, float(line.split("%|")[0].split()[-1]) / 100))
+                except ValueError:
+                    pass
+        if p.wait() == 0:
+            break
+        msg = "".join(tail)
+        if "out of memory" in msg.lower() and attempt < 2:
+            r *= 0.75; sub = str(max(8, int(sub) * 2 // 3))
+            log("ProPainter: חסר זיכרון בכרטיס המסך - מנסה שוב בגודל קטן יותר")
+            continue
+        raise RuntimeError("ProPainter נכשל: " + msg[-300:])
     outs = sorted(glob.glob(os.path.join(work, "out", "in", "frames", "*.png")))
     if len(outs) < len(fs):
         raise RuntimeError("ProPainter לא החזיר את כל הפריימים")
