@@ -52,7 +52,11 @@ def line_mask(img, t, reg, f=None, proj=None, gid=None):
                 n_, lab_, st_, _ = cv2.connectedComponentsWithStats(far)
                 small = np.zeros(n_, bool); small[1:] = st_[1:, 4] < 0.5 * lh * lh
                 w[small[lab_] & (far > 0)] = 0
-            m = m | w
+            # far more "letters" than the title has: the scene itself is in that colour here (a fade from
+            # another shot, a fire, a sunset) - keep to the title's own box on this frame
+            bwh = (bx[2] - bx[0]) * (bx[3] - bx[1])
+            if (w > 0).sum() <= max((8.0 if logo else 3.0) * bwh, 1.5 * (m > 0).sum()):
+                m = m | w
     if t.get("logo_bg") is not None and proj and f is not None:
         # whole logo: everything that differs from the background without the title, around the logo box
         from .extract import _bg_plate, logo_diff
@@ -154,7 +158,13 @@ def styled_mask(img, t, reg, box, wide=False):
             _PAL.clear()
     lc, bc, pal_ok = _PAL[key]
     if wide is not False and pal_ok:
-        lc = lc[np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1) > 30]
+        # far from the title only clearly coloured letter centres search (white highlights of the
+        # letters would also find every glint and edge of the scene)
+        far_ = np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1) > 30
+        chro_ = np.hypot(lc[:, 1] - 128, lc[:, 2] - 128) > 25
+        lc = lc[far_ & chro_]
+        if not len(lc):
+            return np.zeros(img.shape[:2], np.uint8)
         # a logo can zoom, slide or swing in: its letters leave the reference box, so its clearly
         # coloured letters are looked for in the whole card (or the given zone) while it is on screen
         if wide is True:
@@ -647,7 +657,7 @@ def _logo_left(plate, lines, M0, reach=31):
     sel = np.zeros(len(px), bool)
     for t in des:
         lc, bc, _ = _PAL[t["id"]]
-        lc = lc[np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1) > 30]
+        lc = lc[(np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1) > 30) & (np.hypot(lc[:, 1] - 128, lc[:, 2] - 128) > 25)]
         if len(lc):
             dl, db = near(lc), near(bc)
             sel |= (dl < db * 0.7) & (dl < 30)
