@@ -281,9 +281,15 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 @media (forced-colors:active){.blk,.cta{forced-color-adjust:none}}
 .dedit{display:flex;flex-direction:column;gap:6px;margin:8px 0}.dedit textarea{font-size:16px;padding:8px;border-radius:6px;border:1px solid var(--line,#555);background:var(--bg2,#1d1d1d);color:inherit;resize:vertical;min-height:64px}
+#menu .mnote{padding:8px 14px;color:var(--muted,#b8bcc6);font-size:.95em;border-bottom:1px solid #333}
+#boot{position:fixed;inset:0;z-index:9999;background:#101114;display:flex;align-items:center;justify-content:center;transition:opacity .25s}
+#boot img{width:860px;max-width:92vw;height:auto}
+#boot.gone{opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){#boot{transition:none}}
 </style>
 </head>
 <body>
+<div id="boot" role="status" aria-label="Retitle נטען"><img src="/splash.png" alt=""></div>
 <div id="app">
 <header id="top">
   <span class="brand"><img alt="" src="data:image/png;base64,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">Retitle</span>
@@ -425,7 +431,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-rle">SRT</label><label class="chk"><input type="checkbox" id="s-rle"> תו RLE בתחילת כל שורה (לתצוגת עברית תקינה)</label>
     <label for="s-gh">טוקן GitHub לעדכונים<br><span class="unit">לריפו פרטי, קריאה בלבד</span></label>
     <div><input type="password" id="s-gh" dir="ltr" autocomplete="off" aria-describedby="ghset" style="width:100%"><div id="ghset" class="unit"></div></div>
-    <span class="lbl" id="pp-l">מחיקה חזקה וזיהוי גופנים<br><span class="unit">ProPainter, SAM 2 (מסכות מדויקות) ו-Lens (זיהוי גופנים). ProPainter ו-Lens חינמיים לשימוש לא מסחרי</span></span>
+    <span class="lbl" id="pp-l">מחיקה חזקה וזיהוי גופנים<br><span class="unit">ProPainter, SAM 2 (מסכות מדויקות), Lens (זיהוי גופנים) ו-rea-video (פירוק הסרטון, למצב המלא). ProPainter ו-Lens חינמיים לשימוש לא מסחרי</span></span>
     <div role="group" aria-labelledby="pp-l"><div id="pp-st" role="status" aria-live="polite"></div><div class="row2"><button class="mini" id="pp-i">התקן</button></div>
       <label class="chk"><input type="checkbox" id="s-ppauto"> אוטומטית: להוריד ולהפעיל על כרטיסים קשים (רק עם כרטיס NVIDIA)</label></div>
     <span class="lbl" id="gb-l">גיבוי ל-Google<br><span class="unit">סדרות, מילון שמות, גופנים שייבאת והעדפות</span></span>
@@ -974,8 +980,8 @@ function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren
   bx.append(el('button',{class:'mini',text:'בחר תיקייה מסונכרנת...',onclick:()=>go('pick')}));
   if(s.sync_dir)bx.append(el('button',{class:'mini',text:'בטל סנכרון',onclick:()=>go('')}))}
 async function ppStatus(){const p=await api('/api/propainter');const st=$('#pp-st'),b=$('#pp-i');if(!st)return p;
-  if(p.ready&&p.sam&&p.lens){st.textContent='הכול מותקן: ProPainter, SAM 2 ו-Lens'+(p.gpu?' - ירוצו על כרטיס המסך.':' - אין כרטיס NVIDIA, ירוצו על המעבד (איטי).');b.hidden=true}
-  else if(p.ready&&p.state!=='installing'){st.textContent='ProPainter מותקן. חסרים: '+[!p.sam&&'SAM 2',!p.lens&&'Lens'].filter(Boolean).join(' ו-')+'.';b.textContent='התקן את החסרים';b.hidden=false}
+  if(p.ready&&p.sam&&p.lens&&p.rea){st.textContent='הכול מותקן: ProPainter, SAM 2, Lens ו-rea-video'+(p.gpu?' - ירוצו על כרטיס המסך.':' - אין כרטיס NVIDIA, ירוצו על המעבד (איטי).');b.hidden=true}
+  else if(p.ready&&p.state!=='installing'){st.textContent='ProPainter מותקן. חסרים: '+[!p.sam&&'SAM 2',!p.lens&&'Lens',!p.rea&&'rea-video'].filter(Boolean).join(' ו-')+'.';b.textContent='התקן את החסרים';b.hidden=false}
   else if(p.state==='installing'){st.textContent='מתקין: '+(p.what||'')+(p.progress!=null?' '+Math.round(p.progress*100)+'%':'');b.hidden=true;setTimeout(ppStatus,1500)}
   else{st.textContent=(p.state==='error'?'ההתקנה נכשלה: '+p.error+'. ':'')+(p.gpu?'לא מותקן. בערך 3GB, ירוץ על כרטיס המסך.':'לא מותקן. בערך 1GB. בלי כרטיס NVIDIA הוא איטי מאוד.');b.hidden=false}
   return p}
@@ -1026,9 +1032,14 @@ MENUS.forEach(([name],i)=>MB.append(el('button',{class:'mbtn',role:'menuitem','a
 function enabledFor(req){if(!req)return true;if(req==='proj')return !!S.proj&&!S.running;if(req==='undo')return S.undo.length>0;if(req==='redo')return S.redo.length>0;if(req==='sel')return !!S.sel;if(req==='checks')return !!(S.data&&S.data.checks&&S.data.checks.length);
   if(req==='subs')return !!S.proj&&!S.running&&S.data&&((S.data.titles||{}).titles||[]).some(t=>t.kind==='sub');return true}
 function openMenu(i,focus){closeMenu(true);openIdx=i;const b=$('#mb'+i);b.setAttribute('aria-expanded','true');MENU.replaceChildren();MENU.setAttribute('aria-labelledby','mb'+i);
+  // why an item is off is said once at the top (not on every row); each row keeps it as its tooltip/description
+  const offs=[...new Set(MENUS[i][1].filter(it=>it[0]!=='-'&&!enabledFor(it[3])).map(it=>WHY[it[3]]).filter(Boolean))];
+  if(offs.length&&!S.proj&&offs.includes(WHY.proj))MENU.append(el('div',{class:'mnote',role:'note',text:'פתח וידאו כדי להשתמש בפריטים האפורים'}));
   for(const it of MENUS[i][1]){if(it[0]==='-'){MENU.append(el('div',{role:'separator'}));continue}const[lab,k,fn,req]=it;
     const on=enabledFor(req),why=on?'':(WHY[req]||'');
-    MENU.append(el('button',{role:'menuitem',disabled:!on,title:why,onclick:()=>{closeMenu();fn()}},el('span',{text:lab}),el('span',{class:'k',dir:on?'ltr':'rtl',text:on?k:why})))}
+    const b2=el('button',{role:'menuitem',disabled:!on,title:why,onclick:()=>{closeMenu();fn()}},el('span',{text:lab}),el('span',{class:'k',dir:'ltr',text:k||''}));
+    if(why)b2.setAttribute('aria-description',why);
+    MENU.append(b2)}
   const r=b.getBoundingClientRect();MENU.style.top=(r.bottom+2)+'px';MENU.style.right=(innerWidth-r.right)+'px';MENU.classList.add('open');
   if(focus){const f=MENU.querySelector('[role=menuitem]:not(:disabled)');if(f)f.focus()}}
 function closeMenu(keep){if(openIdx<0)return;const b=$('#mb'+openIdx);b.setAttribute('aria-expanded','false');MENU.classList.remove('open');if(!keep&&MENU.contains(document.activeElement))b.focus();openIdx=-1}
@@ -1283,7 +1294,8 @@ $('#tlwrap').addEventListener('wheel',e=>{if(e.altKey||e.ctrlKey){e.preventDefau
 addEventListener('resize',()=>{renderTimeline();refreshFrameSoon(200)});
 (async()=>{S.fonts=await api('/api/fonts');await loadSettings();const s=await api('/api/status');
   if(s.proj){S.proj=s.proj;await reloadData(false);setSrc();say('פרויקט פתוח: '+S.data.project.video.split(/[\\/]/).pop())}
-  if(S.proj)await loadSeries();renderAll();if(S.proj){fit();saveState();if(S.data.missing_video)askRelink()}else renderRecent($('#recent'),'rc-h');setMode('source');setInterval(poll,800);poll();setTimeout(()=>checkUpdate(false),4000)})();
+  if(S.proj)await loadSeries();renderAll();if(S.proj){fit();saveState();if(S.data.missing_video)askRelink()}else renderRecent($('#recent'),'rc-h');setMode('source');setInterval(poll,800);poll();setTimeout(()=>checkUpdate(false),4000);
+  const bt=$('#boot');if(bt){bt.classList.add('gone');setTimeout(()=>bt.remove(),400)}})();
 </script>
 </body>
 </html>

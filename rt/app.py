@@ -608,7 +608,21 @@ def job_translate(kind):
             for t in T["titles"]:
                 if t["id"] in res and not t.get("he"):
                     t["he"] = res[t["id"]]
+            # a card Claude left wholly empty is not text to translate (OCR noise on a face, a wheel, leaves):
+            # it stays untouched instead of being erased. A card with some Hebrew keeps its empty lines erased
+            # (their words went into the card's other lines).
+            grp = {}
+            for t in T["titles"]:
+                if t.get("translate", True) and t.get("mode") != "remove":
+                    grp.setdefault(t["group"], []).append(t)
+            noise = 0
+            for g, ls in grp.items():
+                if all(t["id"] in res and not (t.get("he") or "").strip() for t in ls):
+                    for t in ls:
+                        t["translate"] = False; t["auto_reason"] = "Claude: אין כאן טקסט לתרגום"; noise += 1
             vio.save_json(P("titles.json"), T)
+            if noise:
+                log(f"{noise} שורות ש-Claude השאיר ריקות (לא טקסט אמיתי) סומנו \"נשאר\" ולא יימחקו")
         if os.path.exists(P("layers", "meta.json")):
             from . import render
             render.build_layers(STATE["proj"], only=set(res))
@@ -814,6 +828,12 @@ def auto_parts(opts=None):
     if want_t:
         if not T:
             parts.append(("analyze", "ניתוח הכותרות", 0.35))
+        elif key:
+            # analysed before Claude was connected: Claude sorts the texts and picks the fonts now
+            if any("ai_kind" not in t and not t.get("from_series") for t in T if t.get("translate", True)):
+                parts.append(("classify", "Claude בודק מה כל טקסט - כותרת, לוגו, קרדיט או רעש", 0.04))
+            if any(t.get("translate", True) and t.get("font_auto") and not t.get("font_by_claude") for t in T):
+                parts.append(("fonts", "Claude בוחר גופן לכל כותרת", 0.05))
         if key:
             parts.append(("translate_titles", "תרגום הכותרות", 0.05))
             parts.append(("design", "עיצוב כותרות מעוצבות ולוגואים (Claude)", 0.06))
@@ -843,13 +863,20 @@ def job_auto(opts=None):
         RANGE[:] = [0.0, 1.0]
         STATE.update(stage=name, step=0, steps=0)
         prog(0)
-        claude_part = job in ("translate_titles", "translate_dialog", "design")
+        claude_part = job in ("translate_titles", "translate_dialog", "design", "classify", "fonts")
         if claude_part and PHASE.get("no_claude"):
             acc += w
             continue
         try:
             if job == "translate_titles":
                 job_translate("titles")
+            elif job == "classify":
+                from . import review
+                with LOCK:
+                    review.classify(STATE["proj"], settings()["api_key"], settings().get("model"), progress=prog, log=log)
+            elif job == "fonts":
+                fonts_auto(only={t["id"] for t in vio.load_json(P("titles.json"))["titles"]
+                                 if t.get("translate", True) and t.get("font_auto") and not t.get("font_by_claude")})
             elif job == "translate_dialog":
                 job_translate("dialog")
             else:
@@ -963,7 +990,17 @@ def job_agent():
         if not T:
             part(0.0, 0.25, "ניתוח הכותרות")
             job_analyze()
-        part(0.25, 0.3, "Claude עובר על כל הטקסטים שזוהו")
+        from . import reavideo
+        if reavideo.ready():
+            part(0.25, 0.28, "rea-video מפרק את הסרטון")
+            try:
+                reavideo.decompose(proj, log=log, cancel=lambda: STATE["cancel"])
+                reavideo.give_skill(proj)
+            except Exception as e:
+                log(f"rea-video לא הצליח ({str(e)[:160]}) - ממשיך בלעדיו")
+        else:
+            log("rea-video עוד לא מותקן (העדפות > מחיקה חזקה וזיהוי גופנים) - ממשיך בלעדיו")
+        part(0.28, 0.3, "Claude עובר על כל הטקסטים שזוהו")
         gl = (s.get("glossary") or "").strip()
         _, _, err = turn(f"""Project folder: {proj}
 Step 1 - what was detected. Read detect_sheet.jpg (each detected line at its frame, with its box) and titles.json.
@@ -973,9 +1010,18 @@ the whole video's titles together, so a sentence across cards reads as one.
 {("Name glossary (always wins):" + chr(10) + gl) if gl else ""}
 Lines:
 {agent.card_list(proj)}""", "Claude עובר על כל הטקסטים שזוהו ומתרגם")
+        fl = {t["id"] for t in vio.load_json(P("titles.json"))["titles"]
+              if t.get("translate", True) and t.get("kind") != "sub" and not t.get("font_by_claude")
+              and "font" not in t.get("style_locked", [])}
+        if fl:
+            part(0.3, 0.33, "Claude בוחר גופן לכל סגנון")
+            try:
+                fonts_auto(only=fl)
+            except Exception as e:
+                log(f"בחירת הגופנים לא הצליחה ({e})")
         if opts.get("dialog", True) and vio.load_json(P("project.json")).get("info", {}).get("has_audio", True):
             D = vio.load_json(P("dialog.json"), {"cues": []})["cues"]
-            part(0.3, 0.45, "תמלול ותרגום הדיאלוג")
+            part(0.33, 0.45, "תמלול ותרגום הדיאלוג")
             if not D:
                 job_transcribe()
             if s.get("api_key"):
@@ -1593,6 +1639,9 @@ class H(BaseHTTPRequestHandler):
         if u.path in ("/", "/index.html"):
             with open(os.path.join(UI, "index.html"), "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
+        if u.path == "/splash.png":                  # the start-up picture, drawn by the page itself (same size as the splash)
+            with open(os.path.join(UI, "splash.png"), "rb") as f:
+                return self._send(200, f.read(), "image/png")
         if u.path == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
         if u.path == "/api/google":
@@ -2193,8 +2242,10 @@ def main():
             except TypeError:                 # older pywebview without `maximized`
                 WINDOW = webview.create_window("Retitle", url, **kw)
             print("window: pywebview", flush=True)
-            WINDOW.events.loaded += lambda *a: close_splash()       # the page is drawn: swap picture for window
-            threading.Timer(25, close_splash).start()                # never keep it longer than that
+            # the start-up picture goes before the browser engine starts: when it starts, Windows switches the
+            # process to sharp (DPI-aware) drawing and the picture would shrink on screen. The page shows the same
+            # picture at the same size until the app is ready.
+            close_splash()
             webview.start()
             return
         except Exception:

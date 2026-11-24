@@ -639,6 +639,25 @@ def apply_row(t, row):
             st.pop(k, None)
 
 
+def _clusters(todo):
+    """Cards in one style (same letter colour, styled or not) - a trailer's taglines - share one font and look."""
+    cards = {}
+    for t in todo:
+        fl = (t.get("mask") or {}).get("fill_lab")
+        key = None
+        for k, (rep, ls) in cards.items():
+            rf = (rep.get("mask") or {}).get("fill_lab")
+            if fl and rf and float(np.linalg.norm(np.array(fl) - np.array(rf))) < 22 and \
+                    bool(t.get("styled") or t.get("design")) == bool(rep.get("styled") or rep.get("design")):
+                key = k
+                break
+        if key is None:
+            cards[t.get("group", t["id"])] = (t, [t])
+        else:
+            cards[key][1].append(t)
+    return {k: v[1] for k, v in cards.items()}
+
+
 def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print, only=None):
     """Automatic pick at analysis time, for titles whose font nobody chose (not locked, not from the series).
     With an API key Claude picks the font and reads the look (colours, 3D side, outline, shadow) per card;
@@ -655,21 +674,7 @@ def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print, o
         # Claude as the typographer: one look per card (the lines of a card share a typeface and look)
         # cards in one style (same letter colour, close shapes) - a trailer's taglines - share one look:
         # one Claude call per style, not per card
-        cards = {}
-        for t in todo:
-            fl = (t.get("mask") or {}).get("fill_lab")
-            key = None
-            for k, (rep, ls) in cards.items():
-                rf = (rep.get("mask") or {}).get("fill_lab")
-                if fl and rf and float(np.linalg.norm(np.array(fl) - np.array(rf))) < 22 and \
-                        bool(t.get("styled") or t.get("design")) == bool(rep.get("styled") or rep.get("design")):
-                    key = k
-                    break
-            if key is None:
-                cards[t.get("group", t["id"])] = (t, [t])
-            else:
-                cards[key][1].append(t)
-        cards = {k: v[1] for k, v in cards.items()}
+        cards = _clusters(todo)
         for i, (gid, ls) in enumerate(cards.items()):
             if progress:
                 progress(0.8 + 0.2 * i / max(1, len(cards)))
@@ -688,19 +693,25 @@ def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print, o
                 t["font_auto"] = True; t["font_by_claude"] = True
                 done += 1
         todo = [t for t in todo if not t.get("font_by_claude")]
-    for i, t in enumerate(todo):
+    # without Claude: one font per style (the biggest line of the style decides), never a different font per line
+    cl = list(_clusters(todo).values())
+    for i, ls in enumerate(cl):
         if progress:
-            progress(0.8 + 0.2 * i / len(todo))
-        m = letters(proj, t)
-        src = traits(m) if m is not None else None
-        if src is None:
-            continue
-        rows = rank(src, cands, script_of(t.get("src") or ""), 8)
+            progress(0.8 + 0.2 * i / len(cl))
+        rows = []
+        for t in sorted(ls, key=lambda x: -(x["ref_box"][3] - x["ref_box"][1])):
+            m = letters(proj, t)
+            src = traits(m) if m is not None else None
+            if src is not None:
+                rows = rank(src, cands, script_of(t.get("src") or ""), 8)
+                if rows:
+                    break
         if not rows:
             continue
-        apply_row(t, rows[0])
-        t["font_top"] = [[r["font"], r["weight"], r["wdth"], r["diff"]] for r in rows[:5]]
-        t["font_auto"] = True
-        done += 1
+        for t in ls:
+            apply_row(t, rows[0])
+            t["font_top"] = [[r["font"], r["weight"], r["wdth"], r["diff"]] for r in rows[:5]]
+            t["font_auto"] = True
+            done += 1
     vio.save_json(os.path.join(proj, "titles.json"), T)
     return done

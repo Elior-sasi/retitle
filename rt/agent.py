@@ -36,6 +36,11 @@ paint a mask by hand, measure the source's motion yourself, draw an element. Loo
 (preview <proj> <gid> writes crops you can Read; masks writes mask sheets). Never delete the source video or the
 project's files you did not make; keep your own files in the agent folder.
 
+rea-video is installed (the `rea-video` command and the rea-video skill): its breakdown of this video is in the
+project's rea folder - start from rea/VIDEO.md and open only what you need (shots with first/last frames, every
+overlay with its timing, style and entrance in video/ and packaging/, element crops, stems). Use rea-video the way
+you would in a chat: `rea-video tiles` to look closely at a stretch, `rea-video review` to check shots by eye.
+
 Hebrew rules: natural Hebrew a viewer reads in a glance, the official Hebrew title when there is one, no niqqud,
 plain " quotes, a regular hyphen - never an em dash, the user's name glossary always wins. A sentence split over
 several cards is translated as one sentence and split at the same places.
@@ -82,7 +87,7 @@ class Session:
         from .translate import USAGE
         exe = _exe()
         cmd = [exe, "-p", "--output-format", "json", "--model", self.model,
-               "--allowedTools", "Read", "Edit", "Write", "Glob", "Grep", "Bash", "PowerShell",
+               "--allowedTools", "Read", "Edit", "Write", "Glob", "Grep", "Bash", "PowerShell", "Skill",
                "--add-dir", self.proj, "--max-turns", str(max_turns)]
         if self.sid:
             cmd += ["--resume", self.sid]
@@ -92,7 +97,7 @@ class Session:
                 prompt = f'RT = "{self.tool}"\n\n' + prompt
         p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              text=True, encoding="utf-8", cwd=self.proj,
-                             env=dict(os.environ, BASH_DEFAULT_TIMEOUT_MS="1800000", BASH_MAX_TIMEOUT_MS="7200000"),
+                             env=_env(),
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         import threading
         box = {}
@@ -127,6 +132,13 @@ class Session:
         USAGE["calls"] = USAGE.get("calls", 0) + 1
         USAGE["via_code"] = True
         return _answer(out.get("result") or "")
+
+
+def _env():
+    from . import reavideo
+    e = reavideo.env() if reavideo.ready() else dict(os.environ)
+    e.update(BASH_DEFAULT_TIMEOUT_MS="1800000", BASH_MAX_TIMEOUT_MS="7200000")
+    return e
 
 
 def _answer(text):

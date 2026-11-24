@@ -113,7 +113,10 @@ def install():
         open(os.path.join(h, "ok"), "w").close()
         from . import aimodels                       # SAM 2 (exact masks) and Lens (fonts), same Python
         if not aimodels.ready():
-            aimodels.install((0.9, 1.0))
+            aimodels.install((0.85, 0.93))
+        from . import reavideo                       # rea-video itself, with its Claude Code skill
+        if not reavideo.ready():
+            reavideo.install((0.93, 1.0))
         STATE.update(state="ready", progress=1.0, what="")
     except Exception as e:
         STATE.update(state="error", error=str(e)[:300], what="")
@@ -136,14 +139,15 @@ def _safe(fn):
 
 def all_ready():
     from . import aimodels
-    return ready() and aimodels.ready()
+    from . import reavideo
+    return ready() and aimodels.ready() and reavideo.ready()
 
 
 def status():
-    from . import aimodels
+    from . import aimodels, reavideo
     if all_ready() and STATE["state"] != "installing":
         STATE.update(state="ready")
-    return dict(STATE, ready=ready(), gpu=gpu(), sam=aimodels.sam_ready(), lens=aimodels.lens_ready())
+    return dict(STATE, ready=ready(), gpu=gpu(), sam=aimodels.sam_ready(), lens=aimodels.lens_ready(), rea=reavideo.ready())
 
 
 def card(proj, gid, log=print, progress=None):
