@@ -30,7 +30,10 @@ def line_mask(img, t, reg, f=None, proj=None, gid=None):
     s = t.get("search", h)
     box = [bx[0] - reg[0] - s, bx[1] - reg[1] - s, bx[2] - reg[0] + s, bx[3] - reg[1] + s]
     m = masks.make(img, t["mask"], box)
-    if t.get("styled") or t.get("design") or t.get("design_member"):
+    fl = (t.get("mask") or {}).get("fill_lab")
+    chroma = fl is not None and ((fl[1] - 128) ** 2 + (fl[2] - 128) ** 2) ** 0.5 > 20
+    if t.get("styled") or t.get("design") or t.get("design_member") or (chroma and t.get("kind") != "sub"):
+        # coloured / designed lettering: shading and gradients go beyond one fill colour
         m = m | styled_mask(img, t, reg, box)
     if t.get("logo_bg") is not None and proj and f is not None:
         # whole logo: everything that differs from the background without the title, around the logo box
@@ -199,6 +202,110 @@ def _fit(img, ci, Mc, M, warp, W, H):
     return res, wi, wm, inside, G, O
 
 
+_XT = {}
+
+
+def _cross_index(proj, gid, reg):
+    """Frames of the OTHER title cards of this video that overlap this card's area: (gid2, frame,
+    thumb of our area (NaN where not covered), lines2, region2). In trailers the cards often share one
+    animated background: what is behind this card's letters is visible in another card."""
+    key = (proj, gid)
+    if key in _XT:
+        return _XT[key]
+    T = _CTX.get("T") or vio.load_json(os.path.join(proj, "titles.json"))
+    _CTX["T"] = T
+    by = {}
+    for t in T["titles"]:
+        if t.get("translate", True) and "mask" in t and "region" in t:
+            by.setdefault(t["group"], []).append(t)
+    out = []
+    for g2, ls in by.items():
+        if g2 == gid:
+            continue
+        r2 = ls[0]["region"]
+        ix0, iy0, ix1, iy1 = max(r2[0], reg[0]), max(r2[1], reg[1]), min(r2[2], reg[2]), min(r2[3], reg[3])
+        if (ix1 - ix0) * (iy1 - iy0) < 0.3 * (reg[2] - reg[0]) * (reg[3] - reg[1]):
+            continue
+        d = os.path.join(proj, "cache", g2)
+        try:
+            fs = sorted(int(x[:-4]) for x in os.listdir(d) if x.endswith(".png") and x[:-4].isdigit())
+        except OSError:
+            continue
+        for c in fs[::3]:
+            im = cv2.imread(os.path.join(d, f"{c:06d}.png"))
+            if im is None:
+                continue
+            sub, cov = _into(im, r2, reg)
+            th = cv2.resize(cv2.cvtColor(sub, cv2.COLOR_BGR2GRAY), (96, 54), interpolation=cv2.INTER_AREA).astype(np.float32)
+            cv_ = cv2.resize(cov, (96, 54), interpolation=cv2.INTER_NEAREST) > 0
+            th[~cv_] = np.nan
+            out.append((g2, c, th, ls, r2))
+    _XT.clear(); _XT[key] = out
+    return out
+
+
+def _into(im, r2, reg):
+    """Image of region r2 placed in region reg's coordinates; coverage mask (1 where r2 has pixels)."""
+    H, W = reg[3] - reg[1], reg[2] - reg[0]
+    out = np.zeros((H, W, 3), np.uint8); cov = np.zeros((H, W), np.uint8)
+    x0, y0 = max(r2[0], reg[0]), max(r2[1], reg[1]); x1, y1 = min(r2[2], reg[2]), min(r2[3], reg[3])
+    if x1 > x0 and y1 > y0:
+        out[y0 - reg[1]:y1 - reg[1], x0 - reg[0]:x1 - reg[0]] = im[y0 - r2[1]:y1 - r2[1], x0 - r2[0]:x1 - r2[0]]
+        cov[y0 - reg[1]:y1 - reg[1], x0 - reg[0]:x1 - reg[0]] = 1
+    return out, cov
+
+
+def _letter_like(im, lines, grow=7):
+    """Pixels coloured like this card's letters (cards of one video share their title colour): such
+    pixels in another card are its letters, not background."""
+    lab = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32)
+    m = np.zeros(im.shape[:2], np.uint8)
+    for t in lines:
+        mp = t.get("mask") or {}
+        if "fill_lab" in mp:
+            m |= (masks._wdist(lab, mp["fill_lab"]) < mp.get("tol", 30) * 1.4).astype(np.uint8)
+    if m.any():
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * grow + 1, 2 * grow + 1)))
+    return m * 255
+
+
+def _cross_candidates(proj, gid, img, M, reg, k=8, lines=()):
+    """The k frames of other cards whose background looks most like this frame's (outside the text)."""
+    idx = _cross_index(proj, gid, reg)
+    if not idx:
+        return []
+    g = cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (96, 54), interpolation=cv2.INTER_AREA).astype(np.float32)
+    free = cv2.resize((cv2.dilate(M, np.ones((15, 15), np.uint8)) == 0).astype(np.uint8), (96, 54), interpolation=cv2.INTER_NEAREST) > 0
+    hole = cv2.resize((M > 0).astype(np.uint8), (96, 54), interpolation=cv2.INTER_NEAREST) > 0
+    sc = []
+    for g2, c, th, ls, r2 in idx:
+        ok = free & ~np.isnan(th)
+        if ok.sum() < 150 or (~np.isnan(th) & hole).sum() < 0.5 * max(1, hole.sum()):
+            continue                                       # must see most of our hole
+        sc.append((float(np.abs(th[ok] - g[ok]).mean()), g2, c, ls, r2))
+    sc.sort(key=lambda x: x[0])
+    res = []
+    for e, g2, c, ls, r2 in sc[:k]:
+        if e > 18:
+            break
+        im = cv2.imread(os.path.join(proj, "cache", g2, f"{c:06d}.png"))
+        if im is None:
+            continue
+        sub, cov = _into(im, r2, reg)
+        # the other card's own letters, in our coordinates
+        m_full = np.zeros(im.shape[:2], np.uint8)
+        for t in ls:
+            if t["in"] - 2 <= c <= t["out"] + 2:
+                m_full |= line_mask(im, t, r2)
+        m2, _ = _into(np.dstack([m_full] * 3), r2, reg)
+        m2 = m2[..., 0] | ((1 - cov) * 255).astype(np.uint8)
+        hh = max(9, int(min(t["box"][3] - t["box"][1] for t in ls) * 0.25)) | 1
+        m2 = cv2.dilate(m2, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (hh, hh)))
+        res.append((sub, m2 | _letter_like(sub, list(lines) + list(ls))))
+    return res
+
+
 def _others_mask(c, others, reg, shape, ci=None):
     """Text of other titles (other cards at the same place, e.g. the previous subtitle) on screen
     at frame c - it must not leak into this card's rebuilt background. Letter-exact when the
@@ -306,9 +413,28 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
         stack.append(wi)
         okm.append((wm == 0) & (inside > 0))
         used += 1
+    # not enough background found in this card's own frames: look in the other cards
+    cover = np.zeros(M.shape, bool)
+    for o in okm:
+        cover |= o
+    if (M0 > 0).sum() > 0 and float((cover & (M0 > 0)).sum()) / float((M0 > 0).sum()) < 0.7:
+        for ci, Mc in _cross_candidates(proj, gid, img, M, reg, lines=[t for t in lines if t.get("translate", True)]):
+            if used >= K + 6:
+                break
+            valid_t = ((cv2.dilate(M | Mc, np.ones((9, 9), np.uint8)) == 0)).astype(np.uint8)
+            warp, _ = _align(tg, cv2.cvtColor(ci, cv2.COLOR_BGR2GRAY).astype(np.float32), valid_t)
+            best = None
+            for wp in ([warp] if warp is not None else []) + [np.eye(2, 3, dtype=np.float32)]:
+                r = _fit(img, ci, Mc, M, wp, W, H)
+                if r is not None and (best is None or r[0] < best[0]):
+                    best = r
+            if best is None or best[0] > thr_res:
+                continue
+            stack.append(best[1]); okm.append((best[2] == 0) & (best[3] > 0)); used += 1
     plate = img.astype(np.float32).copy()
     hole = M > 0
     hole_left = np.zeros_like(hole)
+    leak = np.zeros_like(hole)
     if stack:
         S = np.stack(stack)             # k,H,W,3
         V = np.stack(okm)[..., None]    # k,H,W,1
@@ -319,12 +445,16 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
         idx = np.argwhere(hole)
         plate[idx[good, 0], idx[good, 1]] = med[good]
         hole_left[idx[~good, 0], idx[~good, 1]] = True
+        # what was rebuilt but still looks like the letters (another card's words leaking in): synthesise
+        ll = _letter_like(plate.astype(np.uint8), [t for t in lines if t.get("translate", True)], grow=3) > 0
+        leak = ll & hole
+        hole_left |= leak
     else:
         hole_left = hole.copy()
     plate = plate.astype(np.uint8)
     # synthesise only around the letters themselves; the wider fade envelope is used only
     # where real background was found
-    core = cv2.dilate(M0, np.ones((7, 7), np.uint8)) > 0
+    core = (cv2.dilate(M0, np.ones((7, 7), np.uint8)) > 0) | leak
     need = hole_left & core
     if need.any():
         plate = synth_cached(gid, f, plate, need, motion)
@@ -406,7 +536,7 @@ def _card(args):
     d = os.path.join(proj, "clean", gid)
     shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
     _IMG.clear(); _MSK.clear(); SYNTH.clear()
-    _CTX.update(proj=proj, gid=gid)
+    _CTX.update(proj=proj, gid=gid, T=T)
     a = min(t["in"] for t in act); b = max(t["out"] for t in act)
     ids = {t["id"] for t in lines}
     others = [o for o in T["titles"] if o["id"] not in ids and
