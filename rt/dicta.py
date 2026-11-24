@@ -75,22 +75,24 @@ def _get(url, dst, part):
 
 
 def _llama_assets():
-    """Download links of llama.cpp's latest Windows build: CUDA (+ its runtime) with an NVIDIA card, else CPU."""
+    """Download links of llama.cpp's newest Windows build: CUDA 12 (+ its runtime) with an NVIDIA card, else CPU.
+    The "latest" release of the repository is a source-only tag; the builds are in the b#### releases, so the
+    recent releases are searched for the first one that has them."""
     from .propaint import gpu
-    with urllib.request.urlopen(urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
+    with urllib.request.urlopen(urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30",
                                                        headers={"User-Agent": "Retitle"}), timeout=60) as r:
-        rel = json.load(r)
-    names = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
-    if gpu():
-        main = [n for n in names if re.search(r"bin-win-cuda-12[\d.]*-x64\.zip$", n)]
-        rt = [n for n in names if re.search(r"^cudart-.*win-cuda-12[\d.]*-x64\.zip$", n)]
-        if main:
-            main.sort(); rt.sort()
-            return [names[main[-1]]] + ([names[rt[-1]]] if rt else [])
-    cpu = [n for n in names if re.search(r"bin-win-(cpu|avx2)-x64\.zip$", n)]
-    if not cpu:
-        raise RuntimeError("לא נמצאה גרסת Windows של llama.cpp")
-    return [names[sorted(cpu)[-1]]]
+        rels = json.load(r)
+    for rel in rels:
+        names = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
+        if gpu():
+            main = sorted(n for n in names if re.search(r"^llama-.*bin-win-cuda-12[\d.]*-x64\.zip$", n))
+            rt = sorted(n for n in names if re.search(r"^cudart-.*win-cuda-12[\d.]*-x64\.zip$", n))
+            if main:
+                return [names[main[-1]]] + ([names[rt[-1]]] if rt else [])
+        cpu = sorted(n for n in names if re.search(r"^llama-.*bin-win-cpu-x64\.zip$", n))
+        if cpu:
+            return [names[cpu[-1]]]
+    raise RuntimeError("לא נמצאה גרסת Windows של llama.cpp")
 
 
 def install():
