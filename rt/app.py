@@ -253,7 +253,7 @@ def job_analyze():
         else:
             fonts_auto()
     run_steps([("מחפש חיתוכי שוטים", 0.15, a), ("מזהה טקסט על המסך", 0.45, b),
-               ("Claude בודק מה כל טקסט - כותרת, לוגו, קרדיט או רעש", 0.06, b2) if s.get("api_key") else None,
+               ("Claude בודק מה כל טקסט - כותרת, לוגו, קרדיט או רעש", 0.06, b2) if s.get("api_key") and not PHASE.get("agent") else None,
                ("מודד צבע, צל ותזמון מדויק", 0.32, c),
                ("מתאים גופן עברי לכל כותרת", 0.08, d)])
     n = series_apply()
@@ -381,7 +381,7 @@ def job_export():
             log(f"בדיקת QA: {errs} שגיאות, {len(issues) - errs} אזהרות (תפריט וידאו > בדיקת QA)")
     s = settings()
     run_steps(pre + [("מקודד את הווידאו הסופי", 0.5, enc), ("בודק כל כותרת לפני ואחרי", 0.05, chk),
-                     ("Claude בודק את התוצאה כמו צופה", 0.05, vqa) if s.get("api_key") else None,
+                     ("Claude בודק את התוצאה כמו צופה", 0.05, vqa) if s.get("api_key") and not PHASE.get("agent") else None,
                      ("כתוביות ובדיקת QA", 0.02, subs)])
     log(f"הווידאו מוכן: {res['out']}")
 
@@ -841,6 +841,205 @@ def job_auto(opts=None):
     log("הכול הסתיים.")
 
 
+AGENT = {"token": "", "port": 0}
+_AGENT_RUN = threading.Lock()
+
+
+def agent_run(argv):
+    """One engine command for Claude Code in full mode, inside this process (the same engine and libraries
+    the app uses - no Python needed on the PC): `rt.cmd <command> ...` as in `python -m rt`, or
+    `rt.cmd --py script.py args` for a script Claude wrote (numpy, cv2 and the rt modules importable)."""
+    import io, contextlib, runpy
+    buf = io.StringIO()
+    code = 0
+    with _AGENT_RUN, contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        try:
+            if argv and argv[0] == "--py":
+                old = sys.argv[:]
+                sys.argv = argv[1:]
+                try:
+                    runpy.run_path(argv[1], run_name="__main__")
+                finally:
+                    sys.argv = old
+            else:
+                from .__main__ import main as cli
+                cli(argv)
+        except SystemExit as e:
+            code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+        except BaseException:
+            traceback.print_exc()
+            code = 1
+    if argv:
+        log("Claude הריץ: " + " ".join(os.path.basename(a) if os.sep in a or "/" in a else a for a in argv)[:160])
+    return buf.getvalue() + f"\n[exit {code}]\n"
+
+
+def agent_tool(proj):
+    """The rt command Claude Code calls (a .cmd on Windows, a shell script elsewhere). Returns its path."""
+    import secrets
+    AGENT["token"] = AGENT["token"] or secrets.token_hex(16)
+    d = os.path.join(proj, "agent")
+    os.makedirs(d, exist_ok=True)
+    url = f"http://127.0.0.1:{AGENT['port']}/api/agent_run"
+    if os.name == "nt":
+        p = os.path.join(d, "rt.cmd")
+        body = ("@echo off\r\nchcp 65001 >nul\r\nsetlocal EnableDelayedExpansion\r\nset \"D=\"\r\n"
+                ":next\r\nif \"%~1\"==\"\" goto go\r\nset D=!D! --data-urlencode \"a=%~1\"\r\nshift\r\ngoto next\r\n"
+                f":go\r\ncurl.exe -s --max-time 14400 --data-urlencode \"token={AGENT['token']}\" !D! {url}\r\n")
+    else:
+        p = os.path.join(d, "rt")
+        body = (f"#!{sys.executable}\nimport sys, urllib.request, urllib.parse\n"
+                f"d = urllib.parse.urlencode([('token', '{AGENT['token']}')] + [('a', x) for x in sys.argv[1:]]).encode()\n"
+                f"print(urllib.request.urlopen('{url}', d, timeout=14400).read().decode())\n")
+    with open(p, "w", encoding="utf-8", newline="") as f:
+        f.write(body)
+    if os.name != "nt":
+        os.chmod(p, 0o755)
+    return p
+
+
+def job_agent():
+    """Full mode: Claude Code works the whole video like an editor in chat - looks at every sheet, edits the
+    titles itself, asks the engine for fixes and looks again, until every card is right."""
+    from . import agent, render, propaint, design, fontmatch
+    from .extract import groups
+    s = settings()
+    if not s.get("claude_code_found"):
+        raise RuntimeError("המצב המלא עובד דרך Claude Code - התקן אותו והתחבר (/login), ואז נסה שוב")
+    opts = STATE.get("args") or {}
+    proj = STATE["proj"]
+    rounds = max(1, min(8, int(opts.get("rounds") or 4)))
+    ses = agent.Session(proj, s.get("agent_model") or "opus", log, cancel=lambda: STATE["cancel"], tool=agent_tool(proj))
+    PHASE["agent"] = True
+    base = PHASE["range"][:]
+
+    def part(a, b, name):
+        PHASE.update(range=[base[0] + (base[1] - base[0]) * a, base[0] + (base[1] - base[0]) * b], name=name)
+        RANGE[:] = [0.0, 1.0]
+        STATE.update(stage=name, step=0, steps=0)
+        prog(0)
+
+    def turn(prompt, stage):
+        STATE.update(stage=stage)
+        before = agent.snapshot(proj)
+        r = ses.ask(prompt)
+        with LOCK:
+            changed, err = agent.settle(proj, before, log)
+        if err:
+            log(err)
+        if r.get("notes_he"):
+            log("Claude: " + r["notes_he"])
+        return r, changed, err
+
+    try:
+        T = vio.load_json(P("titles.json"), {"titles": []})["titles"]
+        if not T:
+            part(0.0, 0.25, "ניתוח הכותרות")
+            job_analyze()
+        part(0.25, 0.3, "Claude עובר על כל הטקסטים שזוהו")
+        gl = (s.get("glossary") or "").strip()
+        _, _, err = turn(f"""Project folder: {proj}
+Step 1 - what was detected. Read detect_sheet.jpg (each detected line at its frame, with its box) and titles.json.
+For every line decide translate true/false (credits, studio logos, English names and text inside the scene stay),
+fix lines that the OCR split or misread (src), and write the Hebrew (he) for every line that is translated -
+the whole video's titles together, so a sentence across cards reads as one.
+{("Name glossary (always wins):" + chr(10) + gl) if gl else ""}
+Lines:
+{agent.card_list(proj)}""", "Claude עובר על כל הטקסטים שזוהו ומתרגם")
+        if opts.get("dialog", True) and vio.load_json(P("project.json")).get("info", {}).get("has_audio", True):
+            D = vio.load_json(P("dialog.json"), {"cues": []})["cues"]
+            part(0.3, 0.45, "תמלול ותרגום הדיאלוג")
+            if not D:
+                job_transcribe()
+            if s.get("api_key"):
+                try:
+                    job_translate("dialog")
+                except Exception as e:
+                    log(f"תרגום הדיאלוג לא הצליח ({e})")
+            job_srt()
+        part(0.45, 0.5, "עיצוב כותרות מעוצבות ולוגואים")
+        try:
+            job_design()
+        except Exception as e:
+            log(f"העיצוב לא הצליח ({e})")
+        last = []
+        for k in range(rounds):
+            a = 0.5 + 0.5 * k / rounds
+            part(a, a + 0.35 / rounds, f"סבב {k + 1}: בנייה, קידוד ובדיקה")
+            job_export()
+            sheets = sorted(f for f in os.listdir(P("check")) if f.endswith(".jpg")) if os.path.isdir(P("check")) else []
+            if not sheets:
+                log("אין כרטיסים לבדיקה.")
+                break
+            part(a + 0.35 / rounds, a + 0.5 / rounds, f"סבב {k + 1}: Claude בודק כל כרטיס")
+            r, changed, _ = turn(f"""Round {k + 1} of {rounds}. The video was built and encoded. Look at EVERY sheet below
+(Read each one): per card, the source on the left and the Hebrew result on the right, from the frame before the title
+comes in to the frame after it goes out. {"Last round you asked for: " + json.dumps(last, ensure_ascii=False) + "." if last else ""}
+Check: source letters or ghosts left, a smeared background, Hebrew cut, overlapping, too small or big, wrong place,
+colour, light or font, animation that does not follow the source, mistakes in the Hebrew.
+Fix it: edit titles.json, run the engine yourself (RT ...), or write code for what the engine cannot do - then look
+again at what you changed (RT preview). Put in actions only what you want the app to do for you. After your turn the
+app builds, encodes and makes new sheets. Set done only when everything is right.
+Sheets: {", ".join("check/" + f for f in sheets)}""", f"סבב {k + 1}: Claude בודק כל כרטיס")
+            acts = [x for x in r.get("actions") or [] if isinstance(x, dict)]
+            last = acts
+            if r.get("done") and not acts and not changed:
+                log(f"Claude אישר את כל הכרטיסים אחרי {k + 1} סבבים.")
+                break
+            if k == rounds - 1:
+                log("נגמרו הסבבים. הייצוא האחרון הוא הגרסה הסופית - אפשר להריץ שוב לעוד סבבים.")
+                break
+            part(a + 0.5 / rounds, a + 1.0 / rounds, f"סבב {k + 1}: מתקן מה ש-Claude ביקש")
+            with LOCK:
+                T = vio.load_json(P("titles.json"))
+                G = groups(T)
+                for x in acts:
+                    if x.get("do") == "clean" and x.get("gid") in G:
+                        for t in G[x["gid"]]:
+                            t["strong"] = True; t["built"] = None
+                vio.save_json(P("titles.json"), T)
+            pp = [x["gid"] for x in acts if x.get("do") == "propaint" and x.get("gid") in G]
+            rt = {x["gid"] for x in acts if x.get("do") == "retrack" and x.get("gid") in G}
+            if any(x.get("do") == "clean" for x in acts) or pp:
+                run_steps(build_steps(False))
+            for g in pp:
+                if not propaint.ready():
+                    log("ProPainter עוד לא מותקן - דילגתי על המחיקה החזקה")
+                    break
+                try:
+                    STATE.update(stage=f"מחיקה חזקה ({g})")
+                    with LOCK:
+                        propaint.card(proj, g, log=log)
+                    rt.add(g)
+                except Exception as e:
+                    log(f"ProPainter על {g} לא הצליח ({e})")
+            if rt:
+                render.track(proj, only=rt)
+            for x in acts:
+                try:
+                    if x.get("do") == "fontmatch" and x.get("id"):
+                        with LOCK:
+                            T = vio.load_json(P("titles.json"))
+                            for t in T["titles"]:
+                                if t["id"] == x["id"]:
+                                    t["style_locked"] = [k for k in t.get("style_locked", []) if k != "font"]; t.pop("from_series", None)
+                            vio.save_json(P("titles.json"), T)
+                        fontmatch.run(proj, s.get("api_key"), s.get("model") or "claude-sonnet-5-5", log=log, only={x["id"]})
+                    elif x.get("do") == "design" and x.get("gid") in G:
+                        spec, rel, lines, box = design.design_card(proj, x["gid"], s["api_key"], log=log)
+                        with LOCK:
+                            design.apply(proj, lines, spec, rel, box)
+                    elif x.get("do") == "redesign" and x.get("id") and x.get("request"):
+                        with LOCK:
+                            design.edit_card(proj, x["id"], s["api_key"], x["request"], log=log)
+                except Exception as e:
+                    log(f"{x.get('do')} לא הצליח ({e})")
+            render.build_layers(proj)
+    finally:
+        PHASE.pop("agent", None)
+    log("המצב המלא הסתיים. התוצאה בתיקיית out.")
+
+
 QUEUE = []                       # [{"path", "status", "msg"}] - shown in the queue dialog
 
 
@@ -877,7 +1076,7 @@ def job_queue():
     log("התור הסתיים.")
 
 
-JOBS = {"design": job_design, "design_edit": job_design_edit, "propaint": job_propaint, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
+JOBS = {"agent": job_agent, "design": job_design, "design_edit": job_design_edit, "propaint": job_propaint, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
@@ -1314,7 +1513,10 @@ class H(BaseHTTPRequestHandler):
 
     def _body(self):
         n = int(self.headers.get("Content-Length") or 0)
-        return json.loads(self.rfile.read(n) or b"{}")
+        raw = self.rfile.read(n) or b"{}"
+        if "x-www-form-urlencoded" in (self.headers.get("Content-Type") or ""):
+            return parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+        return json.loads(raw)
 
     def _video(self, path):
         size = os.path.getsize(path)
@@ -1476,6 +1678,11 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         b = self._body()
+        if u.path == "/api/agent_run":                 # full mode: Claude Code runs the engine (rt.cmd)
+            if not AGENT["token"] or (b.get("token") or [""])[0] != AGENT["token"]:
+                return self._send(403, {"error": "token"})
+            out = agent_run(b.get("a") or [])
+            return self._send(200, out.encode("utf-8"), "text/plain; charset=utf-8")
         if u.path == "/api/pick":
             p = pick_file()
             if p:
@@ -1925,6 +2132,7 @@ def main():
     threading.Thread(target=_warm, daemon=True).start()
     port = free_port()
     srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    AGENT["port"] = port
     srv.daemon_threads = True
     url = f"http://127.0.0.1:{port}/"
     print("Retitle:", url)

@@ -9,3 +9,5 @@ User-facing text in Hebrew, accessible UI (large text, labels, RTL, contrast, re
 Releases: CI publishes to this private repo and, with the repo secret RELEASES_TOKEN, also to the public Elior-sasi/retitle-releases, which installs and self-updates read (no token on the user's side).
 
 Google backup (rt/gdrive.py): CI writes rt/_google.py from the repo secrets GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (Desktop OAuth client, scope drive.appdata). Without them the backup shows "not available".
+
+Full mode (rt/agent.py, job "agent"): one Claude Code session (user's subscription) reviews detect_sheet and every check sheet round after round, edits titles.json, runs the engine itself through `<proj>/agent/rt.cmd` (calls /api/agent_run in the running app: `python -m rt` commands, or `--py script.py` for code it writes) and asks the app for fixes, until done.
