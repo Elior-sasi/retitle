@@ -719,6 +719,23 @@ def _activate(rfile, data):
     return data
 
 
+def bring_front():
+    """Show the window in front. Un-minimize it only if it is minimized - restore() would also
+    take a maximized window out of maximized (it shrank when a project was opened)."""
+    if WINDOW is None:
+        return
+    try:
+        form = getattr(WINDOW, "native", None)
+        st = str(getattr(form, "WindowState", "")) if form is not None else ""
+        if "Minimized" in st:
+            WINDOW.restore()
+            if settings().get("open_maximized", True):
+                WINDOW.maximize()
+        WINDOW.show()
+    except Exception:
+        pass
+
+
 def set_title():
     if WINDOW is None:
         return
@@ -1274,11 +1291,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"proj": None})
             try:
                 open_file(path)
-                if WINDOW is not None:
-                    try:
-                        WINDOW.restore(); WINDOW.show()
-                    except Exception:
-                        pass
+                bring_front()
             except Exception as e:
                 return self._send(200, {"proj": None, "error": str(e)})
             return self._send(200, {"proj": STATE["proj"], "file": STATE["file"], "missing_video": STATE["missing_video"]})
