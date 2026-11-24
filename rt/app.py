@@ -1051,7 +1051,7 @@ def job_agent():
         raise RuntimeError("המצב המלא עובד דרך Claude Code - התקן אותו והתחבר (/login), ואז נסה שוב")
     opts = STATE.get("args") or {}
     proj = STATE["proj"]
-    rounds = max(1, min(8, int(opts.get("rounds") or 4)))
+    rounds = max(1, min(10, int(opts.get("rounds") or 10)))   # until Claude approves every card; 10 is only a safety cap
     ses = agent.Session(proj, s.get("agent_model") or "opus", log, cancel=lambda: STATE["cancel"], tool=agent_tool(proj))
     PHASE["agent"] = True
     base = PHASE["range"][:]
@@ -1155,7 +1155,7 @@ Sheets: {", ".join("check/" + f for f in sheets)}""", f"סבב {k + 1}: Claude �
                 log(f"Claude אישר את כל הכרטיסים אחרי {k + 1} סבבים.")
                 break
             if k == rounds - 1:
-                log("נגמרו הסבבים. הייצוא האחרון הוא הגרסה הסופית - אפשר להריץ שוב לעוד סבבים.")
+                log("הגעתי לתקרה של 10 סבבים בלי ש-Claude אישר הכול. הייצוא האחרון הוא הגרסה הסופית - ההערות שלו ביומן.")
                 break
             part(a + 0.5 / rounds, a + 1.0 / rounds, f"סבב {k + 1}: מתקן מה ש-Claude ביקש")
             with LOCK:

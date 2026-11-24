@@ -466,7 +466,7 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
 <fieldset class="opts"><legend>רמת העבודה</legend>
 <label class="chk"><input type="radio" name="au-m" id="au-m1" value="auto" checked> רגיל - המנוע עושה את רוב העבודה, Claude רק בכמה נקודות (מהיר, מעט מהמכסה)</label>
 <label class="chk"><input type="radio" name="au-m" id="au-m2" value="agent"> מלא - Claude Code עובר על כל כרטיס כמו בצ'אט, מתקן ובודק שוב (הכי טוב, איטי, יותר מהמכסה של המנוי)</label>
-<label for="au-r" id="au-rl">מספר סבבי בדיקה ותיקון</label> <select id="au-r" aria-labelledby="au-rl"><option>2</option><option>3</option><option selected>4</option><option>6</option></select></fieldset>
+<p class="note" style="padding:0">במצב המלא Claude ממשיך לבדוק ולתקן עד שהוא מאשר את כל הכרטיסים (לכל היותר 10 סבבים).</p></fieldset>
 <h3 class="sub">הסדר</h3><ol id="au-plan" class="plan"></ol><p class="note" id="au-note" role="status"></p>
 <p class="note">שלבים שכבר בוצעו מדולגים. אפשר לעבוד על דברים אחרים בזמן הריצה, ולבטל בכל רגע.</p></div>
 <div class="df"><button class="qbtn" id="au-queue">לתור עבודה...</button><button class="qbtn" id="au-cancel">סגור</button><button class="cta" id="au-go">התחל</button></div></dialog>
@@ -886,9 +886,9 @@ function setEdge(which){if(!S.sel)return say('לא נבחר פריט');beginEdit
   if(S.sel.k==='t'){const t=mt(S.sel.id);if(which==='in')t.in=Math.min(S.frame,t.out);else t.out=Math.max(S.frame,t.in);saveTitle(t.id,0)}
   else{const c=mc(S.sel.id);if(which==='in')c.start=Math.min(S.frame/S.fps,c.end-1/S.fps);else c.end=Math.max((S.frame+1)/S.fps,c.start+1/S.fps);saveCue(c.n,0)}
   endEdit();renderTimeline();renderList();renderInsp();say(which==='in'?'סומנה כניסה':'סומנה יציאה')}
-const AGENT_PLAN=['ניתוח הכותרות (אם עוד לא נעשה)','Claude עובר על כל הטקסטים שזוהו, מסמן מה נשאר ומתרגם','תמלול ותרגום הדיאלוג, קובץ SRT','עיצוב כותרות מעוצבות ולוגואים','סבבים: בנייה וקידוד, Claude מסתכל על כל כרטיס לפני ואחרי, מתקן, ושוב - עד שהכול נכון'];
+const AGENT_PLAN=['ניתוח הכותרות (אם עוד לא נעשה)','Claude עובר על כל הטקסטים שזוהו, מסמן מה נשאר ומתרגם','תמלול ותרגום הדיאלוג, קובץ SRT','עיצוב כותרות מעוצבות ולוגואים','סבבים: בנייה וקידוד, Claude מסתכל על כל כרטיס לפני ואחרי, מתקן, ושוב - עד שהכול תקין'];
 function autoMode(){return $('#au-m2').checked?'agent':'auto'}
-async function planAuto(){$('#au-r').disabled=autoMode()!=='agent';if(autoMode()==='agent'){const s=await api('/api/settings');
+async function planAuto(){if(autoMode()==='agent'){const s=await api('/api/settings');
   $('#au-plan').replaceChildren(...AGENT_PLAN.map(n=>el('li',{text:n})));
   $('#au-note').textContent=s.claude_code_found?'':'המצב המלא צריך את Claude Code במחשב, מחובר למנוי (העדפות > Claude).';$('#au-go').disabled=!s.claude_code_found;return}
   const r=await api('/api/auto_plan',{opts:{titles:$('#au-t').checked,dialog:$('#au-d').checked}});
@@ -897,7 +897,7 @@ async function planAuto(){$('#au-r').disabled=autoMode()!=='agent';if(autoMode()
   $('#au-go').disabled=!(r.parts||[]).length}
 function openAuto(){if(!S.proj)return say('פתח וידאו קודם');openDlg('#d-auto');planAuto()}
 $('#au-t').onchange=planAuto;$('#au-d').onchange=planAuto;$('#au-m1').onchange=planAuto;$('#au-m2').onchange=planAuto;$('#au-cancel').onclick=()=>$('#d-auto').close();
-$('#au-go').onclick=()=>{$('#d-auto').close();if(autoMode()==='agent')run('agent',{dialog:$('#au-d').checked,rounds:+$('#au-r').value});else run('auto',{titles:$('#au-t').checked,dialog:$('#au-d').checked})};
+$('#au-go').onclick=()=>{$('#d-auto').close();if(autoMode()==='agent')run('agent',{dialog:$('#au-d').checked,rounds:10});else run('auto',{titles:$('#au-t').checked,dialog:$('#au-d').checked})};
 $('#au-queue').onclick=()=>{$('#d-auto').close();openQueue()};
 const QST={waiting:'ממתין',running:'רץ עכשיו',done:'הסתיים',error:'שגיאה'};
 function renderQueue(){const L=S.queue||[];
