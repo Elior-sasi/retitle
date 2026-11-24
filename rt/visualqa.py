@@ -4,7 +4,7 @@ wrongly timed or in a style that clashes with the source. Results: visual_qa.jso
 import os, json, re, base64, glob, urllib.request
 import cv2
 from . import vio
-from .translate import call
+from .translate import call, small_jpeg
 from .extract import groups
 
 SYSTEM = """You are the QA reviewer of a Hebrew localization of on-screen titles in a video.
@@ -22,14 +22,8 @@ plain " quotes, hyphen not em dash).
 Return ONLY JSON: {"issues": [{"sheet": "<sheet id>", "frame": <number or null>, "sev": "err" or "warn", "msg": "..."}]}"""
 
 
-def _b64(path, w=1400):
-    img = cv2.imread(path)
-    if img is None:
-        return None
-    if img.shape[1] > w:
-        img = cv2.resize(img, (w, int(img.shape[0] * w / img.shape[1])), interpolation=cv2.INTER_AREA)
-    ok, b = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    return base64.b64encode(b.tobytes()).decode()
+def _b64(path, w=1000):
+    return small_jpeg(path, w, 75)
 
 
 def run(proj, api_key, model="", progress=None):
@@ -50,7 +44,8 @@ def run(proj, api_key, model="", progress=None):
             content.append({"type": "text", "text": f"Sheet {gid}: {desc}"})
             content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}})
         if content:
-            body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 4000, "system": SYSTEM,
+            body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 4000,
+                    "system": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
                     "messages": [{"role": "user", "content": content + [{"type": "text", "text": "Review the sheets above."}]}]}
             req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                          headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",

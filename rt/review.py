@@ -5,7 +5,7 @@ Claude key is set; the rules in detect.py stay as the fallback without a key."""
 import os, json, base64, re, urllib.request
 import cv2
 from . import vio
-from .translate import call
+from .translate import call, small_jpeg
 
 KINDS = {"title": None, "logo": "לוגו של חברה", "credits": "קרדיטים", "scene": "טקסט בתוך התמונה",
          "dialogue": None, "noise": "רעש של זיהוי"}
@@ -27,10 +27,10 @@ Return ONLY JSON: {"items": [{"id": "...", "kind": "...", "text": "...", "why": 
 
 
 def _jpg(img, w):
-    if img.shape[1] > w:
-        img = cv2.resize(img, (w, int(img.shape[0] * w / img.shape[1])), interpolation=cv2.INTER_AREA)
-    ok, b = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 82])
-    return base64.b64encode(b.tobytes()).decode()
+    return small_jpeg(img, w, 70)
+
+# sorting is an easy look: the small, cheap model does it well; the strong one is kept for writing
+MODEL = "claude-haiku-5-5"
 
 
 def _content(proj, items):
@@ -46,8 +46,8 @@ def _content(proj, items):
         cv2.rectangle(full, (x0 - 4, y0 - 4), (x1 + 4, y1 + 4), (0, 220, 255), max(2, img.shape[1] // 320))
         out.append({"type": "text", "text": f"Item {t['id']} - OCR read: {json.dumps(t['src'], ensure_ascii=False)}"})
         if crop.size:
-            out.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": _jpg(crop, 640)}})
-        out.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": _jpg(full, 480)}})
+            out.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": _jpg(crop, 360)}})
+        out.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": _jpg(full, 320)}})
     return out
 
 
@@ -55,14 +55,29 @@ def classify(proj, api_key, model="", only=None, progress=None, log=print):
     """Updates titles.json in place. Returns {kind: count}."""
     path = os.path.join(proj, "titles.json")
     T = vio.load_json(path)
-    items = [t for t in T["titles"] if (only is None or t["id"] in only) and not t.get("from_series")]
+    items = [t for t in T["titles"] if (only is None or t["id"] in only) and not t.get("from_series")
+             # credits and known logos are already certain: no need to ask
+             and t.get("auto_reason") not in ("קרדיטים", "לוגו של חברה")]
+    # the same text again (a plate seen in 8 shots, a repeated caption): ask once, apply to all
+    from .detect import norm
+    reps, same = [], {}
+    for t in items:
+        k = (norm(t["src"]), t["group"]) if len(norm(t["src"])) > 0 else (t["id"], "")
+        k2 = norm(t["src"])
+        hit = next((r for r in reps if norm(r["src"]) == k2 and k2), None)
+        if hit:
+            same.setdefault(hit["id"], []).append(t["id"])
+        else:
+            reps.append(t)
+    items = reps
     if not items:
         return {}
     res = {}
-    step = 10                                  # 10 items = 20 pictures per request
+    step = 20                                  # 20 items (40 small pictures) per request
     for k in range(0, len(items), step):
         bt = items[k:k + step]
-        body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 4000, "system": SYSTEM,
+        body = {"model": MODEL, "max_tokens": 4000,
+                "system": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
                 "messages": [{"role": "user", "content": _content(proj, bt) + [{"type": "text", "text": "Classify the items above."}]}]}
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                      headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
@@ -73,6 +88,8 @@ def classify(proj, api_key, model="", only=None, progress=None, log=print):
         for it in (json.loads(m.group(0)).get("items", []) if m else []):
             if it.get("kind") in KINDS:
                 res[str(it.get("id"))] = it
+                for other in same.get(str(it.get("id")), []):
+                    res[other] = it
         if progress:
             progress(min(1.0, (k + step) / len(items)))
     count = {}

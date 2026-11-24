@@ -176,6 +176,11 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 #rngchip[hidden]{display:none}
 .wrange{position:absolute;top:0;background:rgba(255,209,102,.10);border-inline:2px solid #ffd166;pointer-events:none;z-index:1}
 .wrange-r{position:absolute;top:0;height:30px;background:rgba(255,209,102,.45);pointer-events:none}
+.opts{border:1px solid #3a3a44;border-radius:6px;padding:8px 12px;margin:0 0 10px}.opts legend{padding:0 6px}
+.opts .chk{display:block;margin:6px 0;font-size:1.05em}.plan{margin:4px 0 8px;padding-inline-start:1.5em;line-height:1.8}
+.qlist{list-style:none;margin:8px 0;padding:0;max-height:40vh;overflow:auto}.qlist li{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #2c2c34}
+.qlist .qn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.qst{border:1px solid currentColor;border-radius:4px;padding:1px 8px;font-size:.9em}
+.qst.done{color:#7ee2a8}.qst.error{color:#ff8a8a}.qst.running{color:#ffd166}.qst.waiting{color:#cfd3dc}
 .chip{border:1px solid currentColor;border-radius:9px;padding:0 6px;font-size:.82em;line-height:1.35}
 .row2{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0}
 .fontbtn{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;background:#1b1b1b;border:1px solid #444;border-radius:3px;color:#fff;padding:2px 10px;cursor:pointer;text-align:start}
@@ -283,6 +288,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <span class="brand"><img alt="" src="data:image/png;base64,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">Retitle</span>
   <div role="menubar" aria-label="תפריט ראשי" id="menubar"></div>
   <button class="cta" id="upd-badge" hidden>יש עדכון - התקן</button><span id="workspace"></span><span id="savestate" role="status" aria-live="polite"></span>
+  <button class="qbtn" id="q-auto" disabled aria-haspopup="dialog" title="ניתוח, תרגום, תמלול, בנייה, ייצוא ובדיקה ברצף">הכול אוטומטית</button>
   <button class="qbtn" id="q-analyze" disabled>נתח כותרות</button>
   <button class="qbtn" id="q-trans" disabled>תמלל</button>
   <button class="qbtn" id="q-build" disabled title="Enter">בנה תצוגה</button>
@@ -429,6 +435,18 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <div class="df"><button class="cta" data-close>סגור</button></div>
 </dialog>
 <dialog id="d-qa" aria-labelledby="dq-h"><h2 class="dh" id="dq-h">בדיקת QA</h2><div class="db"><p class="note" id="qa-sum" style="padding:0 0 6px" role="status"></p><table class="kt qa"><tbody id="qa-list"></tbody></table></div><div class="df"><button class="qbtn" id="qa-re">בדוק שוב</button><button class="cta" data-close>סגור</button></div></dialog>
+<dialog id="d-auto" aria-labelledby="da-h"><h2 class="dh" id="da-h">הכול אוטומטית</h2><div class="db">
+<fieldset class="opts"><legend>מה לעשות</legend><label class="chk"><input type="checkbox" id="au-t" checked> כותרות על המסך (ניתוח, תרגום, בנייה וייצוא)</label>
+<label class="chk"><input type="checkbox" id="au-d" checked> דיאלוג (תמלול, תרגום וקובץ SRT)</label></fieldset>
+<h3 class="sub">הסדר</h3><ol id="au-plan" class="plan"></ol><p class="note" id="au-note" role="status"></p>
+<p class="note">שלבים שכבר בוצעו מדולגים. אפשר לעבוד על דברים אחרים בזמן הריצה, ולבטל בכל רגע.</p></div>
+<div class="df"><button class="qbtn" id="au-queue">לתור עבודה...</button><button class="qbtn" id="au-cancel">סגור</button><button class="cta" id="au-go">התחל</button></div></dialog>
+<dialog id="d-queue" aria-labelledby="dqq-h"><h2 class="dh" id="dqq-h">תור עבודה</h2><div class="db">
+<p class="note">כל וידאו בתור עובר "הכול אוטומטית" בזה אחר זה, ונשמר כפרויקט. אפשר להשאיר את המחשב לעבוד, למשל בלילה.</p>
+<fieldset class="opts"><legend>לכל פרק</legend><label class="chk"><input type="checkbox" id="qu-t" checked> כותרות על המסך</label>
+<label class="chk"><input type="checkbox" id="qu-d" checked> דיאלוג וכתוביות</label></fieldset>
+<ul id="qu-list" class="qlist" aria-label="הסרטונים בתור"></ul><p class="note" id="qu-sum" role="status"></p></div>
+<div class="df"><button class="qbtn" id="qu-add">הוסף וידאו...</button><button class="qbtn" id="qu-clear">נקה שהסתיימו</button><button class="qbtn" id="qu-close">סגור</button><button class="cta" id="qu-go">הפעל את התור</button></div></dialog>
 <dialog id="d-next" aria-labelledby="dn-h"><h2 class="dh" id="dn-h">הניתוח הסתיים</h2><div class="db"><p id="next-sum" role="status" style="font-size:1.1em"></p>
 <p>הכותרות עוד לא בעברית - זה השלב הבא:</p><ol style="line-height:1.8;padding-inline-start:1.4em"><li>תרגם כל כותרת: אוטומטית, או בחירה ברשימה והקלדת עברית.</li><li>"בנה תצוגה" - מוחק את המקור ומציב את העברית.</li></ol>
 <p class="note">מה שסומן "נשאר" (קרדיטים, לוגואים, טקסט בתוך התמונה) לא יוחלף. אפשר להחזיר כל אחד לתרגום.</p></div>
@@ -803,6 +821,26 @@ function setEdge(which){if(!S.sel)return say('לא נבחר פריט');beginEdit
   if(S.sel.k==='t'){const t=mt(S.sel.id);if(which==='in')t.in=Math.min(S.frame,t.out);else t.out=Math.max(S.frame,t.in);saveTitle(t.id,0)}
   else{const c=mc(S.sel.id);if(which==='in')c.start=Math.min(S.frame/S.fps,c.end-1/S.fps);else c.end=Math.max((S.frame+1)/S.fps,c.start+1/S.fps);saveCue(c.n,0)}
   endEdit();renderTimeline();renderList();renderInsp();say(which==='in'?'סומנה כניסה':'סומנה יציאה')}
+async function planAuto(){const r=await api('/api/auto_plan',{opts:{titles:$('#au-t').checked,dialog:$('#au-d').checked}});
+  $('#au-plan').replaceChildren(...(r.parts||[]).map(n=>el('li',{text:n})));
+  $('#au-note').textContent=r.key?'':'אין מפתח Claude בהעדפות - התרגום האוטומטי ידולג (אפשר להוסיף מפתח בהעדפות).';
+  $('#au-go').disabled=!(r.parts||[]).length}
+function openAuto(){if(!S.proj)return say('פתח וידאו קודם');openDlg('#d-auto');planAuto()}
+$('#au-t').onchange=planAuto;$('#au-d').onchange=planAuto;$('#au-cancel').onclick=()=>$('#d-auto').close();
+$('#au-go').onclick=()=>{$('#d-auto').close();run('auto',{titles:$('#au-t').checked,dialog:$('#au-d').checked})};
+$('#au-queue').onclick=()=>{$('#d-auto').close();openQueue()};
+const QST={waiting:'ממתין',running:'רץ עכשיו',done:'הסתיים',error:'שגיאה'};
+function renderQueue(){const L=S.queue||[];
+  $('#qu-list').replaceChildren(...L.map(q=>el('li',{},el('span',{class:'qn',title:q.path,text:q.name}),el('span',{class:'qst '+q.status,text:QST[q.status]||q.status,title:q.msg||''}),
+    q.status!=='running'?el('button',{class:'mini',text:'הסר','aria-label':'הסר את '+q.name+' מהתור',onclick:async()=>{const r=await api('/api/queue',{act:'remove',path:q.path});S.queue=r.queue;renderQueue()}}):'')));
+  const w=L.filter(q=>q.status==='waiting'||q.status==='error').length;
+  $('#qu-sum').textContent=L.length?`${L.length} בתור, ${w} ממתינים`:'התור ריק. הוסף קובצי וידאו או פרויקטים.';$('#qu-go').disabled=!w||S.running}
+async function openQueue(){const r=await api('/api/queue',{});S.queue=r.queue;openDlg('#d-queue');renderQueue()}
+$('#qu-add').onclick=async()=>{const r=await api('/api/queue',{act:'add'});S.queue=r.queue;renderQueue()};
+$('#qu-clear').onclick=async()=>{const r=await api('/api/queue',{act:'clear_done'});S.queue=r.queue;renderQueue()};
+$('#qu-close').onclick=()=>$('#d-queue').close();
+$('#qu-go').onclick=async()=>{const r=await api('/api/run',{job:'queue',args:{titles:$('#qu-t').checked,dialog:$('#qu-d').checked}});
+  if(!r.started)return say('פעולה אחרת עדיין רצה',true);wasRunning=true;$('#d-queue').close();say('התור התחיל')};
 function showRange(){const rg=S.data&&S.data.project.range;$('#rngchip').hidden=!rg;
   if(rg)$('#rng-txt').textContent=`טווח עבודה: ${tc(rg[0])} - ${tc(rg[1])} · ניתוח ותמלול רק בו`}
 async function setRange(which){if(!S.proj)return say('פתח וידאו קודם');const cur=S.data.project.range;let rg=null;
@@ -815,15 +853,15 @@ function gotoEdge(which){if(!S.sel)return say('לא נבחר פריט');const it
 function step(dir){const L=items();if(!L.length)return;let i=S.sel?L.findIndex(x=>x.k===S.sel.k&&x.id===S.sel.id):-1;i=clamp(i+dir,0,L.length-1);select(L[i].k,L[i].id,true)}
 
 // ================================================================ jobs / status
-const JOBN={review:'מיון עם Claude',playable:'הכנת וידאו לניגון',fontmatch:'חיפוש גופן דומה',fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
-async function run(job){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay','fonts','translate_titles','translate_dialog','review'].includes(job))await flush();const r=await api('/api/run',{job});
+const JOBN={auto:'הכול אוטומטית',queue:'תור עבודה',review:'מיון עם Claude',playable:'הכנת וידאו לניגון',fontmatch:'חיפוש גופן דומה',fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
+async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay','fonts','translate_titles','translate_dialog','review'].includes(job))await flush();const r=await api('/api/run',{job,args});
   if(r.need==='api_key'){say('לתרגום אוטומטי צריך מפתח של Claude - מכניסים אותו בהעדפות',true);openDlg('#d-settings');setTimeout(()=>{const k=$('#s-key');if(k){k.focus();k.scrollIntoView({block:'center'})}},150);return}
   if(!r.started)return say('פעולה אחרת עדיין רצה',true);wasRunning=true;S.job=job;say(`${JOBN[job]||job} התחיל`)}
 let wasRunning=false;
 async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
   $('#logbox').textContent=s.log.join('\n');S.running=s.running;
   if(s.proj&&s.proj!==S.proj&&!S.loading){S.loading=true;try{await loadProject(s.proj)}finally{S.loading=false}}S.proj=s.proj;
-  for(const id of['q-analyze','q-trans','q-build','q-export'])$('#'+id).disabled=!s.proj||s.running;
+  for(const id of['q-auto','q-analyze','q-trans','q-build','q-export'])$('#'+id).disabled=!s.proj||s.running;S.queue=s.queue||[];if($('#d-queue').open)renderQueue();
   $('#pbar').style.display='none';     // progress lives in the card over the video only
   S.job=s.job;showBusy(s);const an=$('#asrnote'),A=s.asr||{};
   an.textContent=A.state==='downloading'?`${A.what==='gpu'?'מוריד תמיכה בכרטיס המסך לתמלול':'מכין מנוע תמלול'} ${Math.floor((A.progress||0)*100)}%`:A.state==='error'?'מנוע התמלול לא ירד - ינסה שוב בתמלול':'';
@@ -840,7 +878,7 @@ async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
 const mmss=t=>{t=Math.max(0,Math.round(t));const h=Math.floor(t/3600),m=String(Math.floor(t%3600/60)).padStart(2,'0'),x=String(t%60).padStart(2,'0');return h?`${h}:${m}:${x}`:`${m}:${x}`};
 function showBusy(s){const b=$('#busy');if(!s.running){b.hidden=true;$('#busy-live').hidden=true;S.liveT=null;S.busyStg='';return}
   const first=b.hidden;b.hidden=false;$('#busy-h').textContent=JOBN[s.job]||s.job;
-  const stg=s.cancelling?'מבטל...':s.steps>1?`שלב ${s.step} מתוך ${s.steps}: ${s.stage}`:(s.stage||'פועל...');
+  let stg=s.cancelling?'מבטל...':s.steps>1?`שלב ${s.step} מתוך ${s.steps}: ${s.stage}`:(s.stage||'פועל...');if(s.phase&&!s.cancelling)stg=s.phase+' · '+stg;
   if(stg!==S.busyStg){$('#busy-stg').textContent=stg;S.busyStg=stg}
   const bar=$('#busy-bar'),p=s.progress;
   if(p!=null){bar.value=p;$('#busy-pct').textContent=Math.floor(p*100)+'%'}else{bar.removeAttribute('value');$('#busy-pct').textContent=''}
@@ -926,7 +964,7 @@ $('#upd-go').onclick=async()=>{$('#d-upd').close();await flush();const r=await a
 const MENUS=[
  ['קובץ',[['פרויקט חדש מקובץ וידאו...','Ctrl+N',()=>openVideo()],['פתח פרויקט...','Ctrl+O',()=>openProjectFile()],['פרויקטים אחרונים...','',()=>openRecent()],['-'],['שמור','Ctrl+S',()=>saveNow(),'proj'],['שמור בשם...','Ctrl+Shift+S',()=>saveAs(),'proj'],['סדרה...','',()=>openSeries(),'proj'],['-'],['ייבוא SRT מקור (לתרגום)...','',()=>importSrt(false),'proj'],['ייבוא SRT בעברית...','',()=>importSrt(true),'proj'],['-'],['ייצוא מדיה (וידאו + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כותרות בלבד על רקע שקוף (MOV)','',()=>run('overlay'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks']]],
  ['עריכה',[['בטל','Ctrl+Z',()=>undo(),'undo'],['בצע שוב','Ctrl+Shift+Z',()=>redo(),'redo'],['-'],['בחר פריט במיקום הנגן','D',()=>selectAtPlayhead(),'proj'],['סמן תחילת טווח עבודה','I',()=>setRange('in'),'proj'],['סמן סוף טווח עבודה','O',()=>setRange('out'),'proj'],['נקה טווח עבודה','Ctrl+Shift+X',()=>setRange(null),'proj'],['-'],['תחילת הפריט = מיקום הנגן','Q',()=>setEdge('in'),'sel'],['סוף הפריט = מיקום הנגן','W',()=>setEdge('out'),'sel'],['-'],['להחליף את כל הכותרות','',()=>bulk(true),'proj'],['לא להחליף אף כותרת','',()=>bulk(false),'proj'],['-'],['העדפות...','Ctrl+,',()=>openDlg('#d-settings')]]],
- ['וידאו',[['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['Claude: מיין שוב כותרות / לוגואים / קרדיטים','',()=>run('review'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['התאם גופנים אוטומטית','',()=>run('fonts'),'proj'],['בדיקת QA','',()=>openQA(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
+ ['וידאו',[['הכול אוטומטית...','',()=>openAuto(),'proj'],['תור עבודה...','',()=>openQueue()],['-'],['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['Claude: מיין שוב כותרות / לוגואים / קרדיטים','',()=>run('review'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['התאם גופנים אוטומטית','',()=>run('fonts'),'proj'],['בדיקת QA','',()=>openQA(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
  ['תצוגה',[['מקור','',()=>setMode('source'),'proj'],['תוצאה','T',()=>setMode('result'),'proj'],['זה לצד זה','Shift+T',()=>setMode('compare'),'proj'],['מסך מלא','Ctrl+`',()=>toggleFS(),'proj'],['-'],['הגדל זום','=',()=>zoomTo(S.zoom*1.5),'proj'],['הקטן זום','-',()=>zoomTo(S.zoom/1.5),'proj'],['התאם לחלון','\\',()=>fit(),'proj'],['-'],['יומן פעולות','',()=>openDlg('#d-log')]]],
  ['עזרה',[['קיצורי מקלדת','Ctrl+Alt+K',()=>openDlg('#d-help')],['-'],['בדוק עדכונים...','',()=>checkUpdate(true)]]]];
 const WHY={proj:'פתח וידאו קודם',undo:'אין מה לבטל',redo:'אין מה לשחזר',sel:'בחר פריט קודם',checks:'זמין אחרי ייצוא',subs:'לא זוהו כתוביות צרובות'};
@@ -1179,7 +1217,7 @@ addEventListener('pagehide',()=>{if(!S.proj||!Object.keys(saveTimers).length)ret
   navigator.sendBeacon('/api/titles',JSON.stringify({titles:S.model.titles}));if(S.model.cues.length)navigator.sendBeacon('/api/dialog',JSON.stringify({cues:S.model.cues}))});
 function bulk(v){beginEdit();S.model.titles.forEach(t=>t.translate=v);endEdit();api('/api/titles',{titles:S.model.titles.map(t=>({id:t.id,translate:v}))}).then(()=>reloadData(true)).then(()=>{renderAll();refreshFrame()});say(v?'כל הכותרות יוחלפו':'אף כותרת לא תוחלף')}
 $('#w-open').onclick=openVideo;
-$('#q-analyze').onclick=()=>run('analyze');$('#q-trans').onclick=()=>run('transcribe');$('#q-build').onclick=()=>run('build');$('#q-export').onclick=()=>run('export');
+$('#q-auto').onclick=()=>openAuto();$('#q-analyze').onclick=()=>run('analyze');$('#q-trans').onclick=()=>run('transcribe');$('#q-build').onclick=()=>run('build');$('#q-export').onclick=()=>run('export');
 $('#b-all').onclick=()=>bulk(true);$('#b-none').onclick=()=>bulk(false);$('#b-log').onclick=()=>openDlg('#d-log');
 $('#tab-t').onclick=()=>{S.tab='t';renderList()};$('#tab-c').onclick=()=>{S.tab='c';renderList()};
 $('#h-proj').addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();S.tab=S.tab==='t'?'c':'t';renderList();$(S.tab==='t'?'#tab-t':'#tab-c').focus()}});

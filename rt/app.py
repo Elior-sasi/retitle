@@ -11,6 +11,7 @@ CFG = os.path.join(CFG_DIR, "settings.json")
 STATE = {"proj": None, "job": None, "log": [], "running": False, "error": None, "progress": None,
          "stage": "", "step": 0, "steps": 0, "t0": 0, "cancel": False, "cancelled": False}
 RANGE = [0.0, 1.0]               # current stage's share of the whole job
+PHASE = {"range": [0.0, 1.0], "name": ""}   # one-click / queue: the current part of the run
 WINDOW = None
 FULL = False
 LOCK = threading.Lock()          # titles.json / dialog.json writes
@@ -117,7 +118,9 @@ def prog(x):
     if x is None:
         return
     a, b = RANGE
-    STATE["progress"] = round(a + (b - a) * min(1.0, max(0.0, float(x))), 3)
+    v = a + (b - a) * min(1.0, max(0.0, float(x)))
+    pa, pb = PHASE["range"]                    # inside "all in one click": this job's share of the whole
+    STATE["progress"] = round(pa + (pb - pa) * v, 3)
 
 
 def run_steps(steps):
@@ -466,8 +469,26 @@ def job_translate(kind):
             return
         STATE.update(stage=f"מתרגם {len(items)} כותרות עם Claude", step=1, steps=1)
         log(f"מתרגם {len(items)} כותרות...")
+        # the same lone line again (a repeated caption or name card): translated once, reused - no tokens
+        from .detect import norm
+        size = {}
+        for t in T["titles"]:
+            size[t["group"]] = size.get(t["group"], 0) + 1
+        known = {norm(t["src"]): t["he"] for t in T["titles"] if t.get("he") and size[t["group"]] == 1 and norm(t["src"])}
+        res, copies, send = {}, {}, []
+        for it in items:
+            k = norm(it["src"])
+            if size[it["group"]] == 1 and k and k in known:
+                res[it["id"]] = known[k]
+            elif size[it["group"]] == 1 and k and any(norm(x["src"]) == k and size[x["group"]] == 1 for x in send):
+                first = next(x for x in send if norm(x["src"]) == k and size[x["group"]] == 1)
+                copies.setdefault(first["id"], []).append(it["id"])
+            else:
+                send.append(it)
+        if len(send) < len(items):
+            log(f"{len(items) - len(send)} כותרות חוזרות - משתמש בתרגום הקיים במקום לשלוח שוב")
+        items = send
         imgs = {it["id"]: P("thumbs", f"{it['id']}.jpg") for it in items if os.path.exists(P("thumbs", f"{it['id']}.jpg"))}
-        res = {}
         # whole cards stay together in one request (their lines are translated as one sentence)
         batches, cur = [], []
         for it in items:
@@ -476,12 +497,17 @@ def job_translate(kind):
             cur.append(it)
         if cur:
             batches.append(cur)
+        batches = [b for b in batches if b]
         prog(0.02)
         for k, bt in enumerate(batches):
             res.update(translate.translate(bt, s["api_key"], s.get("glossary", ""),
                                            translate.context(s.get("content"), "titles"), s.get("model"),
                                            images={i: imgs[i] for i in imgs if any(x["id"] == i for x in bt)}))
             prog((k + 1) / len(batches))
+        for a, others in copies.items():
+            for o in others:
+                if a in res:
+                    res[o] = res[a]
         with LOCK:
             T = vio.load_json(P("titles.json"))
             for t in T["titles"]:
@@ -597,7 +623,89 @@ def job_review():
     log("Claude מיין: " + (", ".join(f"{names[k]} {v}" for k, v in cnt.items()) or "אין מה לבדוק"))
 
 
-JOBS = {"review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
+def auto_parts(opts=None):
+    """What "all in one click" will do for the open project (the dialog shows the same list)."""
+    s = settings(); opts = opts or {}
+    T = vio.load_json(P("titles.json"), {"titles": []})["titles"]
+    D = vio.load_json(P("dialog.json"), {"cues": []})["cues"]
+    key = bool(s.get("api_key"))
+    want_t, want_d = opts.get("titles", True), opts.get("dialog", True)
+    parts = []
+    if want_t:
+        if not T:
+            parts.append(("analyze", "ניתוח הכותרות", 0.35))
+        if key:
+            parts.append(("translate_titles", "תרגום הכותרות", 0.05))
+    if want_d and vio.load_json(P("project.json")).get("info", {}).get("has_audio", True):
+        if not D:
+            parts.append(("transcribe", "תמלול הדיאלוג", 0.25))
+        if key:
+            parts.append(("translate_dialog", "תרגום הכתוביות", 0.05))
+        parts.append(("srt", "קובץ כתוביות SRT", 0.01))
+    if want_t:
+        parts.append(("export", "בנייה וייצוא + בדיקה", 0.3))
+    return parts
+
+
+def job_auto(opts=None):
+    """Everything in a row: analyse, translate, transcribe, build, export, check. Steps that are
+    already done are skipped; a missing Claude key just skips the translation steps."""
+    opts = opts if opts is not None else (STATE.get("args") or {})
+    parts = auto_parts(opts)
+    tot = sum(w for *_, w in parts) or 1
+    acc = 0.0
+    base = PHASE["range"][:]
+    for i, (job, name, w) in enumerate(parts):
+        a = base[0] + (base[1] - base[0]) * acc / tot
+        b = base[0] + (base[1] - base[0]) * (acc + w) / tot
+        PHASE.update(range=[a, b], name=(PHASE.get("prefix", "") + f"חלק {i + 1} מתוך {len(parts)}: {name}"))
+        RANGE[:] = [0.0, 1.0]
+        STATE.update(stage=name, step=0, steps=0)
+        prog(0)
+        if job == "translate_titles":
+            job_translate("titles")
+        elif job == "translate_dialog":
+            job_translate("dialog")
+        else:
+            JOBS[job]()
+        acc += w
+    if not settings().get("api_key"):
+        log("בלי מפתח Claude דילגתי על התרגום האוטומטי - אפשר לכתוב עברית ולייצא שוב")
+    log("הכול הסתיים.")
+
+
+QUEUE = []                       # [{"path", "status", "msg"}] - shown in the queue dialog
+
+
+def job_queue():
+    """Runs "all in one click" on each video/project in the queue, one after the other."""
+    todo = [q for q in QUEUE if q["status"] in ("waiting", "error")]
+    opts = STATE.get("args") or {}
+    for k, q in enumerate(todo):
+        q.update(status="running", msg="")
+        PHASE.update(range=[k / len(todo), (k + 1) / len(todo)], prefix=f"פרק {k + 1} מתוך {len(todo)} · ")
+        try:
+            open_file(q["path"])
+            job_auto(opts)
+            try:
+                from . import project
+                if STATE.get("file"):
+                    project.write(STATE["file"], STATE["proj"], vio.load_json(P("project.json"))["video"])
+            except Exception:
+                traceback.print_exc()
+            q.update(status="done", msg="")
+        except Cancelled:
+            q.update(status="waiting", msg="בוטל")
+            raise
+        except Exception as e:
+            traceback.print_exc()
+            q.update(status="error", msg=str(e))
+            log(f"{os.path.basename(q['path'])}: שגיאה - {e}. ממשיך לבא בתור.")
+    PHASE.pop("prefix", None)
+    log("התור הסתיים.")
+
+
+JOBS = {"auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
@@ -608,6 +716,9 @@ def start(name):
     STATE.update(running=True, job=name, error=None, progress=None, stage="", step=0, steps=0,
                  t0=time.time(), cancel=False, cancelled=False)
     RANGE[:] = [0.0, 1.0]
+    PHASE.update(range=[0.0, 1.0], name="")
+    from . import translate as _tr
+    _tr.USAGE.clear()
 
     def run():
         try:
@@ -620,7 +731,14 @@ def start(name):
             log("שגיאה: " + str(e))
             traceback.print_exc()
         finally:
+            try:
+                line = _tr.usage_line()
+                if line:
+                    log(line)
+            except Exception:
+                pass
             STATE["t1"] = time.time()
+            PHASE.update(range=[0.0, 1.0], name="")
             STATE["running"] = False
             STATE["progress"] = None
     threading.Thread(target=run, daemon=True).start()
@@ -1079,7 +1197,8 @@ class H(BaseHTTPRequestHandler):
             from . import asr
             return self._send(200, {"asr": asr.STATE, "proj": STATE["proj"], "file": STATE.get("file"), "missing_video": STATE.get("missing_video", False), "running": STATE["running"], "job": STATE["job"],
                                     "error": STATE["error"], "log": STATE["log"], "progress": STATE["progress"],
-                                    "stage": STATE["stage"], "step": STATE["step"], "steps": STATE["steps"],
+                                    "stage": STATE["stage"], "step": STATE["step"], "steps": STATE["steps"], "phase": PHASE["name"],
+                                    "queue": QUEUE,
                                     "elapsed": round((time.time() if STATE["running"] else STATE.get("t1", time.time())) - STATE["t0"], 1) if STATE["t0"] else 0,
                                     "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"],
                                     "live": _live()})
@@ -1190,6 +1309,22 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"proj": STATE["proj"] if p else None, "file": STATE.get("file")})
         if u.path == "/api/open":
             return self._send(200, {"proj": open_project(b["video"])})
+        if u.path == "/api/queue":
+            act = b.get("act")
+            if act == "add":
+                for pth in (b.get("paths") or ([pick_file("video")] if not b.get("path") else [b["path"]])):
+                    if pth and not any(q["path"] == pth for q in QUEUE):
+                        QUEUE.append({"path": pth, "name": os.path.basename(pth), "status": "waiting", "msg": ""})
+            elif act == "remove":
+                QUEUE[:] = [q for q in QUEUE if q["path"] != b.get("path") or q["status"] == "running"]
+            elif act == "clear_done":
+                QUEUE[:] = [q for q in QUEUE if q["status"] != "done"]
+            return self._send(200, {"queue": QUEUE})
+        if u.path == "/api/auto_plan":
+            if not STATE["proj"]:
+                return self._send(200, {"parts": []})
+            return self._send(200, {"parts": [n for _, n, _ in auto_parts(b.get("opts") or {})],
+                                    "key": bool(settings().get("api_key"))})
         if u.path == "/api/range":
             if not STATE["proj"]:
                 return self._send(400, {"error": "no project"})

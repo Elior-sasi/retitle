@@ -40,17 +40,21 @@ def translate(items, api_key, glossary="", context="", model="claude-sonnet-5-5"
         return {}
     user = (f"Source language: {src_lang or 'auto'}\n"
             f"Glossary (source = Hebrew):\n{glossary or '-'}\n"
-            f"Context: {context or '-'}\n\nItems:\n" + json.dumps(items, ensure_ascii=False, indent=1))
+            f"Context: {context or '-'}\n\nItems:\n" + json.dumps(items, ensure_ascii=False, separators=(",", ":")))
     content = []
+    seen_groups = set()
     for it in items:
         p = (images or {}).get(it["id"])
-        if p:
-            with open(p, "rb") as f:
-                content.append({"type": "text", "text": f"Image of item {it['id']} (read the text from it; the OCR 'src' may be wrong):"})
-                content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                                             "data": base64.b64encode(f.read()).decode()}})
+        g = it.get("group") or it["id"]
+        if p and g not in seen_groups:             # one small picture per card is enough context
+            seen_groups.add(g)
+            data = small_jpeg(p, 360)
+            if data:
+                content.append({"type": "text", "text": f"Image of card {g} (item {it['id']}; read the text from it, the OCR 'src' may be wrong):"})
+                content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}})
     content.append({"type": "text", "text": user})
-    body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 8000, "system": RULES,
+    body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 8000,
+            "system": [{"type": "text", "text": RULES, "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": content}]}
     req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                  headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
@@ -73,7 +77,12 @@ def call(req):
     import urllib.error
     try:
         with urllib.request.urlopen(req, timeout=180) as r:
-            return json.loads(r.read().decode())
+            res = json.loads(r.read().decode())
+        u = res.get("usage") or {}
+        for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+            USAGE[k] = USAGE.get(k, 0) + int(u.get(k) or 0)
+        USAGE["calls"] = USAGE.get("calls", 0) + 1
+        return res
     except urllib.error.HTTPError as e:
         try:
             msg = json.loads(e.read().decode()).get("error", {}).get("message", "")
@@ -89,3 +98,27 @@ def call(req):
         if e.code == 429 or e.code == 529:
             raise RuntimeError("שרת Claude עמוס כרגע - נסה שוב בעוד דקה") from None
         raise RuntimeError(f"Claude API {e.code}: {msg or e.reason}") from None
+
+
+USAGE = {}          # tokens used since the job started (shown in the log)
+
+
+def usage_line():
+    if not USAGE.get("calls"):
+        return ""
+    i = USAGE.get("input_tokens", 0) + USAGE.get("cache_creation_input_tokens", 0)
+    c = USAGE.get("cache_read_input_tokens", 0)
+    return (f"Claude: {USAGE['calls']} קריאות, {i:,} טוקנים נכנסים" + (f" (+{c:,} מהמטמון, זול פי 10)" if c else "")
+            + f", {USAGE.get('output_tokens', 0):,} יוצאים")
+
+
+def small_jpeg(src, w, q=72):
+    """base64 JPEG no wider than w (pictures are most of the tokens: keep them as small as still readable)."""
+    import base64, cv2, numpy as np
+    img = cv2.imread(src) if isinstance(src, str) else src
+    if img is None:
+        return None
+    if img.shape[1] > w:
+        img = cv2.resize(img, (w, max(1, int(img.shape[0] * w / img.shape[1]))), interpolation=cv2.INTER_AREA)
+    ok, b = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, q])
+    return base64.b64encode(b.tobytes()).decode() if ok else None
