@@ -198,13 +198,31 @@ def _align(tgt_g, src_g, valid, scale=0.5, init=None):
     except cv2.error:
         pass
     try:
-        _, warp = cv2.findTransformECC(ts, ss, warp, cv2.MOTION_AFFINE,
-                                       (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 60, 1e-5),
-                                       vm, 5)
+        warp = _ecc_pyr(ts, ss, warp, vm)
     except cv2.error:
         return None, float("inf")
     warp[:, 2] /= scale
     return warp, 0.0
+
+
+def _ecc_pyr(ts, ss, warp, vm, it=60):
+    """ECC coarse-to-fine: most iterations on a quarter of the pixels, then a short polish at
+    full working size - the same fit, several times faster."""
+    if min(ts.shape[:2]) >= 160:
+        t2 = cv2.resize(ts, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+        s2 = cv2.resize(ss, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+        v2 = cv2.resize(vm, (t2.shape[1], t2.shape[0]), interpolation=cv2.INTER_NEAREST)
+        w2 = warp.copy(); w2[:, 2] *= 0.5
+        try:
+            _, w2 = cv2.findTransformECC(t2, s2, w2, cv2.MOTION_AFFINE,
+                                         (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, it, 1e-5), v2, 3)
+            warp = w2.copy(); warp[:, 2] *= 2.0
+            it = 15
+        except cv2.error:
+            pass
+    _, warp = cv2.findTransformECC(ts, ss, warp, cv2.MOTION_AFFINE,
+                                   (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, it, 1e-5), vm, 5)
+    return warp
 
 
 def _grad(im):
