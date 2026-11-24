@@ -31,9 +31,10 @@ def run(proj, api_key, model="", progress=None):
     G = groups(T)
     sheets = sorted(glob.glob(os.path.join(proj, "check", "g*.jpg")))
     issues = []
-    for k in range(0, len(sheets), 4):
+
+    def one(group):
         content = []
-        for p in sheets[k:k + 4]:
+        for p in group:
             gid = os.path.basename(p)[:-4]
             lines = [t for t in G.get(gid, []) if t.get("translate", True)]
             data = _b64(p)
@@ -43,17 +44,25 @@ def run(proj, api_key, model="", progress=None):
                              + (" (erase only)" if t.get("mode") == "remove" else "") for t in lines)
             content.append({"type": "text", "text": f"Sheet {gid}: {desc}"})
             content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}})
-        if content:
-            body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 4000,
-                    "system": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-                    "messages": [{"role": "user", "content": content + [{"type": "text", "text": "Review the sheets above."}]}]}
-            req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
-                                         headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
-                                                  "content-type": "application/json"})
-            r = call(req)
-            text = "".join(b.get("text", "") for b in r.get("content", []))
-            m = re.search(r"\{.*\}", text, re.S)
-            for it in (json.loads(m.group(0)).get("issues", []) if m else []):
+        if not content:
+            return []
+        body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 4000,
+                "system": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+                "messages": [{"role": "user", "content": content + [{"type": "text", "text": "Review the sheets above."}]}]}
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
+                                     headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                                              "content-type": "application/json"})
+        r = call(req)
+        text = "".join(b.get("text", "") for b in r.get("content", []))
+        m = re.search(r"\{.*\}", text, re.S)
+        return json.loads(m.group(0)).get("issues", []) if m else []
+
+    groups_ = [sheets[k:k + 4] for k in range(0, len(sheets), 4)]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as ex:
+        futs = [ex.submit(one, g_) for g_ in groups_]
+        for k, fu in enumerate(futs):
+            for it in fu.result():
                 gid = str(it.get("sheet", "")).replace("Sheet", "").strip()
                 lines = [t for t in G.get(gid, []) if t.get("translate", True)]
                 if not lines or not it.get("msg"):
@@ -61,7 +70,7 @@ def run(proj, api_key, model="", progress=None):
                 f = it.get("frame")
                 issues.append({"k": "t", "id": lines[0]["id"], "group": gid, "f": int(f) if isinstance(f, (int, float)) else None,
                                "sev": "err" if it.get("sev") == "err" else "warn", "msg": "Claude: " + str(it["msg"]).strip()})
-        if progress:
-            progress(min(1.0, (k + 4) / max(1, len(sheets))))
+            if progress:
+                progress((k + 1) / max(1, len(groups_)))
     vio.save_json(os.path.join(proj, "visual_qa.json"), {"issues": issues})
     return issues

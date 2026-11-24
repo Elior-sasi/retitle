@@ -444,7 +444,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 <dialog id="d-queue" aria-labelledby="dqq-h"><h2 class="dh" id="dqq-h">תור עבודה</h2><div class="db">
 <p class="note">כל וידאו בתור עובר "הכול אוטומטית" בזה אחר זה, ונשמר כפרויקט. אפשר להשאיר את המחשב לעבוד, למשל בלילה.</p>
 <fieldset class="opts"><legend>לכל פרק</legend><label class="chk"><input type="checkbox" id="qu-t" checked> כותרות על המסך</label>
-<label class="chk"><input type="checkbox" id="qu-d" checked> דיאלוג וכתוביות</label></fieldset>
+<label class="chk"><input type="checkbox" id="qu-d" checked> דיאלוג וכתוביות</label>
+<label class="chk"><input type="checkbox" id="qu-b" checked> Claude בעבודה מושהית - חצי מחיר, אותה איכות, לוקח יותר זמן (מתאים ללילה)</label></fieldset>
 <ul id="qu-list" class="qlist" aria-label="הסרטונים בתור"></ul><p class="note" id="qu-sum" role="status"></p></div>
 <div class="df"><button class="qbtn" id="qu-add">הוסף וידאו...</button><button class="qbtn" id="qu-clear">נקה שהסתיימו</button><button class="qbtn" id="qu-close">סגור</button><button class="cta" id="qu-go">הפעל את התור</button></div></dialog>
 <dialog id="d-next" aria-labelledby="dn-h"><h2 class="dh" id="dn-h">הניתוח הסתיים</h2><div class="db"><p id="next-sum" role="status" style="font-size:1.1em"></p>
@@ -843,7 +844,7 @@ async function openQueue(){const r=await api('/api/queue',{});S.queue=r.queue;op
 $('#qu-add').onclick=async()=>{const r=await api('/api/queue',{act:'add'});S.queue=r.queue;renderQueue()};
 $('#qu-clear').onclick=async()=>{const r=await api('/api/queue',{act:'clear_done'});S.queue=r.queue;renderQueue()};
 $('#qu-close').onclick=()=>$('#d-queue').close();
-$('#qu-go').onclick=async()=>{const r=await api('/api/run',{job:'queue',args:{titles:$('#qu-t').checked,dialog:$('#qu-d').checked}});
+$('#qu-go').onclick=async()=>{const r=await api('/api/run',{job:'queue',args:{titles:$('#qu-t').checked,dialog:$('#qu-d').checked,batch:$('#qu-b').checked}});
   if(!r.started)return say('פעולה אחרת עדיין רצה',true);wasRunning=true;$('#d-queue').close();say('התור התחיל')};
 // files of the project (thumbnails...) are named the same in every project: the key keeps the browser's
 // image memory from showing another project's pictures, and refreshes them after a new analysis

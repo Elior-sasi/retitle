@@ -76,8 +76,9 @@ def classify(proj, api_key, model="", only=None, progress=None, log=print):
         return {}
     res = {}
     step = 20                                  # 20 items (40 small pictures) per request
-    for k in range(0, len(items), step):
-        bt = items[k:k + step]
+    chunks = [items[k:k + step] for k in range(0, len(items), step)]
+
+    def one(bt):
         body = {"model": MODEL, "max_tokens": 4000,
                 "system": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
                 "messages": [{"role": "user", "content": _content(proj, bt) + [{"type": "text", "text": "Classify the items above."}]}]}
@@ -87,13 +88,19 @@ def classify(proj, api_key, model="", only=None, progress=None, log=print):
         r = call(req)
         text = "".join(b.get("text", "") for b in r.get("content", []))
         m = re.search(r"\{.*\}", text, re.S)
-        for it in (json.loads(m.group(0)).get("items", []) if m else []):
-            if it.get("kind") in KINDS:
-                res[str(it.get("id"))] = it
-                for other in same.get(str(it.get("id")), []):
-                    res[other] = it
-        if progress:
-            progress(min(1.0, (k + step) / len(items)))
+        return json.loads(m.group(0)).get("items", []) if m else []
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as ex:
+        futs = [ex.submit(one, bt) for bt in chunks]
+        for k, fu in enumerate(futs):
+            for it in fu.result():
+                if it.get("kind") in KINDS:
+                    res[str(it.get("id"))] = it
+                    for other in same.get(str(it.get("id")), []):
+                        res[other] = it
+            if progress:
+                progress((k + 1) / len(chunks))
     count = {}
     T = vio.load_json(path)                    # re-read: the editor may have saved meanwhile
     for t in T["titles"]:

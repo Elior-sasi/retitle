@@ -499,11 +499,14 @@ def job_translate(kind):
             batches.append(cur)
         batches = [b for b in batches if b]
         prog(0.02)
-        for k, bt in enumerate(batches):
-            res.update(translate.translate(bt, s["api_key"], s.get("glossary", ""),
-                                           translate.context(s.get("content"), "titles"), s.get("model"),
-                                           images={i: imgs[i] for i in imgs if any(x["id"] == i for x in bt)}))
-            prog((k + 1) / len(batches))
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(4) as ex:              # requests side by side (and one Message Batch in batch mode)
+            futs = [ex.submit(translate.translate, bt, s["api_key"], s.get("glossary", ""),
+                              translate.context(s.get("content"), "titles"), s.get("model"),
+                              images={i: imgs[i] for i in imgs if any(x["id"] == i for x in bt)}) for bt in batches]
+            for k, fu in enumerate(futs):
+                res.update(fu.result())
+                prog((k + 1) / len(batches))
         for a, others in copies.items():
             for o in others:
                 if a in res:
@@ -527,10 +530,14 @@ def job_translate(kind):
         log(f"מתרגם {len(items)} כתוביות...")
         res = {}
         prog(0.02)
-        for i in range(0, len(items), 60):
-            res.update(translate.translate(items[i:i + 60], s["api_key"], s.get("glossary", ""),
-                                           translate.context(s.get("content"), "dialog"), s.get("model")))
-            prog(min(1.0, (i + 60) / len(items)))
+        from concurrent.futures import ThreadPoolExecutor
+        chunks = [items[i:i + 60] for i in range(0, len(items), 60)]
+        with ThreadPoolExecutor(4) as ex:
+            futs = [ex.submit(translate.translate, ch, s["api_key"], s.get("glossary", ""),
+                              translate.context(s.get("content"), "dialog"), s.get("model")) for ch in chunks]
+            for k, fu in enumerate(futs):
+                res.update(fu.result())
+                prog((k + 1) / len(chunks))
         with LOCK:
             D = vio.load_json(P("dialog.json"))
             for c in D["cues"]:
@@ -739,6 +746,10 @@ def job_queue():
     """Runs "all in one click" on each video/project in the queue, one after the other."""
     todo = [q for q in QUEUE if q["status"] in ("waiting", "error")]
     opts = STATE.get("args") or {}
+    from . import translate as _tr
+    _tr.MODE.update(batch=bool(opts.get("batch", True)), cancel=lambda: STATE["cancel"])
+    if _tr.MODE["batch"]:
+        log("תור: הבקשות ל-Claude יוצאות כעבודה מושהית - חצי מחיר, אותה איכות, לוקח יותר זמן")
     for k, q in enumerate(todo):
         q.update(status="running", msg="")
         PHASE.update(range=[k / len(todo), (k + 1) / len(todo)], prefix=f"פרק {k + 1} מתוך {len(todo)} · ")
@@ -760,6 +771,7 @@ def job_queue():
             q.update(status="error", msg=str(e))
             log(f"{os.path.basename(q['path'])}: שגיאה - {e}. ממשיך לבא בתור.")
     PHASE.pop("prefix", None)
+    _tr.MODE["batch"] = False
     log("התור הסתיים.")
 
 
@@ -798,6 +810,7 @@ def start(name):
             STATE["t1"] = time.time()
             PHASE.update(range=[0.0, 1.0], name="")
             PHASE.pop("no_claude", None)
+            _tr.MODE["batch"] = False
             STATE["running"] = False
             STATE["progress"] = None
     threading.Thread(target=run, daemon=True).start()

@@ -72,16 +72,27 @@ def translate(items, api_key, glossary="", context="", model="claude-sonnet-5-5"
     return out
 
 
+MODE = {"batch": False, "cancel": None}     # batch: the queue's overnight runs go through the Batch API (half price)
+
+
 def call(req):
-    """POST to the Claude API; on an error, say what the API said (in Hebrew where it is a known case)."""
+    """POST to the Claude API; on an error, say what the API said (in Hebrew where it is a known case).
+    In batch mode the request joins the next Message Batch and this waits for its result."""
+    if MODE["batch"]:
+        return _BATCHER.submit(json.loads(req.data.decode()), req.headers.get("X-api-key") or req.get_header("X-api-key"))
+    return _direct(req)
+
+
+def _direct(req):
     import urllib.error
     try:
         with urllib.request.urlopen(req, timeout=180) as r:
             res = json.loads(r.read().decode())
-        u = res.get("usage") or {}
-        for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
-            USAGE[k] = USAGE.get(k, 0) + int(u.get(k) or 0)
-        USAGE["calls"] = USAGE.get("calls", 0) + 1
+        u = res.get("usage") if isinstance(res, dict) else None
+        if u:
+            for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+                USAGE[k] = USAGE.get(k, 0) + int(u.get(k) or 0)
+            USAGE["calls"] = USAGE.get("calls", 0) + 1
         return res
     except urllib.error.HTTPError as e:
         try:
@@ -109,7 +120,8 @@ def usage_line():
     i = USAGE.get("input_tokens", 0) + USAGE.get("cache_creation_input_tokens", 0)
     c = USAGE.get("cache_read_input_tokens", 0)
     return (f"Claude: {USAGE['calls']} קריאות, {i:,} טוקנים נכנסים" + (f" (+{c:,} מהמטמון, זול פי 10)" if c else "")
-            + f", {USAGE.get('output_tokens', 0):,} יוצאים")
+            + f", {USAGE.get('output_tokens', 0):,} יוצאים"
+            + (f" ({USAGE['batch']} בעבודה מושהית, חצי מחיר)" if USAGE.get("batch") else ""))
 
 
 def small_jpeg(src, w, q=72):
@@ -122,3 +134,80 @@ def small_jpeg(src, w, q=72):
         img = cv2.resize(img, (w, max(1, int(img.shape[0] * w / img.shape[1]))), interpolation=cv2.INTER_AREA)
     ok, b = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, q])
     return base64.b64encode(b.tobytes()).decode() if ok else None
+
+
+class _Batcher:
+    """Requests that arrive together (parallel loops) go out as one Message Batch; each caller waits
+    for its own result. Same models and answers as a direct call, about half the price, slower."""
+
+    def __init__(self):
+        import threading
+        self.lock = threading.Lock()
+        self.pending = []
+        self.timer = None
+
+    def submit(self, body, key):
+        import threading
+        slot = {"ev": threading.Event(), "res": None, "err": None}
+        with self.lock:
+            self.pending.append((body, key, slot))
+            if self.timer is None:
+                self.timer = threading.Timer(3.0, self._flush)   # gather what arrives in the next 3 s
+                self.timer.daemon = True
+                self.timer.start()
+        while not slot["ev"].wait(1.0):
+            if MODE.get("cancel") and MODE["cancel"]():
+                raise RuntimeError("בוטל")
+        if slot["err"]:
+            raise RuntimeError(slot["err"])
+        return slot["res"]
+
+    def _flush(self):
+        import time
+        with self.lock:
+            items, self.pending, self.timer = self.pending, [], None
+        if not items:
+            return
+        key = items[0][1]
+        H = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+        try:
+            reqs = [{"custom_id": f"r{i}", "params": b} for i, (b, _, _) in enumerate(items)]
+            r = _direct(urllib.request.Request("https://api.anthropic.com/v1/messages/batches",
+                                               data=json.dumps({"requests": reqs}).encode(), headers=H))
+            bid = r["id"]
+            while True:
+                time.sleep(20)
+                if MODE.get("cancel") and MODE["cancel"]():
+                    try:
+                        _direct(urllib.request.Request(f"https://api.anthropic.com/v1/messages/batches/{bid}/cancel", data=b"{}", headers=H))
+                    except Exception:
+                        pass
+                    raise RuntimeError("בוטל")
+                st = _direct(urllib.request.Request(f"https://api.anthropic.com/v1/messages/batches/{bid}", headers=H, method="GET"))
+                if st.get("processing_status") == "ended":
+                    break
+            with urllib.request.urlopen(urllib.request.Request(st["results_url"], headers=H), timeout=180) as f:
+                lines = f.read().decode().splitlines()
+            got = {}
+            for ln in lines:
+                if ln.strip():
+                    d = json.loads(ln); got[d["custom_id"]] = d.get("result", {})
+            for i, (_, _, slot) in enumerate(items):
+                res = got.get(f"r{i}", {})
+                if res.get("type") == "succeeded":
+                    m = res["message"]; u = m.get("usage") or {}
+                    for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+                        USAGE[k] = USAGE.get(k, 0) + int(u.get(k) or 0)
+                    USAGE["calls"] = USAGE.get("calls", 0) + 1
+                    USAGE["batch"] = USAGE.get("batch", 0) + 1
+                    slot["res"] = m
+                else:
+                    slot["err"] = "Claude (עבודה מושהית): " + json.dumps(res.get("error") or res.get("type") or "no result", ensure_ascii=False)[:200]
+                slot["ev"].set()
+        except Exception as e:
+            for _, _, slot in items:
+                if not slot["ev"].is_set():
+                    slot["err"] = str(e); slot["ev"].set()
+
+
+_BATCHER = _Batcher()
