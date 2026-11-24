@@ -12,6 +12,7 @@ the other lines of the card are erased only. The spec is kept on the title, so i
 rendered again without asking Claude.
 """
 import os, re, json, math, base64, urllib.request
+from .house import with_house
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
@@ -718,7 +719,7 @@ def composite(design, crops_, scale_to="box"):
 # ------------------------------------------------------------------ Claude
 def _ask(api_key, content, system, model=None):
     body = {"model": model or MODEL, "max_tokens": 3000,
-            "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+            "system": [{"type": "text", "text": with_house(system), "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": content}]}
     req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                  headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"})

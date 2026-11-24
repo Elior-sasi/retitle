@@ -3,6 +3,7 @@ credits, text that belongs to the scene (signs, plates, screens), burned-in dial
 It also corrects the reading ("FROMTHE" -> "FROM THE"). Runs at the end of the analysis when a
 Claude key is set; the rules in detect.py stay as the fallback without a key."""
 import os, json, base64, re, urllib.request
+from .house import with_house
 import cv2
 from . import vio
 from .translate import call, small_jpeg
@@ -80,7 +81,7 @@ def classify(proj, api_key, model="", only=None, progress=None, log=print):
 
     def one(bt):
         body = {"model": MODEL, "max_tokens": 4000,
-                "system": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+                "system": [{"type": "text", "text": with_house(SYSTEM), "cache_control": {"type": "ephemeral"}}],
                 "messages": [{"role": "user", "content": _content(proj, bt) + [{"type": "text", "text": "Classify the items above."}]}]}
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                      headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",

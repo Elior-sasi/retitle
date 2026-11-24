@@ -1,5 +1,6 @@
 """Optional automatic translation through the Anthropic API (key in settings). The user edits after."""
-import json, re, urllib.request
+import os, json, re, urllib.request
+from .house import with_house
 
 NIQQUD = re.compile("[" + chr(0x0591) + "-" + chr(0x05BD) + chr(0x05BF) + chr(0x05C1) + chr(0x05C2) + chr(0x05C4) + chr(0x05C5) + chr(0x05C7) + "]")
 
@@ -61,7 +62,7 @@ def translate(items, api_key, glossary="", context="", model="claude-sonnet-5-5"
                 content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}})
     content.append({"type": "text", "text": user})
     body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 8000,
-            "system": [{"type": "text", "text": RULES, "cache_control": {"type": "ephemeral"}}],
+            "system": [{"type": "text", "text": with_house(RULES), "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": content}]}
     req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                  headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
@@ -82,9 +83,88 @@ def translate(items, api_key, glossary="", context="", model="claude-sonnet-5-5"
 MODE = {"batch": False, "cancel": None}     # batch: the queue's overnight runs go through the Batch API (half price)
 
 
+CODE = "claude-code"        # in place of an API key: go through Claude Code on this PC (the user's subscription)
+
+
+def claude_cli():
+    """Path of the Claude Code command line on this PC, or None."""
+    import shutil
+    for n in ("claude", "claude.cmd", "claude.exe"):
+        p = shutil.which(n)
+        if p:
+            return p
+    for p in (os.path.expandvars(r"%APPDATA%\npm\claude.cmd"), os.path.expanduser("~/.local/bin/claude"),
+              os.path.expanduser("~/.claude/local/claude"), os.path.expandvars(r"%USERPROFILE%\.local\bin\claude.exe")):
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
+def _via_code(body):
+    """The same request through Claude Code in print mode, on the user's Claude subscription (no API cost).
+    Pictures go as files the model reads; the answer comes back in the API's shape."""
+    import subprocess, tempfile, base64 as b64
+    exe = claude_cli()
+    if not exe:
+        raise RuntimeError("Claude Code לא מותקן במחשב - בהעדפות אפשר לבחור מפתח API במקום")
+    d = tempfile.mkdtemp(prefix="rt_cc_")
+    parts, n = [], 0
+    for m in body.get("messages", []):
+        c = m.get("content")
+        for it in ([{"type": "text", "text": c}] if isinstance(c, str) else c or []):
+            if it.get("type") == "text":
+                parts.append(it["text"])
+            elif it.get("type") == "image":
+                n += 1
+                ext = {"image/png": "png"}.get(it["source"].get("media_type"), "jpg")
+                fp = os.path.join(d, f"image{n}.{ext}")
+                with open(fp, "wb") as f:
+                    f.write(b64.b64decode(it["source"]["data"]))
+                parts.append(f"[picture {n}: read the file {fp}]")
+    sysp = body.get("system")
+    if isinstance(sysp, list):
+        sysp = "\n".join(x.get("text", "") for x in sysp)
+    prompt = "\n".join(parts) + "\n\nLook at every picture file named above (Read tool) before answering. Answer with the JSON only."
+    model = str(body.get("model") or "")
+    alias = "opus" if "opus" in model else "haiku" if "haiku" in model else "sonnet"
+    cmd = [exe, "-p", "--output-format", "json", "--model", alias, "--allowedTools", "Read",
+           "--add-dir", d, "--max-turns", str(4 + n)]
+    if sysp:
+        cmd += ["--append-system-prompt", sysp]
+    try:
+        r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", timeout=600, cwd=d,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Claude Code לא ענה בזמן") from None
+    try:
+        out = json.loads(r.stdout or "{}")
+    except ValueError:
+        out = {}
+    if r.returncode != 0 or out.get("is_error"):
+        msg = (out.get("result") or r.stderr or r.stdout or "").strip()[:300]
+        low = msg.lower()
+        if "login" in low or "auth" in low:
+            raise RuntimeError("Claude Code לא מחובר - פתח אותו פעם אחת וכתוב /login") from None
+        if "limit" in low:
+            raise RuntimeError("הגעת למגבלת השימוש של המנוי - נסה שוב מאוחר יותר או עבור למפתח API") from None
+        raise RuntimeError(f"Claude Code: {msg or 'שגיאה'}") from None
+    u = out.get("usage") or {}
+    for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+        USAGE[k] = USAGE.get(k, 0) + int(u.get(k) or 0)
+    USAGE["calls"] = USAGE.get("calls", 0) + 1
+    USAGE["via_code"] = True
+    import shutil
+    shutil.rmtree(d, ignore_errors=True)
+    return {"content": [{"type": "text", "text": out.get("result") or ""}], "usage": u}
+
+
 def call(req):
     """POST to the Claude API; on an error, say what the API said (in Hebrew where it is a known case).
-    In batch mode the request joins the next Message Batch and this waits for its result."""
+    In batch mode the request joins the next Message Batch and this waits for its result.
+    With the Claude Code "key", the request goes through Claude Code on this PC instead."""
+    key = req.headers.get("X-api-key") or req.get_header("X-api-key")
+    if key == CODE:
+        return _via_code(json.loads(req.data.decode()))
     if MODE["batch"]:
         return _BATCHER.submit(json.loads(req.data.decode()), req.headers.get("X-api-key") or req.get_header("X-api-key"))
     return _direct(req)
@@ -126,7 +206,7 @@ def usage_line():
         return ""
     i = USAGE.get("input_tokens", 0) + USAGE.get("cache_creation_input_tokens", 0)
     c = USAGE.get("cache_read_input_tokens", 0)
-    return (f"Claude: {USAGE['calls']} קריאות, {i:,} טוקנים נכנסים" + (f" (+{c:,} מהמטמון, זול פי 10)" if c else "")
+    return (("Claude Code (המנוי): " if USAGE.get("via_code") else "Claude: ") + f"{USAGE['calls']} קריאות, {i:,} טוקנים נכנסים" + (f" (+{c:,} מהמטמון, זול פי 10)" if c else "")
             + f", {USAGE.get('output_tokens', 0):,} יוצאים"
             + (f" ({USAGE['batch']} בעבודה מושהית, חצי מחיר)" if USAGE.get("batch") else ""))
 

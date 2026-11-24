@@ -411,7 +411,14 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-wmodel">מודל תמלול</label><select id="s-wmodel"><option value="large-v3">large-v3 (מומלץ: הכי מדויק, 3GB)</option><option value="large-v3-turbo">large-v3-turbo (מהיר, קצת פחות מדויק, 1.6GB)</option><option value="medium">medium</option><option value="small">small (מהיר)</option></select>
     <label for="s-gloss">תעתיק שמות<br><span class="unit">שורה לכל שם: מקור = עברית</span></label>
     <textarea id="s-gloss" rows="5" placeholder="Madoka = מאדוקה&#10;Homura Akemi = הומורה אקמי"></textarea>
-    <label for="s-key">מפתח API של Anthropic<br><span class="unit">לתרגום אוטומטי, לא חובה</span></label>
+    <label for="s-via">Claude<br><span class="unit">תרגום, גופן ומראה, עיצוב ובדיקה</span></label>
+    <div><select id="s-via" aria-describedby="s-via-h">
+      <option value="auto">אוטומטי - מפתח API אם יש, אחרת Claude Code</option>
+      <option value="code">Claude Code - על המנוי שלך, בלי תשלום נוסף</option>
+      <option value="api">מפתח API - תשלום לפי שימוש</option>
+      <option value="off">בלי Claude - רק המנוע במחשב, בחינם</option>
+    </select><div id="s-via-h" class="unit"></div></div>
+    <label for="s-key">מפתח API של Anthropic<br><span class="unit">לא חובה</span></label>
     <div><input type="password" id="s-key" dir="ltr" autocomplete="off" aria-describedby="keyset" style="width:100%"><div id="keyset" class="unit"></div></div>
     <label for="s-model">מודל תרגום</label><input type="text" id="s-model" dir="ltr">
     <label for="s-sep">תמלול</label><label class="chk"><input type="checkbox" id="s-sep"> להפריד את הדיבור מהמוזיקה לפני התמלול (מדויק יותר בטריילרים ובסצנות עם מוזיקה)</label>
@@ -878,7 +885,7 @@ function designEdit(t,d){
         onclick:async()=>{const r=await api('/api/design_back',{id:t.id});await reloadData(false);renderAll();say(r.ok?'השינוי האחרון בוטל':'אין שינוי לבטל')}}):null))}
 const JOBN={design_edit:'שינוי עיצוב עם Claude',design:'עיצוב עם Claude',auto:'הכול אוטומטית',queue:'תור עבודה',review:'מיון עם Claude',playable:'הכנת וידאו לניגון',fontmatch:'חיפוש גופן דומה',fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
 async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay','fonts','translate_titles','translate_dialog','review','design','design_edit'].includes(job))await flush();const r=await api('/api/run',{job,args});
-  if(r.need==='api_key'){say('לתרגום אוטומטי צריך מפתח של Claude - מכניסים אותו בהעדפות',true);openDlg('#d-settings');setTimeout(()=>{const k=$('#s-key');if(k){k.focus();k.scrollIntoView({block:'center'})}},150);return}
+  if(r.need==='api_key'){say('צריך את Claude: מפתח API או Claude Code מותקן - בוחרים בהעדפות',true);openDlg('#d-settings');setTimeout(()=>{const k=$('#s-key');if(k){k.focus();k.scrollIntoView({block:'center'})}},150);return}
   if(!r.started)return say('פעולה אחרת עדיין רצה',true);wasRunning=true;S.job=job;say(`${JOBN[job]||job} התחיל`)}
 let wasRunning=false;
 async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
@@ -953,10 +960,10 @@ function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren
   bx.append(el('button',{class:'mini',text:'בחר תיקייה מסונכרנת...',onclick:()=>go('pick')}));
   if(s.sync_dir)bx.append(el('button',{class:'mini',text:'בטל סנכרון',onclick:()=>go('')}))}
 async function loadSettings(){const s=await api('/api/settings');renderSync(s);renderGoogle();$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
-  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';
+  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';$('#s-via').value=s.claude_via||'auto';$('#s-via-h').textContent=s.claude_code_found?'Claude Code נמצא במחשב.':'Claude Code לא נמצא במחשב.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
-  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
+  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),claude_via:$('#s-via').value,gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
 function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?k=${fileKey()}&p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
 
 // ================================================================ import / hardsubs / QA / update

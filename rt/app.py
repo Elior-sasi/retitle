@@ -86,6 +86,27 @@ def settings():
     if r:
         sh = vio.load_json(os.path.join(r, "settings.json"), {})
         s.update({k: v for k, v in sh.items() if k in SHARED})
+    return claude_route(s)
+
+
+def claude_route(s):
+    """Which way Claude is reached: "auto" (the API key when there is one, else Claude Code on the
+    subscription when it is installed), "api", "code" or "off" (local engine only). Everything that calls
+    Claude gets s["api_key"]: the real key, the Claude Code marker, or "" (= no Claude)."""
+    from .translate import CODE, claude_cli
+    via = s.get("claude_via") or "auto"
+    raw = s.get("api_key") or ""
+    s["api_key_saved"] = bool(raw)
+    if via == "off":
+        key = ""
+    elif via == "api":
+        key = raw
+    elif via == "code":
+        key = CODE if claude_cli() else ""
+    else:
+        key = raw or (CODE if claude_cli() else "")
+    s["api_key"] = key
+    s["claude_code_found"] = bool(claude_cli())
     return s
 
 
@@ -1329,7 +1350,7 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(data)))
             self.end_headers(); self.wfile.write(data); return
         if u.path == "/api/settings":
-            s = settings(); s["api_key_set"] = bool(s.get("api_key")); s["api_key"] = ""
+            s = settings(); s["api_key_set"] = s.get("api_key_saved", False); s["api_key"] = ""
             s["gh_token_set"] = bool(s.get("gh_token")); s["gh_token"] = ""
             s["sync_dir"] = vio.load_json(CFG, {}).get("sync_dir", ""); s["sync_found"] = detect_sync_dirs()
             return self._send(200, s)
@@ -1471,7 +1492,7 @@ class H(BaseHTTPRequestHandler):
                 vio.save_json(P("project.json"), PJ)
             return self._send(200, {"range": PJ.get("range")})
         if u.path == "/api/settings":
-            s = settings()
+            s = vio.load_json(CFG, {})          # the stored file (settings() holds the resolved Claude route)
             for k, v in b.items():
                 if k in ("api_key", "gh_token") and not v:
                     continue

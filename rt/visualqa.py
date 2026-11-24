@@ -2,6 +2,7 @@
 English left on screen, a smear or ghost where the source was erased, Hebrew cut off, misplaced,
 wrongly timed or in a style that clashes with the source. Results: visual_qa.json, shown in QA."""
 import os, json, re, base64, glob, urllib.request
+from .house import with_house
 import cv2
 from . import vio
 from .translate import call, small_jpeg
@@ -51,7 +52,7 @@ def run(proj, api_key, model="", progress=None, only=None):
         if not content:
             return []
         body = {"model": (model or "").strip() or "claude-sonnet-5-5", "max_tokens": 4000,
-                "system": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+                "system": [{"type": "text", "text": with_house(SYSTEM), "cache_control": {"type": "ephemeral"}}],
                 "messages": [{"role": "user", "content": content + [{"type": "text", "text": "Review the sheets above."}]}]}
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                      headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",

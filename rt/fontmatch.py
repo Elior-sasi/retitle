@@ -18,6 +18,7 @@ Traits per font instance are measured once and cached in fonttraits.json (appdat
 Optionally Claude makes the final pick from a sheet of the top candidates (only with an API key).
 """
 import os, re, json, base64, urllib.request
+from .house import with_house
 import cv2, numpy as np
 from PIL import Image, ImageDraw
 from . import vio, masks
@@ -366,15 +367,15 @@ def ask_claude(api_key, model, crop_jpg, sheet_jpg, n):
     def b64(p):
         with open(p, "rb") as f:
             return base64.b64encode(f.read()).decode()
-    body = {"model": model, "max_tokens": 500, "system": SYSTEM, "messages": [{"role": "user", "content": [
+    body = {"model": model, "max_tokens": 500, "system": [{"type": "text", "text": with_house(SYSTEM), "cache_control": {"type": "ephemeral"}}], "messages": [{"role": "user", "content": [
         {"type": "text", "text": "Image 1 - the original title:"},
         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64(crop_jpg)}},
         {"type": "text", "text": f"Image 2 - candidates 1 to {n}:"},
         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64(sheet_jpg)}}]}]}
     req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                  headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
-    with urllib.request.urlopen(req, timeout=90) as r:
-        res = json.loads(r.read().decode())
+    from .translate import call
+    res = call(req)                    # API key, or Claude Code on the subscription
     text = "".join(b.get("text", "") for b in res.get("content", []))
     m = re.search(r"\{.*\}", text, re.S)
     return json.loads(m.group(0)) if m else {}
@@ -491,9 +492,23 @@ def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print, o
     done = 0
     if api_key:
         # Claude as the typographer: one look per card (the lines of a card share a typeface and look)
+        # cards in one style (same letter colour, close shapes) - a trailer's taglines - share one look:
+        # one Claude call per style, not per card
         cards = {}
         for t in todo:
-            cards.setdefault(t.get("group", t["id"]), []).append(t)
+            fl = (t.get("mask") or {}).get("fill_lab")
+            key = None
+            for k, (rep, ls) in cards.items():
+                rf = (rep.get("mask") or {}).get("fill_lab")
+                if fl and rf and float(np.linalg.norm(np.array(fl) - np.array(rf))) < 22 and \
+                        bool(t.get("styled") or t.get("design")) == bool(rep.get("styled") or rep.get("design")):
+                    key = k
+                    break
+            if key is None:
+                cards[t.get("group", t["id"])] = (t, [t])
+            else:
+                cards[key][1].append(t)
+        cards = {k: v[1] for k, v in cards.items()}
         for i, (gid, ls) in enumerate(cards.items()):
             if progress:
                 progress(0.8 + 0.2 * i / max(1, len(cards)))
