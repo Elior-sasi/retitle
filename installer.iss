@@ -1,4 +1,4 @@
-; Retitle installer (Inno Setup 6). Per-user install, no admin rights needed.
+﻿; Retitle installer (Inno Setup 6). Per-user install, no admin rights needed.
 #ifndef AppVer
   #define AppVer "0"
 #endif
@@ -31,6 +31,7 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "prepare"; Description: "להוריד עכשיו את מנוע התמלול ואת המחיקה החזקה (הורדה חד-פעמית, כמה GB)"; GroupDescription: "רכיבים:"
 
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\_internal"
@@ -51,6 +52,7 @@ Name: "{group}\{cm:UninstallProgram,Retitle}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Retitle"; Filename: "{app}\Retitle.exe"; Tasks: desktopicon
 
 [Run]
+Filename: "{app}\Retitle.exe"; Parameters: "--prepare"; StatusMsg: "מכין רכיבים..."; Flags: waituntilterminated skipifsilent; Tasks: prepare
 Filename: "{app}\Retitle.exe"; Description: "{cm:LaunchProgram,Retitle}"; Flags: nowait postinstall skipifsilent
 ; after a silent self-update the app is started again automatically
 Filename: "{app}\Retitle.exe"; Flags: nowait; Check: WizardSilent

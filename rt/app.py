@@ -1820,9 +1820,69 @@ def _after_update():
             traceback.print_exc()
 
 
+PREP_HTML = """<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>Retitle - מכין רכיבים</title>
+<style>body{font:18px/1.6 "Segoe UI",Arial,sans-serif;background:#1b1b1f;color:#f2f2f2;margin:0;padding:28px}
+h1{font-size:24px;margin:0 0 6px}p{margin:0 0 18px;color:#cfcfcf}.it{margin:16px 0}.nm{font-weight:600}
+progress{width:100%;height:22px;accent-color:#ffb84d}.st{font-size:16px;color:#d8d8d8;min-height:1.4em}
+button{font:inherit;font-size:18px;padding:10px 22px;border-radius:8px;border:2px solid #ffb84d;background:#2a2a30;color:#fff;margin-top:18px}
+button:focus{outline:3px solid #8cc8ff;outline-offset:2px}@media (prefers-reduced-motion:reduce){*{transition:none!important}}</style></head>
+<body><main><h1>מכין את הרכיבים של Retitle</h1><p>הורדה חד-פעמית. אפשר לסגור את החלון - מה שלא הסתיים יורד כשהתוכנה נפתחת.</p>
+<div id="list"></div><div role="status" aria-live="polite" id="done"></div><button id="close">סגור</button></main>
+<script>
+const L=document.getElementById('list');document.getElementById('close').onclick=()=>window.pywebview.api.close();
+async function tick(){const r=await window.pywebview.api.status();L.innerHTML='';
+ for(const it of r.items){const d=document.createElement('div');d.className='it';
+  d.innerHTML='<div class="nm" id="n'+it.k+'">'+it.name+'</div>'+(it.p!=null?'<progress max="100" value="'+Math.round(it.p*100)+'" aria-labelledby="n'+it.k+'"></progress>':'')+'<div class="st">'+it.st+'</div>';L.appendChild(d)}
+ document.getElementById('done').textContent=r.done?'הכול מוכן.':'';if(!r.done)setTimeout(tick,1000)}
+window.addEventListener('pywebviewready',tick);
+</script></body></html>"""
+
+
+def prepare_ui():
+    """Retitle.exe --prepare (run by the installer): downloads the transcription model, the speech separation
+    model and, with an NVIDIA card, the ProPainter engine, with a small accessible progress window."""
+    import webview
+    from . import asr, vocals, propaint
+    name = settings().get("whisper_model", "large-v3")
+    asr.prepare(name)
+    threading.Thread(target=lambda: vocals.ready() or vocals.fetch(), daemon=True).start()
+    want_pp = propaint.gpu()
+    if want_pp and not propaint.ready():
+        propaint.install_async()
+
+    class Api:
+        def status(self):
+            items = []
+            a = asr.STATE
+            ok = asr.ready(name) and a.get("state") != "downloading"
+            items.append({"k": 1, "name": "מנוע התמלול (Whisper)", "p": 1.0 if ok else a.get("progress"),
+                          "st": "מוכן" if ok else ("שגיאה: " + a.get("error", "")) if a.get("state") == "error" else "מוריד..."})
+            v = vocals.ready()
+            items.append({"k": 2, "name": "הפרדת דיבור ממוזיקה", "p": 1.0 if v else (getattr(vocals, "STATE", {}) or {}).get("progress"),
+                          "st": "מוכן" if v else "מוריד..."})
+            done = ok and v
+            if want_pp:
+                ps = propaint.status()
+                items.append({"k": 3, "name": "מחיקה חזקה (ProPainter, לכרטיס NVIDIA)", "p": 1.0 if ps["ready"] else ps.get("progress"),
+                              "st": "מוכן" if ps["ready"] else ("שגיאה: " + ps.get("error", "")) if ps.get("state") == "error" else (ps.get("what") or "מכין...")})
+                done = done and (ps["ready"] or ps.get("state") == "error")
+            return {"items": items, "done": done}
+
+        def close(self):
+            for w in list(webview.windows):
+                w.destroy()
+
+    webview.create_window("Retitle - מכין רכיבים", html=PREP_HTML, js_api=Api(), width=620, height=520)
+    webview.start()
+
+
 def main():
     global WINDOW
     _after_update()
+    if "--prepare" in sys.argv:
+        close_splash()
+        prepare_ui()
+        return
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     if args and os.path.isfile(args[0]):
         if _handoff(os.path.abspath(args[0])):
