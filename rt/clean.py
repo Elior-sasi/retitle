@@ -97,9 +97,25 @@ def _palette(img, t, reg, x0, y0, x1, y1):
         lc = lc[d > 12] if (d > 12).any() else lc
         if design:
             # the whole card is searched only with letter colours far from every background colour
-            far = d > 30
+            far = np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1) > 30
             if far.any():
                 wide_ok = True
+                # logo parts outside the word boxes (strokes, underline, darker shading) land in the
+                # ring: background centres of the letters' own hue would shield those letters
+                def hue(c):
+                    return np.degrees(np.arctan2(c[:, 2] - 128, c[:, 1] - 128))
+                lh = hue(lc[far]); bh = hue(bc)
+                bch = np.hypot(bc[:, 1] - 128, bc[:, 2] - 128)
+                dh = np.abs((bh[:, None] - lh[None] + 180) % 360 - 180).min(1)
+                keep = ~((bch > 20) & (dh < 35))
+                if keep.any() and not keep.all():
+                    rp = lab[ring].reshape(-1, 3)
+                    rp = rp[np.random.default_rng(1).choice(len(rp), min(len(rp), 20000), replace=False)]
+                    near_c = np.argmin(((rp[:, None] - bc[None]) ** 2).sum(2), axis=1)
+                    if np.isin(near_c, np.where(~keep)[0]).mean() < 0.12:
+                        bc = bc[keep]          # a few logo bits, not a background of the logo's colour
+                    else:
+                        wide_ok = False        # the scene itself has the letters' hue: stay near the title
     return lc, bc, wide_ok
 
 
@@ -524,6 +540,12 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
     if need.any():
         plate = synth_cached(gid, f, plate, need, motion)
     unknown = hole_left & ~core
+    res = _logo_left(plate, lines, M0)
+    if res is not None:
+        # bits of a logo's letters still in the rebuilt picture (taken from a frame where the
+        # logo stood elsewhere): synthesised too
+        plate = synth(plate, res)
+        hole_left |= res
     frac = float((hole_left & (M0 > 0)).sum()) / max(1, (M0 > 0).sum())
     if second:
         d = np.abs(img.astype(np.int16) - plate.astype(np.int16)).max(2)
@@ -569,6 +591,38 @@ def synth(img, hole):
 
 
 SYNTH = {}   # per card, for a locked-off camera: fill once, reuse (no flicker, much faster)
+
+
+def _logo_left(plate, lines, M0):
+    des = [t for t in lines if t.get("translate", True) and (t.get("design") or t.get("design_member"))
+           and t["id"] in _PAL and _PAL[t["id"]][2]]
+    if not des or not M0.any():
+        return None
+    zone = cv2.dilate(M0, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))) > 0
+    lab = cv2.cvtColor(plate, cv2.COLOR_BGR2LAB).astype(np.float32)
+    px = lab[zone]
+
+    def near(c):
+        d = None
+        for cc in c:
+            x = ((px - cc) ** 2).sum(1)
+            d = x if d is None else np.minimum(d, x)
+        return np.sqrt(d)
+    sel = np.zeros(len(px), bool)
+    for t in des:
+        lc, bc, _ = _PAL[t["id"]]
+        lc = lc[np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1) > 30]
+        if len(lc):
+            dl, db = near(lc), near(bc)
+            sel |= (dl < db * 0.7) & (dl < 30)
+    if sel.sum() < 4:
+        return None
+    res = np.zeros(plate.shape[:2], np.uint8)
+    res[zone] = sel
+    res = cv2.morphologyEx(res, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+    if not res.any():
+        return None
+    return cv2.dilate(res, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))) > 0
 
 
 def synth_cached(gid, f, img, hole, motion):
