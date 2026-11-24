@@ -289,7 +289,18 @@ def refine(proj, t, gid, lines, parts_rects=None):
         # reveal matte: how much of the (moved) original is actually visible here
         Mref = (warped_ref > 0.3).astype(np.float32)
         if Mref.sum() > 20:
-            V = _field(np.minimum(S, 1) * Mref, Mref, sigma)
+            vis_src = np.minimum(S, 1)
+            fl = (t.get("mask") or {}).get("fill_lab")
+            if fl is not None:
+                # letters seen in the source by their own colour count as visible too: where the erase
+                # left the old letters behind, source and erased frame match, and the difference alone
+                # would call the letters hidden - and hide the Hebrew there
+                from . import masks as _m
+                labO = cv2.cvtColor(O, cv2.COLOR_BGR2LAB).astype(np.float32)
+                col = (_m._wdist(labO, fl) < (t["mask"].get("tol", 30) * 1.4)).astype(np.float32)
+                col = cv2.dilate(col, np.ones((5, 5), np.uint8))
+                vis_src = np.maximum(vis_src, col)
+            V = _field(vis_src * Mref, Mref, sigma)
             V = np.nan_to_num(V, nan=float(np.nanmean(V)) if np.isfinite(V).any() else 1.0)
             V = np.clip(V, 0, 1)
             core = cv2.resize(Mref, (V.shape[1], V.shape[0]), interpolation=cv2.INTER_AREA) > 0.5

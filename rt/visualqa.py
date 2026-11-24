@@ -19,17 +19,21 @@ or a frame just before/after it. Look for problems a viewer would notice in the 
 - a typo or broken word in the Hebrew.
 Do not report things that look fine. Write each problem in short, plain Hebrew (no niqqud,
 plain " quotes, hyphen not em dash).
-Return ONLY JSON: {"issues": [{"sheet": "<sheet id>", "frame": <number or null>, "sev": "err" or "warn", "msg": "..."}]}"""
+kind: "left" = source text, a ghost or a patch left where the source was erased; "cut" = Hebrew cut off or partly
+missing; "other" = anything else.
+Return ONLY JSON: {"issues": [{"sheet": "<sheet id>", "frame": <number or null>, "sev": "err" or "warn", "kind": "left"|"cut"|"other", "msg": "..."}]}"""
 
 
 def _b64(path, w=1000):
     return small_jpeg(path, w, 75)
 
 
-def run(proj, api_key, model="", progress=None):
+def run(proj, api_key, model="", progress=None, only=None):
     T = vio.load_json(os.path.join(proj, "titles.json"))
     G = groups(T)
     sheets = sorted(glob.glob(os.path.join(proj, "check", "g*.jpg")))
+    if only:
+        sheets = [p for p in sheets if os.path.basename(p)[:-4] in only]
     issues = []
 
     def one(group):
@@ -69,8 +73,12 @@ def run(proj, api_key, model="", progress=None):
                     continue
                 f = it.get("frame")
                 issues.append({"k": "t", "id": lines[0]["id"], "group": gid, "f": int(f) if isinstance(f, (int, float)) else None,
-                               "sev": "err" if it.get("sev") == "err" else "warn", "msg": "Claude: " + str(it["msg"]).strip()})
+                               "sev": "err" if it.get("sev") == "err" else "warn", "kind": str(it.get("kind") or "other"),
+                               "msg": "Claude: " + str(it["msg"]).strip()})
             if progress:
                 progress((k + 1) / max(1, len(groups_)))
+    if only:          # a re-check of some cards: the other cards' notes stay
+        old = vio.load_json(os.path.join(proj, "visual_qa.json"), {"issues": []})["issues"]
+        issues = [i for i in old if i.get("group") not in only] + issues
     vio.save_json(os.path.join(proj, "visual_qa.json"), {"issues": issues})
     return issues

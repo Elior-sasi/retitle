@@ -35,8 +35,14 @@ def line_mask(img, t, reg, f=None, proj=None, gid=None):
     if t.get("styled") or t.get("design") or t.get("design_member") or (chroma and t.get("kind") != "sub"):
         # coloured / designed lettering: shading and gradients go beyond one fill colour
         m = m | styled_mask(img, t, reg, box)
-        if (t.get("design") or t.get("design_member")) and f is not None:
-            w = styled_mask(img, t, reg, box, wide=True)
+        logo = bool(t.get("design") or t.get("design_member"))
+        if f is not None and (logo or t.get("kind") != "sub"):
+            # letters that pop, zoom or slide in leave their final place: a logo is looked for in the
+            # whole card, other coloured titles in a wide zone around them
+            bw = box[2] - box[0]
+            k = 2.0 if t.get("strong") else 1.0          # "strong": Claude saw leftovers - look further
+            zone = True if logo else [box[0] - int(0.35 * k * bw), box[1] - int(h * k), box[2] + int(0.35 * k * bw), box[3] + int(h * k)]
+            w = styled_mask(img, t, reg, box, wide=zone)
             # far from the logo only big pieces count (the logo zoomed or moved); small specks
             # there are the scene's own colours (sparks, reflections) and stay
             lh = int(max(8, (t.get("style") or {}).get("letter_h") or h))
@@ -85,7 +91,9 @@ def _palette(img, t, reg, x0, y0, x1, y1):
         inner[max(0, w[1] - reg[1]):max(0, w[3] - reg[1]), max(0, w[0] - reg[0]):max(0, w[2] - reg[0])] = True
     core = inner & (masks.make(img, t["mask"], [ix0, iy0, ix1, iy1]) > 0)
     ring = np.zeros(img.shape[:2], bool); ring[y0:y1, x0:x1] = True; ring[max(0, iy0):iy1, max(0, ix0):ix1] = False
-    design = bool(t.get("design") or t.get("design_member"))
+    fl = (t.get("mask") or {}).get("fill_lab")
+    design = bool(t.get("design") or t.get("design_member")) or bool(
+        fl is not None and ((fl[1] - 128) ** 2 + (fl[2] - 128) ** 2) ** 0.5 > 20 and t.get("kind") != "sub")
     if design and _CTX.get("T"):
         # a logo's other lines are not background
         for o in _CTX["T"]["titles"]:
@@ -145,11 +153,16 @@ def styled_mask(img, t, reg, box, wide=False):
         if len(_PAL) > 256:
             _PAL.clear()
     lc, bc, pal_ok = _PAL[key]
-    if wide and pal_ok:
+    if wide is not False and pal_ok:
         lc = lc[np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1) > 30]
         # a logo can zoom, slide or swing in: its letters leave the reference box, so its clearly
-        # coloured letters are looked for in the whole card while it is on screen
-        x0, y0, x1, y1 = 0, 0, W, H
+        # coloured letters are looked for in the whole card (or the given zone) while it is on screen
+        if wide is True:
+            x0, y0, x1, y1 = 0, 0, W, H
+        else:
+            x0, y0, x1, y1 = max(0, wide[0]), max(0, wide[1]), min(W, wide[2]), min(H, wide[3])
+    elif wide is not False:
+        return np.zeros(img.shape[:2], np.uint8)
     out = np.zeros(img.shape[:2], np.uint8)
     if lc is None or bc is None or not len(lc):
         return out
@@ -571,7 +584,18 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
     a = cv2.GaussianBlur((M > 0).astype(np.float32), (0, 0), 1.2)[..., None]
     a = np.maximum(a, (M > 0)[..., None].astype(np.float32))
     out = (img.astype(np.float32) * (1 - a) + plate.astype(np.float32) * a).astype(np.uint8)
+    # self check: the old letters' colours still standing near the title (missed by the mask while
+    # the letters moved, or left at the edges) are found on the result and painted over too
+    left = _logo_left(out, lines, M0, reach=121 if any(t.get("strong") for t in lines) else 61)
+    LEFT[f] = 0
+    if left is not None:
+        LEFT[f] = int(left.sum())
+        out = synth(out, left)
+        M = M | (left.astype(np.uint8) * 255)
     return out, frac, M
+
+
+LEFT = {}
 
 
 def synth(img, hole):
@@ -605,12 +629,12 @@ def synth(img, hole):
 SYNTH = {}   # per card, for a locked-off camera: fill once, reuse (no flicker, much faster)
 
 
-def _logo_left(plate, lines, M0):
-    des = [t for t in lines if t.get("translate", True) and (t.get("design") or t.get("design_member"))
+def _logo_left(plate, lines, M0, reach=31):
+    des = [t for t in lines if t.get("translate", True) and t.get("kind") != "sub"
            and t["id"] in _PAL and _PAL[t["id"]][2]]
     if not des or not M0.any():
         return None
-    zone = cv2.dilate(M0, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))) > 0
+    zone = cv2.dilate(M0, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (reach, reach))) > 0
     lab = cv2.cvtColor(plate, cv2.COLOR_BGR2LAB).astype(np.float32)
     px = lab[zone]
 
@@ -666,7 +690,7 @@ def _card(args):
     reg = act[0]["region"]; lo, hi = act[0]["cache"]
     d = os.path.join(proj, "clean", gid)
     shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
-    _IMG.clear(); _MSK.clear(); SYNTH.clear()
+    _IMG.clear(); _MSK.clear(); SYNTH.clear(); LEFT.clear()
     _CTX.update(proj=proj, gid=gid, T=T)
     a = min(t["in"] for t in act); b = max(t["out"] for t in act)
     ids = {t["id"] for t in lines}
@@ -682,7 +706,9 @@ def _card(args):
         if src is not None and src.shape == out.shape:
             live.show(proj, f"מוחק את {', '.join(t['src'] for t in act)[:40]} - פריים {f}", out, src)   # RTL: source on the right
         fr.append(frac)
-    st = {"frames": [a, b], "synth_mean": round(float(np.mean(fr)), 3), "synth_max": round(float(np.max(fr)), 3)}
+    lf = [f for f in range(a, b + 1) if LEFT.get(f, 0) > 0]
+    st = {"frames": [a, b], "synth_mean": round(float(np.mean(fr)), 3), "synth_max": round(float(np.max(fr)), 3),
+          "left_frames": len(lf)}
     built = {}
     for t in lines:
         built[t["id"]] = [t["in"], t["out"], bool(t.get("translate", True))]

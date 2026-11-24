@@ -296,12 +296,37 @@ def job_export():
         check.run(STATE["proj"])
 
     def vqa():
-        from . import visualqa
+        from . import visualqa, clean, render
+        proj = STATE["proj"]
         try:
-            iss = visualqa.run(STATE["proj"], s["api_key"], s.get("model"), progress=prog)
-            log(f"Claude עבר על התוצאה: {len(iss)} הערות" + (" - פתח בדיקת QA" if iss else " - נראה טוב"))
+            iss = visualqa.run(proj, s["api_key"], s.get("model"), progress=prog)
         except Exception as e:
             log(f"הבדיקה של Claude לא הצליחה ({e})")
+            return
+        # what Claude saw left of the English, or Hebrew cut: those cards are done again, harder, once
+        bad = sorted({i["group"] for i in iss if i.get("sev") == "err" and i.get("kind") in ("left", "cut") and i.get("group")})
+        if bad:
+            log(f"Claude מצא שאריות או עברית חתוכה ב-{len(bad)} כרטיסים - מתקן אותם אוטומטית")
+            with LOCK:
+                T = vio.load_json(P("titles.json"))
+                for t in T["titles"]:
+                    if t.get("group") in bad and t.get("translate", True):
+                        t["strong"] = True; t["built"] = None
+                vio.save_json(P("titles.json"), T)
+            STATE.update(stage="מתקן את הכרטיסים ש-Claude סימן")
+            clean.run(proj, bad)
+            render.track(proj, only=set(bad))
+            render.build_layers(proj)
+            res["out"] = compose.run(proj)
+            check.run(proj)
+            try:
+                iss2 = visualqa.run(proj, s["api_key"], s.get("model"), only=set(bad))
+                left = [i for i in iss2 if i.get("group") in bad and i.get("sev") == "err"]
+                log("אחרי התיקון: " + (f"נשארו {len(left)} הערות - פתח בדיקת QA" if left else "הכרטיסים נקיים"))
+            except Exception as e:
+                log(f"הבדיקה החוזרת של Claude לא הצליחה ({e})")
+            iss = vio.load_json(P("visual_qa.json"), {"issues": []})["issues"]
+        log(f"Claude עבר על התוצאה: {len(iss)} הערות" + (" - פתח בדיקת QA" if iss else " - נראה טוב"))
 
     def subs():
         D = vio.load_json(P("dialog.json"), {"cues": []})
