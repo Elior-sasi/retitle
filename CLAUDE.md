@@ -17,3 +17,5 @@ SAM 2 + Lens (rt/aimodels.py, in ProPainter's private Python, installed with it)
 rea-video itself (rt/reavideo.py, github.com/JuneYaooo/rea-video pinned, Apache 2.0): installed with ProPainter into the private Python, with its Claude Code skill. Full mode runs `rea-video decompose` into <proj>/rea first, copies the skill into <proj>/.claude/skills, and Claude Code gets the `rea-video` command on PATH.
 
 DictaLM 3.0 (rt/dicta.py): second translation engine on the PC - unsloth DictaLM-3.0-24B-Thinking Q4_K_M GGUF in llama.cpp's llama-server (latest Windows CUDA build), layers on the GPU by VRAM, thinking off. Setting translate_engine = claude|dicta; job translate_compare writes compare.json (Claude vs DictaLM per title), UI dialog d-cmp picks per line (/api/compare/pick).
+
+DictaLM 3.0 (rt/dicta.py): optional local translation engine (settings translate_engine=dicta). 24B Thinking GGUF from unsloth (dicta_quant Q4_K_M/Q6_K/Q8_0) in llama.cpp's llama-server (latest Windows CUDA build from GitHub), layers split GPU/RAM, thinking off. Job translate_compare writes compare.json (Claude vs DictaLM per title); the UI dialog picks per line (/api/compare/pick).

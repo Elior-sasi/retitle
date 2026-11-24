@@ -1,6 +1,6 @@
 """DictaLM 3.0 (Dicta, Apache 2.0) - a Hebrew model on this computer, as a second translation engine next to Claude.
 
-The 24B model (unsloth/DictaLM-3.0-24B-Thinking-GGUF, Q4_K_M, 14.3 GB) runs in llama.cpp's server
+The 24B model (unsloth/DictaLM-3.0-24B-Thinking-GGUF; Q4_K_M 14.3 GB, Q6_K 19.3 GB or Q8_0 25.1 GB) runs in llama.cpp's server
 (github.com/ggml-org/llama.cpp, MIT): as many layers as fit on the NVIDIA card, the rest from RAM. Both are
 downloaded once into %LOCALAPPDATA%/Retitle/dicta. It is free and does not use the subscription; it is slow
 (a laptop card holds only part of the model), so it is used where the user picks it, and in the side by side
@@ -9,8 +9,17 @@ import os, re, json, time, glob, shutil, socket, subprocess, threading, zipfile,
 from . import vio
 
 GGUF_REPO = "unsloth/DictaLM-3.0-24B-Thinking-GGUF"
-GGUF = "DictaLM-3.0-24B-Thinking-Q4_K_M.gguf"
-GGUF_URL = f"https://huggingface.co/{GGUF_REPO}/resolve/main/{GGUF}"
+QUANTS = {"Q4_K_M": 14.3, "Q6_K": 19.3, "Q8_0": 25.1}     # size in GB; all are the full 24B model, less or more compressed
+
+
+def quant():
+    s = vio.load_json(os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), "Retitle", "settings.json"), {})
+    q = s.get("dicta_quant") or "Q4_K_M"
+    return q if q in QUANTS else "Q4_K_M"
+
+
+def _gguf():
+    return f"DictaLM-3.0-24B-Thinking-{quant()}.gguf"
 LAYERS = 40                                   # Mistral-Small-3.1 24B
 STATE = {"state": "idle", "progress": None, "what": "", "error": ""}
 _T = [None]
@@ -31,11 +40,11 @@ def _server():
 
 
 def _model():
-    return os.path.join(home(), GGUF)
+    return os.path.join(home(), _gguf())
 
 
 def ready():
-    return bool(_server()) and os.path.exists(_model()) and os.path.getsize(_model()) > 10e9
+    return bool(_server()) and os.path.exists(_model()) and os.path.getsize(_model()) > 0.9e9 * QUANTS[quant()]
 
 
 def status():
@@ -98,8 +107,8 @@ def install():
                     zf.extractall(d)
                 os.remove(z)
         if not os.path.exists(_model()):
-            STATE["what"] = "מוריד את DictaLM 3.0 (14.3GB)"
-            _get(GGUF_URL, _model(), (0.04, 1.0))
+            STATE["what"] = f"מוריד את DictaLM 3.0 ({QUANTS[quant()]}GB)"
+            _get(f"https://huggingface.co/{GGUF_REPO}/resolve/main/{_gguf()}", _model(), (0.04, 1.0))
         STATE.update(state="ready", progress=1.0, what="")
     except Exception as e:
         STATE.update(state="error", error=str(e)[:300], what="")
@@ -122,7 +131,7 @@ def _gpu_layers():
     from .propaint import gpu, vram_gb
     if not gpu():
         return 0
-    per = 14.3 / LAYERS                       # GB per layer at Q4_K_M
+    per = QUANTS[quant()] / LAYERS            # GB per layer
     return max(0, min(LAYERS, int((vram_gb() - 1.4) / per)))
 
 
