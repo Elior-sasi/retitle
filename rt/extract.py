@@ -116,7 +116,37 @@ def run(proj, pad=48, progress=None):
                 logo_area(proj, t, gid, S, reg)
     for t in T["titles"]:
         t.pop("reextract", None)
+    mark_logos(T, (P.get("info") or {}).get("height") or 1080)
     vio.save_json(os.path.join(proj, "titles.json"), T)
+
+
+def mark_logos(T, H):
+    """A title logo, without asking Claude: a card in colour whose letters are very large, or whose
+    lines are of very different sizes (THE small over LOST TIGER big). Marked "styled" so it is designed
+    as a logo, not set as plain text. A decision made by Claude's review or by the user stays."""
+    for gid, lines in groups(T).items():
+        def lh(t):            # measured letter height, else (right after analysis) from the text box
+            v = (t.get("style") or {}).get("letter_h")
+            b = t.get("ref_box") or t.get("box")
+            return v or ((b[3] - b[1]) * 0.75 if b else 0)
+        act = [t for t in lines if t.get("translate", True) and lh(t)]
+        if not act or any("styled" in t and not t.get("styled_auto") for t in act):
+            continue
+        hs = [lh(t) for t in act]
+        def chroma(t):
+            fl = (t.get("mask") or {}).get("fill_lab")
+            return ((fl[1] - 128) ** 2 + (fl[2] - 128) ** 2) ** 0.5 if fl else None
+        cs = [c for c in (chroma(t) for t in act) if c is not None]
+        coloured = (max(cs) > 20) if cs else None          # unknown before the first build
+        big = max(hs) >= 0.22 * H
+        mixed = len(act) >= 2 and max(hs) >= 2.5 * min(hs) and max(hs) >= 0.12 * H
+        logo = ((coloured and (big or mixed)) or (coloured is None and mixed)) and \
+            all(t.get("kind", "text") != "sub" for t in act)
+        for t in act:
+            if logo:
+                t["styled"] = True; t["styled_auto"] = True
+            elif t.get("styled_auto"):
+                t.pop("styled", None); t.pop("styled_auto", None)
 
 
 def _bg_plate(proj, t, gid, S, f):

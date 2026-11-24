@@ -659,7 +659,8 @@ function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;con
       d.design?el('button',{class:'mini',text:'בטל עיצוב - חזור לטקסט',onclick:async()=>{await api('/api/undo_design',{id:t.id});await reloadData(false);renderAll();say('חזר לטקסט רגיל')}})
         :el('button',{class:'mini',text:'עצב עם Claude כמו מעצב',title:'לוגו או כותרת מעוצבת: גופן, צבע, מרקם, עומק וקישוטים כמו במקור',disabled:S.running||!t.he,
           onclick:()=>{if(!t.he)return say('קודם צריך עברית');run('design',{gid:d.group})}}))),
-    d.design?el('p',{class:'note',text:'הכרטיס עוצב על ידי Claude ומוצג כתמונה. כל שורות הכרטיס בתוכו.'}):null,
+    d.design?el('p',{class:'note',text:'הכרטיס עוצב על ידי Claude ומוצג כתמונה. כל שורות הכרטיס בתוכו.'}):
+      d.styled?el('p',{class:'note',text:'זוהה כלוגו מעוצב ולא כטקסט רגיל. מומלץ: "עצב עם Claude כמו מעצב".'}):null,
     d.design?designEdit(t,d):null,
     fmPanel(t,d),
     (d.font_top&&d.font_top.length>1&&!(S.fm&&S.fm[t.id]))?el('div',{class:'prop'},el('span',{class:'pl',text:d.font_auto&&!(d.style_locked||[]).includes('font')?'נבחר אוטומטית. עוד מתאימים':'מתאימים למקור'}),

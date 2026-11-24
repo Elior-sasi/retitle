@@ -113,7 +113,7 @@ def classify(proj, api_key, model="", only=None, progress=None, log=print):
             t["ocr_src"] = t.get("ocr_src", t["src"]); t["src"] = it["text"].strip()
         if kind == "title":
             t["translate"] = True; t.pop("auto_reason", None)
-            t["styled"] = bool(it.get("styled"))
+            t["styled"] = bool(it.get("styled")); t.pop("styled_auto", None)
             if t.get("kind") == "sub":
                 t["kind"] = "text"; t.pop("mode", None)
         elif kind == "dialogue":
