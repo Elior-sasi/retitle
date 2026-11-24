@@ -237,6 +237,12 @@ def refine(proj, t, gid, S, n):
         c = (cor[f] - cb) / max(0.05, 1 - cb)
         rel[f] = c if shared else max(a, c)
     t["presence"] = {str(f): round(v, 3) for f, v in rel.items()}
+    # the walk stops at the shot edges around the samples: text seen in the next shot would have
+    # been sampled there (a lookalike - orange rocks after an orange logo - must not stretch the title)
+    from .shots import shot_of
+    sa, _ = shot_of(S["cuts"], n, t["sample_in"])
+    _, eb = shot_of(S["cuts"], n, t["sample_out"])
+    lo, hi = max(lo, sa), min(hi, eb - 1)
     if "in_override" in t:
         t["in"] = t["in_override"]
     else:

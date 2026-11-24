@@ -325,6 +325,11 @@ def build_layers(proj, only=None):
             rb = lay.get("box") or t.get("ref_box", t["box"])      # a designed card covers the whole card
             tw = max(8.0, (rb[2] - rb[0]) * t.get("style", {}).get("size_ratio", 1.0))
             ss = img.width / tw
+            if lay.get("box"):
+                # cover the original card (what is left of it must hide behind the Hebrew), within reason
+                th = max(8.0, (rb[3] - rb[1]) * t.get("style", {}).get("size_ratio", 1.0))
+                sw, sh = tw / img.width, th / img.height
+                ss = 1 / min(max(sw, sh), 1.2 * min(sw, sh))
             anc = (img.width / 2, img.height / 2); ink = (0, 0, img.width, img.height)
         else:
             continue

@@ -467,8 +467,9 @@ def composite(design, crops_, scale_to="box"):
     """The design over the clean background, fitted to the original card box (same width)."""
     bg = cv2.cvtColor(crops_["clean"], cv2.COLOR_BGR2RGB)
     x0, y0, x1, y1 = crops_["box"]
-    tw = x1 - x0
-    s = tw / max(1, design.width)
+    tw, th = x1 - x0, y1 - y0
+    sw, sh = tw / max(1, design.width), th / max(1, design.height)
+    s = min(max(sw, sh), 1.2 * min(sw, sh))          # same rule as the build
     d = design.resize((max(1, int(design.width * s)), max(1, int(design.height * s))), Image.LANCZOS)
     im = Image.fromarray(bg).convert("RGBA")
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -551,6 +552,7 @@ def design_card(proj, gid, api_key, log=print, progress=None):
                {"type": "text", "text": "Original text, top to bottom: " + json.dumps([t["src"] for t in lines], ensure_ascii=False)
                 + "\nHebrew to set: " + json.dumps(he, ensure_ascii=False)
                 + "\nMeasured palette of the original letters (most used first): " + json.dumps(pal)
+                + f"\nThe original lettering block is {cr['box'][2] - cr['box'][0]}x{cr['box'][3] - cr['box'][1]} px: lay the Hebrew out to fill a block of about the same shape (it is scaled to cover it, so what is left of the original hides behind it)."
                 + "\nDesign the Hebrew version."}]
     r = _ask(api_key, content, SYSTEM)
     spec = r.get("spec") or {}
@@ -587,7 +589,14 @@ def apply(proj, lines, spec, rel, box):
             t["design"] = spec
             t.pop("mode", None); t["translate"] = True
             # the picture stays as long as any line of the card is on screen
-            t["in"] = min(x["in"] for x in lines); t["out"] = max(x["out"] for x in lines)
+            t["in"] = min(x["in"] for x in lines)
+            t["out"] = max(x["out"] for x in lines)
+            S = vio.load_json(os.path.join(proj, "shots.json"), {})
+            if S.get("cuts"):                       # ...but never past the shot the card is in
+                from .shots import shot_of
+                n = vio.load_json(os.path.join(proj, "project.json")).get("n_frames") or 10 ** 9
+                _, eb = shot_of(S["cuts"], n, max(x["sample_out"] for x in lines))
+                t["out"] = min(t["out"], eb - 1)
         elif t["id"] in ids:
             t["mode"] = "remove"; t["design_member"] = ids[0]
     vio.save_json(os.path.join(proj, "titles.json"), T)

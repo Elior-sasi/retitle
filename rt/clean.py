@@ -30,6 +30,8 @@ def line_mask(img, t, reg, f=None, proj=None, gid=None):
     s = t.get("search", h)
     box = [bx[0] - reg[0] - s, bx[1] - reg[1] - s, bx[2] - reg[0] + s, bx[3] - reg[1] + s]
     m = masks.make(img, t["mask"], box)
+    if t.get("styled") or t.get("design") or t.get("design_member"):
+        m = m | styled_mask(img, t, reg, box)
     if t.get("logo_bg") is not None and proj and f is not None:
         # whole logo: everything that differs from the background without the title, around the logo box
         from .extract import _bg_plate, logo_diff
@@ -48,6 +50,60 @@ def line_mask(img, t, reg, f=None, proj=None, gid=None):
             g = cv2.dilate(g, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * t["mask"].get("grow", 3) + 1,) * 2))
             m = m | (g * 255)
     return m
+
+
+_PAL = {}
+
+
+def styled_mask(img, t, reg, box):
+    """Designed lettering (painted, textured, 3D, stripes, outlines) is more than one fill colour.
+    Every pixel near the title whose colour is closer to the letters' colours than to the background's
+    is taken, then closed and grown - so no orange bits of the old logo are left at the edges."""
+    H, W = img.shape[:2]
+    x0, y0, x1, y1 = max(0, box[0]), max(0, box[1]), min(W, box[2]), min(H, box[3])
+    if x1 - x0 < 8 or y1 - y0 < 8:
+        return np.zeros(img.shape[:2], np.uint8)
+    key = t["id"]
+    if key not in _PAL:
+        bx = t.get("text_box", t["box"])
+        ix0, iy0, ix1, iy1 = bx[0] - reg[0], bx[1] - reg[1], bx[2] - reg[0], bx[3] - reg[1]
+        inner = np.zeros(img.shape[:2], bool)
+        for w in t.get("words") or [bx]:
+            inner[max(0, w[1] - reg[1]):max(0, w[3] - reg[1]), max(0, w[0] - reg[0]):max(0, w[2] - reg[0])] = True
+        core = inner & (masks.make(img, t["mask"], [ix0, iy0, ix1, iy1]) > 0)
+        ring = np.zeros(img.shape[:2], bool); ring[y0:y1, x0:x1] = True; ring[max(0, iy0):iy1, max(0, ix0):ix1] = False
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
+        def km(px, k):
+            if len(px) < 30:
+                return None
+            px = px[np.random.default_rng(0).choice(len(px), min(len(px), 20000), replace=False)]
+            _, _, c = cv2.kmeans(px, min(k, len(px) // 10), None, (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 15, 1.0), 2, cv2.KMEANS_PP_CENTERS)
+            return c
+        # letters: the fill and what is drawn inside the word boxes but differs from the ring
+        lc = km(lab[inner & ~ring].reshape(-1, 3), 5)
+        bc = km(lab[ring].reshape(-1, 3), 6)
+        if core.sum() > 30 and lc is not None and bc is not None:
+            # keep letter centres that are not background colours
+            d = np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1)
+            lc = lc[d > 12] if (d > 12).any() else lc
+        _PAL[key] = (lc, bc)
+        if len(_PAL) > 256:
+            _PAL.clear()
+    lc, bc = _PAL[key]
+    out = np.zeros(img.shape[:2], np.uint8)
+    if lc is None or bc is None or not len(lc):
+        return out
+    lab = cv2.cvtColor(img[y0:y1, x0:x1], cv2.COLOR_BGR2LAB).astype(np.float32).reshape(-1, 3)
+    dl = np.min(np.linalg.norm(lab[:, None] - lc[None], axis=2), axis=1)
+    db = np.min(np.linalg.norm(lab[:, None] - bc[None], axis=2), axis=1)
+    sel = ((dl < db * 0.7) & (dl < 22)).reshape(y1 - y0, x1 - x0).astype(np.uint8)
+    lh = max(6, (t.get("text_box", t["box"])[3] - t.get("text_box", t["box"])[1]) // 3)
+    k = max(3, lh // 6) | 1
+    sel = cv2.morphologyEx(sel, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    sel = cv2.morphologyEx(sel, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    sel = cv2.dilate(sel, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    out[y0:y1, x0:x1] = sel * 255
+    return out
 
 
 def frame_mask(img, f, lines, reg, margin=0):
