@@ -34,7 +34,7 @@ def line_mask(img, t, reg, f=None, proj=None, gid=None):
     chroma = fl is not None and ((fl[1] - 128) ** 2 + (fl[2] - 128) ** 2) ** 0.5 > 20
     if t.get("styled") or t.get("design") or t.get("design_member") or (chroma and t.get("kind") != "sub"):
         # coloured / designed lettering: shading and gradients go beyond one fill colour
-        m = m | styled_mask(img, t, reg, box)
+        m = m | styled_mask(img, t, reg, box, wide=bool((t.get("design") or t.get("design_member")) and f is not None))
     if t.get("logo_bg") is not None and proj and f is not None:
         # whole logo: everything that differs from the background without the title, around the logo box
         from .extract import _bg_plate, logo_diff
@@ -58,7 +58,52 @@ def line_mask(img, t, reg, f=None, proj=None, gid=None):
 _PAL = {}
 
 
-def styled_mask(img, t, reg, box):
+def _palette(img, t, reg, x0, y0, x1, y1):
+    """Letter and background colour centres, learnt on the title's reference frame (where it is
+    surely on screen and in place), not on whatever frame happens to come first."""
+    proj, gid = _CTX.get("proj"), t.get("group", t["id"])
+    if proj and t.get("ref") is not None and os.path.exists(os.path.join(proj, "cache", gid, f"{t['ref']:06d}.png")):
+        r = _load(proj, gid, t["ref"])
+        if r is not None and r.shape == img.shape:
+            img = r
+    bx = t.get("text_box", t["box"])
+    ix0, iy0, ix1, iy1 = bx[0] - reg[0], bx[1] - reg[1], bx[2] - reg[0], bx[3] - reg[1]
+    inner = np.zeros(img.shape[:2], bool)
+    for w in t.get("words") or [bx]:
+        inner[max(0, w[1] - reg[1]):max(0, w[3] - reg[1]), max(0, w[0] - reg[0]):max(0, w[2] - reg[0])] = True
+    core = inner & (masks.make(img, t["mask"], [ix0, iy0, ix1, iy1]) > 0)
+    ring = np.zeros(img.shape[:2], bool); ring[y0:y1, x0:x1] = True; ring[max(0, iy0):iy1, max(0, ix0):ix1] = False
+    design = bool(t.get("design") or t.get("design_member"))
+    if design and _CTX.get("T"):
+        # a logo's other lines are not background
+        for o in _CTX["T"]["titles"]:
+            if o.get("group", o["id"]) == t.get("group", t["id"]):
+                ob = o.get("text_box", o["box"])
+                ring[max(0, ob[1] - reg[1]):max(0, ob[3] - reg[1]), max(0, ob[0] - reg[0]):max(0, ob[2] - reg[0])] = False
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
+
+    def km(px, k):
+        if len(px) < 30:
+            return None
+        px = px[np.random.default_rng(0).choice(len(px), min(len(px), 20000), replace=False)]
+        _, _, c = cv2.kmeans(px, min(k, len(px) // 10), None, (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 15, 1.0), 2, cv2.KMEANS_PP_CENTERS)
+        return c
+    # letters: the fill and what is drawn inside the word boxes but differs from the ring
+    lc = km(lab[inner & ~ring].reshape(-1, 3), 5)
+    bc = km(lab[ring].reshape(-1, 3), 6)
+    wide_ok = False
+    if core.sum() > 30 and lc is not None and bc is not None:
+        d = np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1)
+        lc = lc[d > 12] if (d > 12).any() else lc
+        if design:
+            # the whole card is searched only with letter colours far from every background colour
+            far = d > 30
+            if far.any():
+                wide_ok = True
+    return lc, bc, wide_ok
+
+
+def styled_mask(img, t, reg, box, wide=False):
     """Designed lettering (painted, textured, 3D, stripes, outlines) is more than one fill colour.
     Every pixel near the title whose colour is closer to the letters' colours than to the background's
     is taken, then closed and grown - so no orange bits of the old logo are left at the edges."""
@@ -68,31 +113,15 @@ def styled_mask(img, t, reg, box):
         return np.zeros(img.shape[:2], np.uint8)
     key = t["id"]
     if key not in _PAL:
-        bx = t.get("text_box", t["box"])
-        ix0, iy0, ix1, iy1 = bx[0] - reg[0], bx[1] - reg[1], bx[2] - reg[0], bx[3] - reg[1]
-        inner = np.zeros(img.shape[:2], bool)
-        for w in t.get("words") or [bx]:
-            inner[max(0, w[1] - reg[1]):max(0, w[3] - reg[1]), max(0, w[0] - reg[0]):max(0, w[2] - reg[0])] = True
-        core = inner & (masks.make(img, t["mask"], [ix0, iy0, ix1, iy1]) > 0)
-        ring = np.zeros(img.shape[:2], bool); ring[y0:y1, x0:x1] = True; ring[max(0, iy0):iy1, max(0, ix0):ix1] = False
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
-        def km(px, k):
-            if len(px) < 30:
-                return None
-            px = px[np.random.default_rng(0).choice(len(px), min(len(px), 20000), replace=False)]
-            _, _, c = cv2.kmeans(px, min(k, len(px) // 10), None, (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 15, 1.0), 2, cv2.KMEANS_PP_CENTERS)
-            return c
-        # letters: the fill and what is drawn inside the word boxes but differs from the ring
-        lc = km(lab[inner & ~ring].reshape(-1, 3), 5)
-        bc = km(lab[ring].reshape(-1, 3), 6)
-        if core.sum() > 30 and lc is not None and bc is not None:
-            # keep letter centres that are not background colours
-            d = np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1)
-            lc = lc[d > 12] if (d > 12).any() else lc
-        _PAL[key] = (lc, bc)
+        _PAL[key] = _palette(img, t, reg, x0, y0, x1, y1)
         if len(_PAL) > 256:
             _PAL.clear()
-    lc, bc = _PAL[key]
+    lc, bc, pal_ok = _PAL[key]
+    if wide and pal_ok:
+        lc = lc[np.min(np.linalg.norm(lc[:, None] - bc[None], axis=2), axis=1) > 30]
+        # a logo can zoom, slide or swing in: its letters leave the reference box, so its clearly
+        # coloured letters are looked for in the whole card while it is on screen
+        x0, y0, x1, y1 = 0, 0, W, H
     out = np.zeros(img.shape[:2], np.uint8)
     if lc is None or bc is None or not len(lc):
         return out
@@ -108,7 +137,8 @@ def styled_mask(img, t, reg, box):
             d = x if d is None else np.minimum(d, x)
         return np.sqrt(d)
     dl, db = near(lc), near(bc)
-    sel = ((dl < db * 0.7) & (dl < 22)).reshape(small.shape[0], small.shape[1]).astype(np.uint8)
+    lim = 30 if (t.get("design") or t.get("design_member")) else 22
+    sel = ((dl < db * 0.7) & (dl < lim)).reshape(small.shape[0], small.shape[1]).astype(np.uint8)
     if sc < 1:
         sel = cv2.resize(sel, (x1 - x0, y1 - y0), interpolation=cv2.INTER_NEAREST)
     lh = max(6, (t.get("text_box", t["box"])[3] - t.get("text_box", t["box"])[1]) // 3)
@@ -589,8 +619,31 @@ def workers(jobs):
     return max(1, min(w, jobs))
 
 
+def clamp_spans(proj, T):
+    """A title never runs past the shots it was seen in: older projects (and hand-moved edges)
+    could reach into the next shot, which then got erased and painted over for nothing."""
+    from .shots import shot_of
+    S = vio.load_json(os.path.join(proj, "shots.json"), {})
+    n = vio.load_json(os.path.join(proj, "project.json"), {}).get("n_frames")
+    cuts = S.get("cuts")
+    if not cuts or not n:
+        return False
+    ch = False
+    for t in T["titles"]:
+        si, so = t.get("sample_in", t["in"]), t.get("sample_out", t["out"])
+        a, _ = shot_of(cuts, n, min(si, so))
+        _, b = shot_of(cuts, n, max(si, so))
+        i, o = max(t["in"], a), min(t["out"], b - 1)
+        if o >= i and (i, o) != (t["in"], t["out"]):
+            t["in"], t["out"] = i, o; ch = True
+    if ch:
+        vio.save_json(os.path.join(proj, "titles.json"), T)
+    return ch
+
+
 def run(proj, only=None, progress=None):
     T = vio.load_json(os.path.join(proj, "titles.json"))
+    clamp_spans(proj, T)
     stats = vio.load_json(os.path.join(proj, "clean_stats.json"), {})
     built = {}
     todo = {}
