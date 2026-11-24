@@ -425,6 +425,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-rle">SRT</label><label class="chk"><input type="checkbox" id="s-rle"> תו RLE בתחילת כל שורה (לתצוגת עברית תקינה)</label>
     <label for="s-gh">טוקן GitHub לעדכונים<br><span class="unit">לריפו פרטי, קריאה בלבד</span></label>
     <div><input type="password" id="s-gh" dir="ltr" autocomplete="off" aria-describedby="ghset" style="width:100%"><div id="ghset" class="unit"></div></div>
+    <span class="lbl" id="pp-l">מחיקה חזקה<br><span class="unit">ProPainter - לכרטיסים קשים. חינמי לשימוש לא מסחרי</span></span>
+    <div role="group" aria-labelledby="pp-l"><div id="pp-st" role="status" aria-live="polite"></div><div class="row2"><button class="mini" id="pp-i">התקן</button></div></div>
     <span class="lbl" id="gb-l">גיבוי ל-Google<br><span class="unit">סדרות, מילון שמות, גופנים שייבאת והעדפות</span></span>
     <div role="group" aria-labelledby="gb-l"><div id="gb-st" role="status"></div><div class="row2" id="gb-b"></div></div>
     <span class="lbl" id="sync-l">סנכרון בין מחשבים<br><span class="unit">חינם, דרך OneDrive או Google Drive</span></span>
@@ -663,6 +665,8 @@ function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;con
     prop('גופן','i-font',el('span',{class:'v'},fs)),
     el('div',{class:'prop'},el('span',{class:'pl',text:''}),el('span',{class:'v row2'},
       el('button',{class:'mini',id:'b-fm',text:'מצא גופן דומה',disabled:S.running,onclick:()=>findFont(t.id,false)}),
+      el('button',{class:'mini',text:'מחיקה חזקה (ProPainter)',title:'שחזור רקע איכותי יותר לכרטיס קשה: אותיות זזות על רקע זז',disabled:S.running,
+        onclick:async()=>{const p=await api('/api/propainter');if(!p.ready){say('קודם מתקינים את ProPainter בהעדפות',true);openDlg('#d-settings');return}run('propaint',{gid:d.group})}}),
       d.design?el('button',{class:'mini',text:'בטל עיצוב - חזור לטקסט',onclick:async()=>{await api('/api/undo_design',{id:t.id});await reloadData(false);renderAll();say('חזר לטקסט רגיל')}})
         :el('button',{class:'mini',text:'עצב עם Claude כמו מעצב',title:'לוגו או כותרת מעוצבת: גופן, צבע, מרקם, עומק וקישוטים כמו במקור',disabled:S.running||!t.he,
           onclick:()=>{if(!t.he)return say('קודם צריך עברית');run('design',{gid:d.group})}}))),
@@ -883,7 +887,7 @@ function designEdit(t,d){
       el('button',{class:'mini',text:'בצע שינוי',disabled:S.running,onclick:go}),
       d.design_prev?el('button',{class:'mini',text:'בטל שינוי אחרון',disabled:S.running,
         onclick:async()=>{const r=await api('/api/design_back',{id:t.id});await reloadData(false);renderAll();say(r.ok?'השינוי האחרון בוטל':'אין שינוי לבטל')}}):null))}
-const JOBN={design_edit:'שינוי עיצוב עם Claude',design:'עיצוב עם Claude',auto:'הכול אוטומטית',queue:'תור עבודה',review:'מיון עם Claude',playable:'הכנת וידאו לניגון',fontmatch:'חיפוש גופן דומה',fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
+const JOBN={propaint:'מחיקה חזקה',design_edit:'שינוי עיצוב עם Claude',design:'עיצוב עם Claude',auto:'הכול אוטומטית',queue:'תור עבודה',review:'מיון עם Claude',playable:'הכנת וידאו לניגון',fontmatch:'חיפוש גופן דומה',fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
 async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay','fonts','translate_titles','translate_dialog','review','design','design_edit'].includes(job))await flush();const r=await api('/api/run',{job,args});
   if(r.need==='api_key'){say('צריך את Claude: מפתח API או Claude Code מותקן - בוחרים בהעדפות',true);openDlg('#d-settings');setTimeout(()=>{const k=$('#s-key');if(k){k.focus();k.scrollIntoView({block:'center'})}},150);return}
   if(!r.started)return say('פעולה אחרת עדיין רצה',true);wasRunning=true;S.job=job;say(`${JOBN[job]||job} התחיל`)}
@@ -959,9 +963,15 @@ function renderSync(s){const st=$('#sync-st'),bx=$('#sync-b');bx.replaceChildren
     bx.append(el('button',{class:'mini',text:'השתמש ב-'+nm,title:d,onclick:()=>go(d)}))}
   bx.append(el('button',{class:'mini',text:'בחר תיקייה מסונכרנת...',onclick:()=>go('pick')}));
   if(s.sync_dir)bx.append(el('button',{class:'mini',text:'בטל סנכרון',onclick:()=>go('')}))}
-async function loadSettings(){const s=await api('/api/settings');renderSync(s);renderGoogle();$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
+async function ppStatus(){const p=await api('/api/propainter');const st=$('#pp-st'),b=$('#pp-i');if(!st)return p;
+  if(p.ready){st.textContent='מותקן'+(p.gpu?' - ירוץ על כרטיס המסך.':' - אין כרטיס NVIDIA, ירוץ על המעבד (איטי).');b.hidden=true}
+  else if(p.state==='installing'){st.textContent='מתקין: '+(p.what||'')+(p.progress!=null?' '+Math.round(p.progress*100)+'%':'');b.hidden=true;setTimeout(ppStatus,1500)}
+  else{st.textContent=(p.state==='error'?'ההתקנה נכשלה: '+p.error+'. ':'')+(p.gpu?'לא מותקן. בערך 3GB, ירוץ על כרטיס המסך.':'לא מותקן. בערך 1GB. בלי כרטיס NVIDIA הוא איטי מאוד.');b.hidden=false}
+  return p}
+async function loadSettings(){ppStatus();const s=await api('/api/settings');renderSync(s);renderGoogle();$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
   $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';$('#s-via').value=s.claude_via||'auto';$('#s-via-h').textContent=s.claude_code_found?'Claude Code נמצא במחשב.':'Claude Code לא נמצא במחשב.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
+$('#pp-i').onclick=async()=>{await api('/api/propainter/install',{});say('מתקין את ProPainter ברקע');setTimeout(ppStatus,800)};
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
   content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),claude_via:$('#s-via').value,gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
 function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?k=${fileKey()}&p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}

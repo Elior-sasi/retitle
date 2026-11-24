@@ -336,6 +336,13 @@ def job_export():
                 vio.save_json(P("titles.json"), T)
             STATE.update(stage="מתקן את הכרטיסים ש-Claude סימן")
             clean.run(proj, bad)
+            from . import propaint
+            if propaint.ready():
+                for g in bad:
+                    try:
+                        propaint.card(proj, g, log=log)
+                    except Exception as e:
+                        log(f"ProPainter על {g} לא הצליח ({e})")
             render.track(proj, only=set(bad))
             render.build_layers(proj)
             res["out"] = compose.run(proj)
@@ -633,6 +640,23 @@ def play_path():
     return p if os.path.exists(p) else None
 
 
+def job_propaint():
+    """Strong erase of one card with ProPainter (installed on demand from the settings)."""
+    from . import propaint, render
+    gid = (STATE.get("args") or {}).get("gid")
+    if not gid:
+        raise RuntimeError("לא נבחר כרטיס")
+    STATE.update(stage="מחיקה חזקה עם ProPainter")
+    RANGE[:] = [0.0, 0.85]
+    with LOCK:
+        n = propaint.card(STATE["proj"], gid, log=log, progress=prog)
+    RANGE[:] = [0.85, 1.0]
+    render.track(STATE["proj"], only={gid})
+    render.build_layers(STATE["proj"])
+    RANGE[:] = [0.0, 1.0]
+    log(f"המחיקה החזקה הסתיימה ({n} פריימים). אפשר לנגן במצב תוצאה.")
+
+
 def job_playable():
     import re as _re, subprocess
     src = vio.load_json(P("project.json"))["video"]
@@ -841,7 +865,7 @@ def job_queue():
     log("התור הסתיים.")
 
 
-JOBS = {"design": job_design, "design_edit": job_design_edit, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
+JOBS = {"design": job_design, "design_edit": job_design_edit, "propaint": job_propaint, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
@@ -1349,6 +1373,9 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200); self.send_header("Content-Type", "image/jpeg")
             self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(data)))
             self.end_headers(); self.wfile.write(data); return
+        if u.path == "/api/propainter":
+            from . import propaint
+            return self._send(200, propaint.status())
         if u.path == "/api/settings":
             s = settings(); s["api_key_set"] = s.get("api_key_saved", False); s["api_key"] = ""
             s["gh_token_set"] = bool(s.get("gh_token")); s["gh_token"] = ""
@@ -1564,6 +1591,10 @@ class H(BaseHTTPRequestHandler):
             if b["job"] in ("translate_titles", "translate_dialog", "review", "design", "design_edit") and not settings().get("api_key"):
                 return self._send(200, {"started": False, "need": "api_key"})
             return self._send(200, {"started": start(b["job"])})
+        if u.path == "/api/propainter/install":
+            from . import propaint
+            propaint.install_async()
+            return self._send(200, {"ok": True})
         if u.path == "/api/update/check":
             from . import update
             try:
