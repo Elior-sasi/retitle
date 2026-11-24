@@ -40,7 +40,10 @@ Spec (JSON; sizes are relative to the letter height "em" unless marked px):
  "shadow": {"dx": 0.03, "dy": 0.05, "blur": 0.06, "color": "#000000", "opacity": 0.6} or null,
  "glow": {"color": "#rrggbb", "size": 0.15, "opacity": 0.5} or null,
  "marks": {"color": "#rrggbb", "per_letter": [1, 3], "length": 0.35, "width": 0.08, "chance": 0.7} or null,   # stripes from the letter edges (tiger, claws)
- "underline": {"color": "#rrggbb", "outline": "#rrggbb", "thickness": 0.08, "y": 0.18, "from": 0.0, "to": 1.0, "glint": "#rrggbb" or null} or null,
+ "underline": {"color": "#rrggbb", "outline": "#rrggbb" or null, "outline_width": 0.12, "thickness": 0.08, "y": 0.18, "from": 0.0, "to": 1.0,
+               "taper": 1.0, "curve": 0.0, "rim": "#rrggbb" or null, "core": "#rrggbb" or null, "texture": 0, "glint": "#rrggbb" or null} or null,
+   # a stick / swoosh under the letters, starting at the right: taper = tip thickness (0.2 = pointed brush stroke), curve = sag,
+   # rim = colour of its lit top face, core = a light streak through it, glint = sparkle at the tip. Match the original's stick.
  "transplants": [{"box": [x0, y0, x1, y1], "line": 0, "letter": 2, "mode": "in"|"replace"|"part", "rx": 0.5, "ry": 0.5, "scale": 0.4}]   # copy an element from the ORIGINAL image (pixel box in image 1) onto a Hebrew letter (index in the line, right to left from 0), centred at rx, ry of that letter, scale = height relative to the letter. "in": inside the letter - ONLY into a closed hole of that letter (ם ס ט), never on top of strokes. "replace": the element takes the letter's place (the letter is removed), for an element that stands for a letter in the original (a jewel as the O): pick the Hebrew letter with the same sound or shape (O -> ו, I -> י), so the word still reads. "part": the element takes the place of the letter's detached part (the short left leg of ה, the leg of ק). With no fitting letter, leave the element out
 }
 Legibility comes first: every Hebrew letter must read at a glance at video size. Keep the look-alike
@@ -456,29 +459,81 @@ def _marks(M, boxes, mk, em, seed):
 
 
 def _underline(img, M, ul, em):
+    """A painted stick under the letters: thick rounded end at the start of the reading direction
+    (the right in Hebrew), tapering to a point, with a top bevel (rim), a light streak through its
+    core, paint texture, an optional outline and a sparkle at the tip."""
     ys, xs = np.where(M > 0.5)
     if not len(xs):
         return img
     x0, x1, yb = xs.min(), xs.max(), ys.max()
-    d = ImageDraw.Draw(img)
-    th = max(2, int(float(ul.get("thickness", 0.08)) * em))
-    y = int(yb + float(ul.get("y", 0.18)) * em)
+    th = max(3.0, float(ul.get("thickness", 0.08)) * em)
+    y = yb + float(ul.get("y", 0.18)) * em
     # right to left: "from" 0 is the right end
     xa = int(x1 - (x1 - x0) * float(ul.get("to", 1.0)))
     xb = int(x1 - (x1 - x0) * float(ul.get("from", 0.0)))
-    if y + th + 4 > img.height:
-        new = Image.new("RGBA", (img.width, y + th + int(em * 0.4)), (0, 0, 0, 0)); new.paste(img, (0, 0)); img = new; d = ImageDraw.Draw(img)
+    need = int(y + th * 2 + em * 0.4)
+    if need > img.height:
+        new = Image.new("RGBA", (img.width, need), (0, 0, 0, 0)); new.paste(img, (0, 0)); img = new
+    H, W = img.height, img.width
+    taper = float(ul.get("taper", 1.0))                 # tip thickness / start thickness
+    curve = float(ul.get("curve", 0.0)) * em            # sag of the middle (px, + = down)
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    L = max(1, xb - xa)
+    tt = np.clip((xb - xx) / L, 0, 1)                   # 0 at the thick start (right), 1 at the tip
+    half = th / 2 * (1 - (1 - taper) * tt ** 2.5)      # stays thick, narrows towards the end
+    yc = y + th / 2 + curve * np.sin(np.pi * tt)
+    inside = (xx >= xa) & (xx <= xb)
+    dist = np.abs(yy - yc) - half                       # <0 inside the stick
+    m = np.where(inside, dist, 1e3)
+    # round caps
+    for cx, r in ((xb, th / 2), (xa, max(1.0, th / 2 * taper))):
+        cy = y + th / 2
+        m = np.minimum(m, np.hypot(xx - cx, yy - cy) - r)
+    A = np.clip(0.5 - m, 0, 1)                          # 1 px antialias
+    if not A.any():
+        return img
+    rgb = np.array(_hex(ul.get("color"), (255, 160, 30)), np.float32)
+    col = np.ones((H, W, 3), np.float32) * rgb
+    tex = float(ul.get("texture", 0) or 0)
+    if tex > 0:
+        n = _noise(W, H, max(4.0, em * 0.05), 11)
+        col = col * (1 + (n[..., None] - 0.5) * 0.6 * tex)
+    rim = ul.get("rim")
+    if rim:
+        # the top face of the stick
+        rel = (yy - (yc - half)) / np.maximum(1e-3, 2 * half)   # 0 top edge .. 1 bottom edge
+        rb = 0.8 * np.clip((0.3 - rel) / 0.08, 0, 1) * (rel > -0.2)
+        rc = np.array(_hex(rim), np.float32)
+        if tex > 0:
+            rc = rc * (1 + (n[..., None] - 0.5) * 0.8 * tex)
+        col = col * (1 - rb[..., None]) + rc * rb[..., None]
+    core = ul.get("core")
+    if core:
+        # a light streak along the middle, fading towards the tip
+        cyc = yc + half * 0.15
+        g = np.exp(-((yy - cyc) / np.maximum(0.6, half * 0.22)) ** 2) * (1 - 0.7 * tt) * inside
+        col = col * (1 - g[..., None]) + np.array(_hex(core), np.float32) * g[..., None]
+    out = np.array(img).astype(np.float32)
     oc = ul.get("outline")
-    d.rounded_rectangle((xa, y, xb, y + th), radius=th // 2, fill=_hex(ul.get("color"), (255, 160, 30)) + (255,),
-                        outline=(_hex(oc) + (255,)) if oc else None, width=max(1, th // 6) if oc else 0)
+    if oc:
+        ow = max(1.0, th * float(ul.get("outline_width", 0.12)))
+        O = np.clip(0.5 - (m - ow), 0, 1)
+        oa = O * (1 - A)
+        o3 = np.array(_hex(oc), np.float32)
+        out[..., :3] = out[..., :3] * (1 - oa[..., None]) + o3 * oa[..., None]
+        out[..., 3] = np.maximum(out[..., 3], oa * 255)
+    out[..., :3] = out[..., :3] * (1 - A[..., None]) + col * A[..., None]
+    out[..., 3] = np.maximum(out[..., 3], A * 255)
+    img = Image.fromarray(out.clip(0, 255).astype(np.uint8), "RGBA")
     if ul.get("glint"):
         g = Image.new("RGBA", img.size, (0, 0, 0, 0)); gd = ImageDraw.Draw(g)
         c = _hex(ul["glint"], (200, 255, 255))
-        r = int(th * 2.2)
-        gd.ellipse((xa - r, y + th // 2 - r, xa + r, y + th // 2 + r), fill=c + (200,))
-        g = g.filter(ImageFilter.GaussianBlur(th)); gd = ImageDraw.Draw(g)
-        gd.line([(xa - r * 1.3, y + th // 2), (xa + r * 1.3, y + th // 2)], fill=c + (255,), width=max(1, th // 4))
-        gd.line([(xa, y + th // 2 - r), (xa, y + th // 2 + r)], fill=c + (255,), width=max(1, th // 4))
+        t2 = max(2, int(th * max(taper, 0.35)))
+        r = int(t2 * 2.2); cy = int(y + th / 2)
+        gd.ellipse((xa - r, cy - r, xa + r, cy + r), fill=c + (200,))
+        g = g.filter(ImageFilter.GaussianBlur(t2)); gd = ImageDraw.Draw(g)
+        gd.line([(xa - r * 1.3, cy), (xa + r * 1.3, cy)], fill=c + (255,), width=max(1, t2 // 4))
+        gd.line([(xa, cy - r), (xa, cy + r)], fill=c + (255,), width=max(1, t2 // 4))
         img.alpha_composite(g)
     return img
 
