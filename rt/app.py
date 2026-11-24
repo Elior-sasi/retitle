@@ -284,6 +284,18 @@ def build_steps(proxy=True):
         if d:
             log(f"{len(d)} כרטיסים")
             clean.run(proj, sorted(d), progress=prog)
+            # hard cards (the self check still found the old letters, or most of the hole had to be invented)
+            # go through ProPainter by themselves when it runs on the graphics card
+            from . import propaint
+            if settings().get("auto_propainter", True) and propaint.gpu() and propaint.ready():
+                cs = vio.load_json(P("clean_stats.json"), {})
+                hard = [g for g in sorted(d) if (cs.get(g) or {}).get("left_frames", 0) > 0 or (cs.get(g) or {}).get("synth_mean", 0) > 0.5]
+                for g in hard:
+                    try:
+                        STATE.update(stage=f"מחיקה חזקה לכרטיס קשה ({g})")
+                        propaint.card(proj, g, log=log)
+                    except Exception as e:
+                        log(f"ProPainter על {g} לא הצליח ({e}) - נשארת המחיקה הרגילה")
 
     def do_track():
         d = st.get("dirty", dirty)
@@ -1842,6 +1854,12 @@ def main():
             from . import vocals
             if "--server" not in sys.argv and settings().get("sep_vocals", True) and not vocals.ready():
                 vocals.fetch()
+        except Exception:
+            traceback.print_exc()
+        try:                                   # the strong erase: set up by itself where it runs well (NVIDIA)
+            from . import propaint
+            if "--server" not in sys.argv and settings().get("auto_propainter", True) and propaint.gpu() and not propaint.ready():
+                propaint.install_async()
         except Exception:
             traceback.print_exc()
     threading.Thread(target=_warm, daemon=True).start()

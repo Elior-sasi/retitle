@@ -426,7 +426,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <label for="s-gh">טוקן GitHub לעדכונים<br><span class="unit">לריפו פרטי, קריאה בלבד</span></label>
     <div><input type="password" id="s-gh" dir="ltr" autocomplete="off" aria-describedby="ghset" style="width:100%"><div id="ghset" class="unit"></div></div>
     <span class="lbl" id="pp-l">מחיקה חזקה<br><span class="unit">ProPainter - לכרטיסים קשים. חינמי לשימוש לא מסחרי</span></span>
-    <div role="group" aria-labelledby="pp-l"><div id="pp-st" role="status" aria-live="polite"></div><div class="row2"><button class="mini" id="pp-i">התקן</button></div></div>
+    <div role="group" aria-labelledby="pp-l"><div id="pp-st" role="status" aria-live="polite"></div><div class="row2"><button class="mini" id="pp-i">התקן</button></div>
+      <label class="chk"><input type="checkbox" id="s-ppauto"> אוטומטית: להוריד ולהפעיל על כרטיסים קשים (רק עם כרטיס NVIDIA)</label></div>
     <span class="lbl" id="gb-l">גיבוי ל-Google<br><span class="unit">סדרות, מילון שמות, גופנים שייבאת והעדפות</span></span>
     <div role="group" aria-labelledby="gb-l"><div id="gb-st" role="status"></div><div class="row2" id="gb-b"></div></div>
     <span class="lbl" id="sync-l">סנכרון בין מחשבים<br><span class="unit">חינם, דרך OneDrive או Google Drive</span></span>
@@ -969,11 +970,11 @@ async function ppStatus(){const p=await api('/api/propainter');const st=$('#pp-s
   else{st.textContent=(p.state==='error'?'ההתקנה נכשלה: '+p.error+'. ':'')+(p.gpu?'לא מותקן. בערך 3GB, ירוץ על כרטיס המסך.':'לא מותקן. בערך 1GB. בלי כרטיס NVIDIA הוא איטי מאוד.');b.hidden=false}
   return p}
 async function loadSettings(){ppStatus();const s=await api('/api/settings');renderSync(s);renderGoogle();$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
-  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';$('#s-via').value=s.claude_via||'auto';$('#s-via-h').textContent=s.claude_code_found?'Claude Code נמצא במחשב.':'Claude Code לא נמצא במחשב.';
+  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';$('#s-via').value=s.claude_via||'auto';$('#s-ppauto').checked=s.auto_propainter!==false;$('#s-via-h').textContent=s.claude_code_found?'Claude Code נמצא במחשב.':'Claude Code לא נמצא במחשב.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#pp-i').onclick=async()=>{await api('/api/propainter/install',{});say('מתקין את ProPainter ברקע');setTimeout(ppStatus,800)};
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
-  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),claude_via:$('#s-via').value,gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
+  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),claude_via:$('#s-via').value,auto_propainter:$('#s-ppauto').checked,gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
 function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?k=${fileKey()}&p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
 
 // ================================================================ import / hardsubs / QA / update
