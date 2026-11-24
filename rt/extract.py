@@ -74,6 +74,8 @@ def run(proj, pad=48, progress=None):
             continue                                  # nothing changed for this card: keep its frames
         for t in lines:
             t["region"] = reg
+            t.pop("sam", None)                        # SAM 2's masks were for the old frames
+        shutil.rmtree(os.path.join(proj, "sam", gid), ignore_errors=True)
         jobs[gid] = (lo, hi, reg)
         shutil.rmtree(d, ignore_errors=True)
         os.makedirs(d)

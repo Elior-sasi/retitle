@@ -283,10 +283,37 @@ def build_steps(proxy=True):
         d = st.get("dirty", dirty)
         if d:
             log(f"{len(d)} כרטיסים")
+            from . import propaint, aimodels
+            from .extract import groups
+            auto = settings().get("auto_propainter", True) and propaint.gpu() and aimodels.sam_ready()
+
+            def sam(gs, why):
+                for g in gs:
+                    try:
+                        STATE.update(stage=f"SAM 2 - מסכה מדויקת ל{why} ({g})")
+                        aimodels.sam_card(proj, g, log=log)
+                    except Exception as e:
+                        log(f"SAM 2 על {g} לא הצליח ({str(e)[:120]}) - נשארות המסכות הרגילות")
+            if auto:
+                # logos, designed titles and cards asked to erase harder: exact masks before the erase
+                G = groups(vio.load_json(P("titles.json")))
+                sam([g for g in sorted(d) if g in G and not any(t.get("sam") for t in G[g]) and
+                     any(t.get("styled") or t.get("strong") or t.get("kind") == "logo" for t in G[g])], "לוגו")
             clean.run(proj, sorted(d), progress=prog)
+            if auto:
+                # the self check still found the old letters: follow them with SAM 2 and erase those cards again
+                cs = vio.load_json(P("clean_stats.json"), {})
+                G = groups(vio.load_json(P("titles.json")))
+                again = [g for g in sorted(d) if (cs.get(g) or {}).get("left_frames", 0) > 2 and g in G and
+                         not any(t.get("sam") for t in G[g])]
+                if again:
+                    sam(again, "שאריות")
+                    again = [g for g in again if any(t.get("sam") for t in groups(vio.load_json(P("titles.json")))[g])]
+                    if again:
+                        STATE.update(stage="מוחק שוב עם המסכות של SAM 2")
+                        clean.run(proj, again)
             # hard cards (the self check still found the old letters, or most of the hole had to be invented)
             # go through ProPainter by themselves when it runs on the graphics card
-            from . import propaint
             if settings().get("auto_propainter", True) and propaint.gpu() and propaint.ready():
                 cs = vio.load_json(P("clean_stats.json"), {})
                 hard = [g for g in sorted(d) if (cs.get(g) or {}).get("left_frames", 0) > 0 or (cs.get(g) or {}).get("synth_mean", 0) > 0.5]
@@ -998,9 +1025,18 @@ Sheets: {", ".join("check/" + f for f in sheets)}""", f"סבב {k + 1}: Claude �
                         for t in G[x["gid"]]:
                             t["strong"] = True; t["built"] = None
                 vio.save_json(P("titles.json"), T)
+            sm = [x["gid"] for x in acts if x.get("do") == "sam" and x.get("gid") in G]
+            if sm:
+                from . import aimodels
+                for g in sm:
+                    try:
+                        STATE.update(stage=f"SAM 2 ({g})")
+                        aimodels.sam_card(proj, g, log=log)
+                    except Exception as e:
+                        log(f"SAM 2 על {g} לא הצליח ({str(e)[:120]})")
             pp = [x["gid"] for x in acts if x.get("do") == "propaint" and x.get("gid") in G]
             rt = {x["gid"] for x in acts if x.get("do") == "retrack" and x.get("gid") in G}
-            if any(x.get("do") == "clean" for x in acts) or pp:
+            if any(x.get("do") in ("clean", "sam") for x in acts) or pp:
                 run_steps(build_steps(False))
             for g in pp:
                 if not propaint.ready():
@@ -2054,7 +2090,7 @@ def prepare_ui():
     asr.prepare(name)
     threading.Thread(target=lambda: vocals.ready() or vocals.fetch(), daemon=True).start()
     want_pp = propaint.gpu()
-    if want_pp and not propaint.ready():
+    if want_pp and not propaint.all_ready():
         propaint.install_async()
 
     class Api:
@@ -2123,9 +2159,17 @@ def main():
                 vocals.fetch()
         except Exception:
             traceback.print_exc()
+        try:                                   # every Google font with Hebrew, once: font matching compares them all
+            from . import fontlib, fontmatch
+            if "--server" not in sys.argv and not settings().get("google_fonts_done"):
+                ok, n = fontmatch.download_google()
+                if ok == n:
+                    cfg = vio.load_json(CFG, {}); cfg["google_fonts_done"] = True; vio.save_json(CFG, cfg)
+        except Exception:
+            traceback.print_exc()
         try:                                   # the strong erase: set up by itself where it runs well (NVIDIA)
             from . import propaint
-            if "--server" not in sys.argv and settings().get("auto_propainter", True) and propaint.gpu() and not propaint.ready():
+            if "--server" not in sys.argv and settings().get("auto_propainter", True) and propaint.gpu() and not propaint.all_ready():
                 propaint.install_async()
         except Exception:
             traceback.print_exc()

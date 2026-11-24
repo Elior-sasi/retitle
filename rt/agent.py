@@ -28,7 +28,9 @@ message (call it RT; in PowerShell put & before the quoted path). RT <command> .
 {CLI}
 RT --py <script.py> [args] runs a Python script you wrote (Write it under the project's agent folder) inside the
 engine, with numpy, cv2 and the engine's modules (from rt import vio, clean, render, design, motion, masks ...)
-importable. When the engine has no tool for a case (a background it smears, a light it does not match, a shape it
+importable; from rt import aimodels gives SAM 2 (aimodels.sam_card(proj, gid) writes sam/<gid>/<frame>.png, used by
+the next clean) and Lens (aimodels.lens([image]) names a Latin font, aimodels.embed([images]) compares lettering;
+titles carry "lens" = the source's Latin font). When the engine has no tool for a case (a background it smears, a light it does not match, a shape it
 cannot copy), write the code for it, the way a developer in the chat would: e.g. fix the cleaned plates of one card,
 paint a mask by hand, measure the source's motion yourself, draw an element. Look at what you made before moving on
 (preview <proj> <gid> writes crops you can Read; masks writes mask sheets). Never delete the source video or the
@@ -44,6 +46,8 @@ actions (only what is needed; titles.json edits need no action):
   {"do":"clean","gid":G}            erase card G again, harder (letters or a shadow of the source still show)
   {"do":"propaint","gid":G}         erase card G with ProPainter (strong video inpainting; for a background that the
                                     normal erase smears, or text over moving people/water/fire)
+  {"do":"sam","gid":G}              follow card G's letters with SAM 2 (exact masks through all its frames, with the
+                                    3D side, bevel, glow and shadow) and erase it again - for ghosts and edges left
   {"do":"retrack","gid":G}          measure the source animation of G again (Hebrew drifts, jumps or has the wrong size)
   {"do":"fontmatch","id":ID}        pick the font and look of a title again from the source
   {"do":"design","gid":G}           design a styled card from scratch

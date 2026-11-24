@@ -439,6 +439,9 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
     img = _load(proj, gid, f)
     H, W = img.shape[:2]
     M0 = frame_mask(img, f, lines, reg)
+    sm = _sam(proj, gid, f, M0.shape)
+    if sm is not None:                     # SAM 2 followed the whole letters (3D side, bevel, glow) through the card
+        M0 = M0 | cv2.dilate(sm, np.ones((5, 5), np.uint8))
     env = M0.copy()
     if second:
         # fading / moving text the colour model misses: rebuild a wider envelope (text area of
@@ -606,6 +609,14 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
 
 
 LEFT = {}
+
+
+def _sam(proj, gid, f, shape):
+    p = os.path.join(proj, "sam", gid, f"{f:06d}.png")
+    if not os.path.exists(p):
+        return None
+    m = cv2.imread(p, 0)
+    return m if m is not None and m.shape == shape else None
 
 
 def synth(img, hole):

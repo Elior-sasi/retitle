@@ -111,6 +111,9 @@ def install():
                 STATE["what"] = f"מוריד את המודל ({i + 1}/3)"
                 _get(WEIGHTS + f, os.path.join(wd, f), (0.78 + 0.07 * i, 0.85 + 0.07 * i))
         open(os.path.join(h, "ok"), "w").close()
+        from . import aimodels                       # SAM 2 (exact masks) and Lens (fonts), same Python
+        if not aimodels.ready():
+            aimodels.install((0.9, 1.0))
         STATE.update(state="ready", progress=1.0, what="")
     except Exception as e:
         STATE.update(state="error", error=str(e)[:300], what="")
@@ -131,10 +134,16 @@ def _safe(fn):
         pass
 
 
+def all_ready():
+    from . import aimodels
+    return ready() and aimodels.ready()
+
+
 def status():
-    if ready() and STATE["state"] != "installing":
+    from . import aimodels
+    if all_ready() and STATE["state"] != "installing":
         STATE.update(state="ready")
-    return dict(STATE, ready=ready(), gpu=gpu())
+    return dict(STATE, ready=ready(), gpu=gpu(), sam=aimodels.sam_ready(), lens=aimodels.lens_ready())
 
 
 def card(proj, gid, log=print, progress=None):

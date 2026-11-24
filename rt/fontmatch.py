@@ -17,10 +17,10 @@ Candidates: every font in fontlib.catalog(); variable fonts at several weights (
 Traits per font instance are measured once and cached in fonttraits.json (appdata).
 Optionally Claude makes the final pick from a sheet of the top candidates (only with an API key).
 """
-import os, re, json, base64, urllib.request
+import os, re, json, base64, glob, shutil, urllib.request
 from .house import with_house
 import cv2, numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from . import vio, masks
 
 SAMPLE = "אבגדהוזחטיכלמנסעפצקרשת"
@@ -363,14 +363,14 @@ def sheet(rows, text, path):
     return path
 
 
-def ask_claude(api_key, model, crop_jpg, sheet_jpg, n):
+def ask_claude(api_key, model, crop_jpg, sheet_jpg, n, hint=""):
     def b64(p):
         with open(p, "rb") as f:
             return base64.b64encode(f.read()).decode()
     body = {"model": model, "max_tokens": 500, "system": [{"type": "text", "text": with_house(SYSTEM), "cache_control": {"type": "ephemeral"}}], "messages": [{"role": "user", "content": [
         {"type": "text", "text": "Image 1 - the original title:"},
         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64(crop_jpg)}},
-        {"type": "text", "text": f"Image 2 - candidates 1 to {n}:"},
+        {"type": "text", "text": (hint + "\n" if hint else "") + f"Image 2 - candidates 1 to {n}:"},
         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64(sheet_jpg)}}]}]}
     req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                  headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
@@ -379,6 +379,131 @@ def ask_claude(api_key, model, crop_jpg, sheet_jpg, n):
     text = "".join(b.get("text", "") for b in res.get("content", []))
     m = re.search(r"\{.*\}", text, re.S)
     return json.loads(m.group(0)) if m else {}
+
+
+
+# ------------------------------------------------------------------ Lens: the source's Latin font, and every font compared
+def latin_fonts():
+    """{family: file} of every font on this computer and the user's imported ones (any script), for finding
+    the source's Latin font among them. Cached by folder contents."""
+    from . import fontlib
+    from fontTools.ttLib import TTFont
+    cp = os.path.join(os.path.dirname(_cache_path()), "latinfonts.json")
+    cache = vio.load_json(cp, {})
+    out, dirty = {}, False
+    dirs = [d for d, _ in fontlib.system_dirs()] + [fontlib.user_dir()]
+    for d in dirs:
+        for p in glob.glob(os.path.join(d, "**", "*.*"), recursive=True):
+            if not p.lower().endswith((".ttf", ".otf")):
+                continue
+            try:
+                k = f"{p}|{int(os.path.getmtime(p))}"
+            except OSError:
+                continue
+            if k not in cache:
+                try:
+                    f = TTFont(p, lazy=True)
+                    cm = f.getBestCmap() or {}
+                    nm = f["name"]
+                    fam = (nm.getDebugName(16) or nm.getDebugName(1) or "").strip()
+                    sub = (nm.getDebugName(17) or nm.getDebugName(2) or "").strip().lower()
+                    cache[k] = [fam, sub, all(ord(c) in cm for c in "AEHRaeo")]
+                except Exception:
+                    cache[k] = ["", "", False]
+                dirty = True
+            fam, sub, latin = cache[k]
+            if fam and latin and not re.search(r"italic|oblique", sub):
+                if fam not in out or sub in ("regular", "bold", "book"):
+                    out[fam] = p
+    if dirty:
+        os.makedirs(os.path.dirname(cp), exist_ok=True)
+        vio.save_json(cp, cache)
+    return out
+
+
+def _tile(draw_fn, path):
+    im = Image.new("RGB", (900, 200), (255, 255, 255))
+    if not draw_fn(im):
+        return None
+    im.save(path)
+    return path
+
+
+def ai_fonts(proj, t, crop_jpg, he_rows, log=print):
+    """What Lens adds: the source's Latin font by name (t["lens"]), the closest Latin fonts on this computer,
+    and every Hebrew candidate ordered by how much its lettering looks like the source.
+    Returns {"lens": [...], "latin_pc": [names], "he_order": {font name: similarity}} or {} without Lens."""
+    from . import aimodels, render
+    if not aimodels.lens_ready() or not crop_jpg:
+        return {}
+    d = os.path.join(proj, "fontmatch", "ai_" + t["id"])
+    shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
+    out = {}
+    try:
+        out["lens"] = (aimodels.lens([crop_jpg], 5).get(crop_jpg) or [])
+    except Exception as e:
+        log(f"Lens לא הצליח ({str(e)[:100]})")
+        return {}
+    src = re.sub(r"\s+", " ", t.get("src") or "").strip()[:24] or "Title"
+    imgs, names = [crop_jpg], []
+    # Latin: the source text in every font on this computer
+    if re.search(r"[A-Za-z]", src):
+        for i, (fam, p) in enumerate(sorted(latin_fonts().items())):
+            def draw(im, p=p):
+                try:
+                    f = ImageFont.truetype(p, 120)
+                    bb = f.getbbox(src)
+                    if bb[2] - bb[0] > 4000 or bb[2] <= bb[0]:
+                        return False
+                    im2 = Image.new("RGB", (bb[2] - bb[0] + 60, bb[3] - bb[1] + 60), (255, 255, 255))
+                    ImageDraw.Draw(im2).text((30 - bb[0], 30 - bb[1]), src, font=f, fill=(0, 0, 0))
+                    im.paste(im2.resize((900, max(1, int(im2.height * 900 / im2.width)))).crop((0, 0, 900, 200)))
+                    return True
+                except Exception:
+                    return False
+            q = _tile(draw, os.path.join(d, f"l{i:04d}.png"))
+            if q:
+                imgs.append(q); names.append(("latin", fam))
+    # Hebrew: the Hebrew text in every candidate
+    he = t.get("he") or SAMPLE
+    kw = render._kw(direction="rtl", language="he")
+    vt = render._vis(he)
+    for i, r in enumerate(he_rows):
+        def draw(im, r=r):
+            try:
+                f = render._font(r["font"], 120, r.get("weight"), r.get("wdth"))
+                bb = f.getbbox(vt, **kw)
+                im2 = Image.new("RGB", (bb[2] - bb[0] + 60, bb[3] - bb[1] + 60), (255, 255, 255))
+                ImageDraw.Draw(im2).text((30 - bb[0], 30 - bb[1]), vt, font=f, fill=(0, 0, 0), **kw)
+                im.paste(im2.resize((900, max(1, int(im2.height * 900 / im2.width)))).crop((0, 0, 900, 200)))
+                return True
+            except Exception:
+                return False
+        q = _tile(draw, os.path.join(d, f"h{i:04d}.png"))
+        if q:
+            imgs.append(q); names.append(("he", r["font"]))
+    try:
+        E = aimodels.embed(imgs)
+    except Exception as e:
+        log(f"השוואת הגופנים עם Lens לא הצליחה ({str(e)[:100]})")
+        E = None
+    if E is not None and len(E) == len(imgs):
+        sim = E[1:] @ E[0]
+        lat = sorted([(float(sim[i]), n) for i, (k, n) in enumerate(names) if k == "latin"], reverse=True)
+        out["latin_pc"] = [n for _, n in lat[:5]]
+        out["he_order"] = {}
+        for i, (k, n) in enumerate(names):
+            if k == "he":
+                out["he_order"][n] = max(out["he_order"].get(n, -1.0), float(sim[i]))
+    shutil.rmtree(d, ignore_errors=True)
+    return out
+
+
+def same_family(hebrew_names, latin_names):
+    """Hebrew candidates that are the Hebrew of one of the source's Latin fonts (Fredoka -> Fredoka)."""
+    norm = lambda x: re.sub(r"[^a-z0-9]", "", x.lower().replace("hebrew", ""))
+    want = [norm(n) for n in latin_names if n]
+    return [h for h in hebrew_names if any(w and (norm(h) == w or norm(h).startswith(w)) for w in want)]
 
 
 # ------------------------------------------------------------------ one title / all titles
@@ -391,6 +516,42 @@ def match(proj, t, top=8, api_key="", model="claude-sonnet-5-5", include_remote=
     script = script_of(t.get("src") or "")
     rows = rank(src, candidate_traits(progress=progress, include_remote=include_remote), script, top)
     out = {"rows": rows, "traits": src, "latin_font": "", "reason_he": "", "settings_he": "", "by_claude": False}
+    # Lens: the source's Latin font by name and by comparison with every font on this computer, and every
+    # Hebrew font (this computer, Adobe, imported, Google) ordered by how much it looks like the source
+    hint, ai = "", {}
+    try:
+        from . import aimodels
+        if aimodels.lens_ready():
+            d = os.path.join(proj, "fontmatch"); os.makedirs(d, exist_ok=True)
+            crop, _ = crop_of(proj, t, pad=12)
+            cj = os.path.join(d, f"crop_{t['id']}.jpg"); cv2.imwrite(cj, crop)
+            allc = rank(src, candidate_traits(include_remote=include_remote), script, 400)
+            ai = ai_fonts(proj, t, cj, allc, log=log)
+            if ai:
+                t["lens"] = [[x["name"], x["score"]] for x in ai.get("lens", [])[:5]]
+                t["lens_pc"] = ai.get("latin_pc", [])
+                ho = ai.get("he_order") or {}
+                by_look = sorted(allc, key=lambda r_: -ho.get(r_["font"], -1))
+                fam = same_family([r_["font"] for r_ in allc],
+                                  [x["name"] for x in ai.get("lens", []) if x["score"] >= 0.2] + ai.get("latin_pc", [])[:2])
+                names = {r_["font"] for r_ in rows}
+                first = [r_ for r_ in allc if r_["font"] in fam]
+                rows[:0] = [r_ for r_ in first if r_["font"] not in names]
+                names |= {r_["font"] for r_ in first}
+                for r_ in by_look[:8]:
+                    if r_["font"] not in names:
+                        rows.append(r_); names.add(r_["font"])
+                if first and not api_key:            # no Claude: the source's own family in Hebrew wins
+                    out["rows"] = rows = first[:1] + [r_ for r_ in rows if r_["font"] != first[0]["font"]]
+                lens_txt = ", ".join(f"{x['name']} ({x['score']:.2f})" for x in ai.get("lens", [])[:3])
+                hint = (f"A font recognizer (Lens) reads the original's Latin font as: {lens_txt}. "
+                        f"Closest Latin fonts on this computer: {', '.join(ai.get('latin_pc', [])[:3])}. ")
+                if first:
+                    hint += f"The Hebrew version of that family is among the candidates: {', '.join(r_['font'] for r_ in first[:3])}. "
+                hint += "Use this as a strong hint, but judge by the image."
+                out["lens"] = t["lens"]
+    except Exception as e:
+        log(f"Lens לא זמין ({str(e)[:100]})")
     if api_key and rows:
         try:
             d = os.path.join(proj, "fontmatch"); os.makedirs(d, exist_ok=True)
@@ -398,7 +559,7 @@ def match(proj, t, top=8, api_key="", model="claude-sonnet-5-5", include_remote=
             cj = os.path.join(d, f"crop_{t['id']}.jpg"); cv2.imwrite(cj, crop)
             names = {r_["font"] for r_ in rows}
             for n_, w_ in CURATED:
-                if n_ in names or len(rows) >= 16:
+                if n_ in names or len(rows) >= 20:
                     continue
                 try:
                     from . import render as _r
@@ -408,7 +569,7 @@ def match(proj, t, top=8, api_key="", model="claude-sonnet-5-5", include_remote=
                 except Exception:
                     pass
             sj = sheet(rows, t.get("he") or SAMPLE, os.path.join(d, f"fontmatch_{t['id']}.jpg"))
-            r = ask_claude(api_key, model, cj, sj, len(rows))
+            r = ask_claude(api_key, model, cj, sj, len(rows), hint)
             order = [int(x) for x in (r.get("ranking") or []) if str(x).isdigit() and 1 <= int(x) <= len(rows)]
             b = int(r.get("best", 0) or 0)
             if 1 <= b <= len(rows):
