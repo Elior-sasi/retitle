@@ -96,10 +96,21 @@ def styled_mask(img, t, reg, box):
     out = np.zeros(img.shape[:2], np.uint8)
     if lc is None or bc is None or not len(lc):
         return out
-    lab = cv2.cvtColor(img[y0:y1, x0:x1], cv2.COLOR_BGR2LAB).astype(np.float32).reshape(-1, 3)
-    dl = np.min(np.linalg.norm(lab[:, None] - lc[None], axis=2), axis=1)
-    db = np.min(np.linalg.norm(lab[:, None] - bc[None], axis=2), axis=1)
-    sel = ((dl < db * 0.7) & (dl < 22)).reshape(y1 - y0, x1 - x0).astype(np.uint8)
+    # classified at reduced size (it is grown afterwards anyway): this runs for every candidate frame
+    crop = img[y0:y1, x0:x1]
+    sc = min(1.0, (250000.0 / max(1, crop.shape[0] * crop.shape[1])) ** 0.5)
+    small = cv2.resize(crop, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA) if sc < 1 else crop
+    lab = cv2.cvtColor(small, cv2.COLOR_BGR2LAB).astype(np.float32).reshape(-1, 3)
+    def near(c):
+        d = None
+        for cc in c:
+            x = ((lab - cc) ** 2).sum(1)
+            d = x if d is None else np.minimum(d, x)
+        return np.sqrt(d)
+    dl, db = near(lc), near(bc)
+    sel = ((dl < db * 0.7) & (dl < 22)).reshape(small.shape[0], small.shape[1]).astype(np.uint8)
+    if sc < 1:
+        sel = cv2.resize(sel, (x1 - x0, y1 - y0), interpolation=cv2.INTER_NEAREST)
     lh = max(6, (t.get("text_box", t["box"])[3] - t.get("text_box", t["box"])[1]) // 3)
     k = max(3, lh // 6) | 1
     sel = cv2.morphologyEx(sel, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
@@ -438,9 +449,15 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
     if stack:
         S = np.stack(stack)             # k,H,W,3
         V = np.stack(okm)[..., None]    # k,H,W,1
-        Sm = np.where(V, S, np.nan)
-        with np.errstate(all="ignore"):
-            med = np.nanmedian(Sm[:, hole], axis=0)   # n,3
+        Sh = S[:, hole].astype(np.float32); Vh = V[:, hole, 0]          # k,n,3 / k,n
+        med = np.full(Sh.shape[1:], np.nan, np.float32)
+        allv = Vh.all(0)
+        if allv.any():                                   # plain median where every frame is usable (fast)
+            med[allv] = np.median(Sh[:, allv], axis=0)
+        part = ~allv & Vh.any(0)
+        if part.any():
+            with np.errstate(all="ignore"):
+                med[part] = np.nanmedian(np.where(Vh[:, part, None], Sh[:, part], np.nan), axis=0)
         good = ~np.isnan(med).any(1)
         idx = np.argwhere(hole)
         plate[idx[good, 0], idx[good, 1]] = med[good]
