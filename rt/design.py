@@ -44,7 +44,9 @@ Spec (JSON; sizes are relative to the letter height "em" unless marked px):
                "taper": 1.0, "curve": 0.0, "rim": "#rrggbb" or null, "core": "#rrggbb" or null, "texture": 0, "glint": "#rrggbb" or null} or null,
    # a stick / swoosh under the letters, starting at the right: taper = tip thickness (0.2 = pointed brush stroke), curve = sag,
    # rim = colour of its lit top face, core = a light streak through it, glint = sparkle at the tip. Match the original's stick.
- "transplants": [{"box": [x0, y0, x1, y1], "line": 0, "letter": 2, "mode": "in"|"replace"|"part", "rx": 0.5, "ry": 0.5, "scale": 0.4}]   # copy an element from the ORIGINAL image (pixel box in image 1) onto a Hebrew letter (index in the line, right to left from 0), centred at rx, ry of that letter, scale = height relative to the letter. "in": inside the letter - ONLY into a closed hole of that letter (ם ס ט), never on top of strokes. "replace": the element takes the letter's place (the letter is removed), for an element that stands for a letter in the original (a jewel as the O): pick the Hebrew letter with the same sound or shape (O -> ו, I -> י), so the word still reads. "part": the element takes the place of the letter's detached part (the short left leg of ה, the leg of ק). With no fitting letter, leave the element out
+ "lights": [{"x": 0.2, "y": 0.0, "radius": 0.8, "color": "#rrggbb", "strength": 0.4}],   # light on the letters as in the original
+   # (a brighter, warmer side; the glow of a jewel or lamp on nearby letters): x, y in the letter block (0..1), radius in block sizes
+ "transplants": [{"box": [x0, y0, x1, y1], "line": 0, "letter": 2, "mode": "in"|"replace"|"part", "rx": 0.5, "ry": 0.5, "scale": 0.4}]   # copy an element from the ORIGINAL image (pixel box in image 1) onto a Hebrew letter (index in the line, right to left from 0), centred at rx, ry of that letter, scale = height relative to the letter. "in": inside the letter - ONLY into a closed hole of that letter (ם ס ט), never on top of strokes. "replace": the element takes the letter's place (the letter is removed), for an element that stands for a letter in the original (a jewel as the O): pick the Hebrew letter with the same sound or shape (O -> ו, I -> י), so the word still reads. "block": any other element of the original that is not a letter (a caret, a star, a paw print, a ribbon, a crown, a sparkle, a stick you would rather copy than draw) - copied as it is and placed at rx, ry of the whole Hebrew letter block (0..1, may be outside), scale = its height relative to the block height, "mirror": true to flip it for right-to-left. "part": the element takes the place of the letter's detached part (the short left leg of ה, the leg of ק). With no fitting letter, leave the element out
 }
 Legibility comes first: every Hebrew letter must read at a glance at video size. Keep the look-alike
 pairs apart - ה/ח (the gap of ה stays open), ד/ר, ו/ז/ן, נ/ג/כ, ב/כ, ס/ם, ט/מ. Condensed fonts, rough edges,
@@ -343,6 +345,18 @@ def render_spec(spec, source=None, em=200):
         rim = np.clip(M - _shift(M, d[0], d[1]), 0, 1)
         rim = cv2.GaussianBlur(rim, (0, 0), max(0.6, wd / 4))
         fill = fill * (1 - rim[..., None]) + np.array(_hex(hl.get("color"), (255, 255, 255)), np.float32) * rim[..., None]
+    for lt in spec.get("lights") or []:
+        # light falling on the letters (a lamp, the glow of a jewel, the sun from one side): a soft
+        # radial brightening in the light's colour, on the letters only
+        try:
+            cx = x0 + (x1 - x0) * float(lt.get("x", 0.5)); cy = y0 + (y1 - y0) * float(lt.get("y", 0.0))
+            r = max(4.0, float(lt.get("radius", 0.6)) * max(x1 - x0, y1 - y0))
+            yy_, xx_ = np.mgrid[0:h, 0:w].astype(np.float32)
+            g = np.clip(1 - np.hypot(xx_ - cx, yy_ - cy) / r, 0, 1) ** 1.5 * float(lt.get("strength", 0.4))
+            c = np.array(_hex(lt.get("color"), (255, 230, 160)), np.float32)
+            fill = 255 - (255 - fill) * (1 - g[..., None] * c / 255)      # light adds (screen)
+        except Exception:
+            pass
     mk = spec.get("marks")
     if mk:
         S = _marks(M, boxes, mk, em, seed)
@@ -402,7 +416,10 @@ def render_spec(spec, source=None, em=200):
     ul = spec.get("underline")
     if ul:
         img = _underline(img, M, ul, em)
+    ys_, xs_ = np.where(M > 0.3)
     for tr in trs:
+        if tr.get("mode") == "block" and len(xs_):
+            tr["_block"] = [int(xs_.min()), int(ys_.min()), int(xs_.max()), int(ys_.max())]
         img = _transplant(img, boxes, tr, source, (spec.get("fill") or {}).get("colors"))
     ys, xs = np.where(M > 0.3)
     ink = [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1] if len(xs) else [0, 0, img.width, img.height]
@@ -552,7 +569,8 @@ def _transplant(img, boxes, tr, source, fills=None):
         a = np.clip((a - 25) / 40, 0, 1)
         # not the letter it sat on: drop pixels close to the letters' main colour
         # (the letter colours: the measured fill, else the colours the spec paints the letters in)
-        cols = [source["fill_hex"]] if source.get("fill_hex") not in (None, "#000000") else list(fills or [])
+        cols = [] if tr.get("mode") == "block" else \
+            [source["fill_hex"]] if source.get("fill_hex") not in (None, "#000000") else list(fills or [])
         for hx in cols:
             fc = np.array(_hex(hx), np.float32)[::-1]
             dist = np.linalg.norm(s.astype(np.float32) - fc, axis=2)
@@ -562,7 +580,7 @@ def _transplant(img, boxes, tr, source, fills=None):
         L = cv2.cvtColor(s, cv2.COLOR_BGR2LAB)[..., 0]
         Lc = float(cv2.cvtColor(c, cv2.COLOR_BGR2LAB)[..., 0].mean())
         reg = a > 0.4
-        if reg.sum() > 50:
+        if reg.sum() > 50 and tr.get("mode") != "block":
             th, _ = cv2.threshold(L[reg].reshape(-1, 1), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             hi_, lo_ = reg & (L > th), reg & (L <= th)
             if hi_.any() and lo_.any():
@@ -579,6 +597,19 @@ def _transplant(img, boxes, tr, source, fills=None):
             ys, xs = np.where(hull > 0)
             s = s[ys.min():ys.max() + 1, xs.min():xs.max() + 1]; a = a[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
         el = Image.fromarray(np.dstack([cv2.cvtColor(s, cv2.COLOR_BGR2RGB), (a * 255).astype(np.uint8)]), "RGBA")
+        if tr.get("mirror"):
+            el = el.transpose(Image.FLIP_LEFT_RIGHT)
+        if tr.get("mode") == "block" and tr.get("_block"):
+            bx0, by0, bx1, by1 = tr["_block"]
+            bh = by1 - by0
+            sc = float(tr.get("scale", 0.2)) * bh / max(1, el.height)
+            el = el.resize((max(1, int(el.width * sc)), max(1, int(el.height * sc))), Image.LANCZOS)
+            cx = bx0 + (bx1 - bx0) * float(tr.get("rx", 0.5)); cy = by0 + bh * float(tr.get("ry", 1.1))
+            if img.height < int(cy + el.height / 2) + 2 or cy - el.height / 2 < 0:
+                pad = max(0, int(cy + el.height / 2) + 2 - img.height)
+                new = Image.new("RGBA", (img.width, img.height + pad), (0, 0, 0, 0)); new.paste(img, (0, 0)); img = new
+            img.alpha_composite(el, (max(0, int(cx - el.width / 2)), max(0, int(cy - el.height / 2))))
+            return img
         row = boxes[int(tr.get("line", 0))]
         lb = tr.get("_part") or row[min(len(row) - 1, int(tr.get("letter", 0)))]
         lh = lb[3] - lb[1]
