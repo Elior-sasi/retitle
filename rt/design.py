@@ -41,7 +41,7 @@ Spec (JSON; sizes are relative to the letter height "em" unless marked px):
  "glow": {"color": "#rrggbb", "size": 0.15, "opacity": 0.5} or null,
  "marks": {"color": "#rrggbb", "per_letter": [1, 3], "length": 0.35, "width": 0.08, "chance": 0.7} or null,   # stripes from the letter edges (tiger, claws)
  "underline": {"color": "#rrggbb", "outline": "#rrggbb", "thickness": 0.08, "y": 0.18, "from": 0.0, "to": 1.0, "glint": "#rrggbb" or null} or null,
- "transplants": [{"box": [x0, y0, x1, y1], "line": 0, "letter": 2, "mode": "in"|"replace", "rx": 0.5, "ry": 0.5, "scale": 0.4}]   # copy an element from the ORIGINAL image (pixel box in image 1) onto a Hebrew letter (index in the line, right to left from 0), centred at rx, ry of that letter, scale = height relative to the letter. "in": inside the letter - ONLY into a closed hole of that letter (ם ס ט), never on top of strokes. "replace": the element takes the letter's place (the letter is removed), for an element that stands for a letter in the original (a jewel as the O): pick the Hebrew letter with the same sound or shape (O -> ו, I -> י), so the word still reads. With no fitting letter, leave the element out
+ "transplants": [{"box": [x0, y0, x1, y1], "line": 0, "letter": 2, "mode": "in"|"replace"|"part", "rx": 0.5, "ry": 0.5, "scale": 0.4}]   # copy an element from the ORIGINAL image (pixel box in image 1) onto a Hebrew letter (index in the line, right to left from 0), centred at rx, ry of that letter, scale = height relative to the letter. "in": inside the letter - ONLY into a closed hole of that letter (ם ס ט), never on top of strokes. "replace": the element takes the letter's place (the letter is removed), for an element that stands for a letter in the original (a jewel as the O): pick the Hebrew letter with the same sound or shape (O -> ו, I -> י), so the word still reads. "part": the element takes the place of the letter's detached part (the short left leg of ה, the leg of ק). With no fitting letter, leave the element out
 }
 Legibility comes first: every Hebrew letter must read at a glance at video size. Keep the look-alike
 pairs apart - ה/ח (the gap of ה stays open), ד/ר, ו/ז/ן, נ/ג/כ, ב/כ, ס/ם, ט/מ. Condensed fonts, rough edges,
@@ -262,7 +262,24 @@ def render_spec(spec, source=None, em=200):
     """spec -> RGBA PIL image (tight). source: {"src": BGR crop} for transplants."""
     M, boxes, pad = letter_mask(spec, em)
     h, w = M.shape
-    for tr in spec.get("transplants") or []:
+    trs = [dict(tr) for tr in spec.get("transplants") or []]
+    for tr in trs:
+        if tr.get("mode") == "part":
+            # the element takes the place of a detached part of the letter (the short leg of ה,
+            # the leg of ק, the dot...): the smallest piece of that letter goes, the element sits there
+            try:
+                row = boxes[int(tr.get("line", 0))]
+                lb = row[min(len(row) - 1, int(tr.get("letter", 0)))]
+                n_, lab_, st_, cen_ = cv2.connectedComponentsWithStats((M > 0.3).astype(np.uint8))
+                ks = [k for k in range(1, n_) if lb[0] <= cen_[k][0] <= lb[2] and lb[1] <= cen_[k][1] <= lb[3]]
+                if len(ks) >= 2:
+                    k = min(ks, key=lambda k: st_[k, 4])
+                    x, y, ww, hh = st_[k, :4]
+                    tr["_part"] = [int(x), int(y), int(x + ww), int(y + hh)]
+                    M[cv2.dilate((lab_ == k).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0] = 0
+            except Exception:
+                pass
+    for tr in trs:
         if tr.get("mode") == "replace":
             # the element takes the letter's place (as the jewel is the O of LOST): the letter goes
             try:
@@ -382,12 +399,12 @@ def render_spec(spec, source=None, em=200):
     ul = spec.get("underline")
     if ul:
         img = _underline(img, M, ul, em)
-    for tr in spec.get("transplants") or []:
+    for tr in trs:
         img = _transplant(img, boxes, tr, source, (spec.get("fill") or {}).get("colors"))
     ys, xs = np.where(M > 0.3)
     ink = [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1] if len(xs) else [0, 0, img.width, img.height]
-    for tr in spec.get("transplants") or []:
-        if tr.get("mode") == "replace":       # the element stands for a letter: it is part of the lettering
+    for tr in trs:
+        if tr.get("mode") in ("replace", "part"):       # the element stands for a letter: it is part of the lettering
             try:
                 row = boxes[int(tr.get("line", 0))]
                 lb = row[min(len(row) - 1, int(tr.get("letter", 0)))]
@@ -508,9 +525,9 @@ def _transplant(img, boxes, tr, source, fills=None):
             s = s[ys.min():ys.max() + 1, xs.min():xs.max() + 1]; a = a[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
         el = Image.fromarray(np.dstack([cv2.cvtColor(s, cv2.COLOR_BGR2RGB), (a * 255).astype(np.uint8)]), "RGBA")
         row = boxes[int(tr.get("line", 0))]
-        lb = row[min(len(row) - 1, int(tr.get("letter", 0)))]
+        lb = tr.get("_part") or row[min(len(row) - 1, int(tr.get("letter", 0)))]
         lh = lb[3] - lb[1]
-        sc = float(tr.get("scale", 0.9 if tr.get("mode") == "replace" else 0.4)) * lh / max(1, el.height)
+        sc = float(tr.get("scale", 1.0 if tr.get("_part") else 0.9 if tr.get("mode") == "replace" else 0.4)) * lh / max(1, el.height)
         el = el.resize((max(1, int(el.width * sc)), max(1, int(el.height * sc))), Image.LANCZOS)
         cx = lb[0] + (lb[2] - lb[0]) * float(tr.get("rx", 0.5)); cy = lb[1] + lh * float(tr.get("ry", 0.5))
         img.alpha_composite(el, (int(cx - el.width / 2), int(cy - el.height / 2)))
@@ -660,6 +677,49 @@ def apply(proj, lines, spec, rel, box):
         elif t["id"] in ids:
             t["mode"] = "remove"; t["design_member"] = ids[0]
     vio.save_json(os.path.join(proj, "titles.json"), T)
+
+
+EDIT = """The user (a Hebrew localizer) asks for a change to this Hebrew logo design. Image 1 is the original card,
+image 2 the current Hebrew version. Apply exactly what is asked - nothing else changes - and keep the letters
+legible. Reply ONLY with JSON: {"spec": {...full spec...}, "notes_he": "what you changed, one short Hebrew sentence"}"""
+
+
+def edit_card(proj, tid, api_key, request, log=print):
+    """A change in the user's own words ("put the jewel in the leg of ה"): Claude edits the stored spec,
+    the logo is rendered again. The previous spec is kept for one-step undo."""
+    T = vio.load_json(os.path.join(proj, "titles.json"))
+    t = next(x for x in T["titles"] if x["id"] == tid)
+    if not t.get("design"):
+        raise RuntimeError("הכרטיס הזה עוד לא עוצב")
+    _, lines = card(proj, t["group"])
+    cr = crops(proj, [x for x in lines if x["id"] == tid or x.get("design_member") == tid] or lines)
+    prev = composite(render_spec(t["design"], cr), cr)
+    sh, sw = cr["src"].shape[:2]
+    r = _ask(api_key, [{"type": "text", "text": f"Image 1 - original ({sw}x{sh} px; transplant boxes use these pixels):"}, _img(cr["src"], 900),
+                       {"type": "text", "text": "Image 2 - current Hebrew version:"}, _img(prev, 900),
+                       {"type": "text", "text": "Current spec: " + json.dumps(t["design"], ensure_ascii=False)
+                        + "\nThe user's request (Hebrew): " + request}], SYSTEM + "\n\n" + EDIT)
+    spec = r.get("spec")
+    if not spec or not spec.get("lines"):
+        raise RuntimeError("Claude לא החזיר עיצוב מתוקן - נסה לנסח אחרת")
+    t["design_prev"] = t["design"]; t["design"] = spec
+    vio.save_json(os.path.join(proj, "titles.json"), T)
+    rel = rerender(proj, tid)
+    if r.get("notes_he"):
+        log("Claude: " + r["notes_he"])
+    return rel
+
+
+def back_card(proj, tid):
+    """Undo the last change in words (one step)."""
+    T = vio.load_json(os.path.join(proj, "titles.json"))
+    t = next(x for x in T["titles"] if x["id"] == tid)
+    if not t.get("design_prev"):
+        return False
+    t["design"] = t.pop("design_prev")
+    vio.save_json(os.path.join(proj, "titles.json"), T)
+    rerender(proj, tid)
+    return True
 
 
 def rerender(proj, tid):

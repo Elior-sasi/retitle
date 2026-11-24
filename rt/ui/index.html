@@ -280,6 +280,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 @media (forced-colors:active){.blk,.cta{forced-color-adjust:none}}
+.dedit{display:flex;flex-direction:column;gap:6px;margin:8px 0}.dedit textarea{font-size:16px;padding:8px;border-radius:6px;border:1px solid var(--line,#555);background:var(--bg2,#1d1d1d);color:inherit;resize:vertical;min-height:64px}
 </style>
 </head>
 <body>
@@ -659,6 +660,7 @@ function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;con
         :el('button',{class:'mini',text:'עצב עם Claude כמו מעצב',title:'לוגו או כותרת מעוצבת: גופן, צבע, מרקם, עומק וקישוטים כמו במקור',disabled:S.running||!t.he,
           onclick:()=>{if(!t.he)return say('קודם צריך עברית');run('design',{gid:d.group})}}))),
     d.design?el('p',{class:'note',text:'הכרטיס עוצב על ידי Claude ומוצג כתמונה. כל שורות הכרטיס בתוכו.'}):null,
+    d.design?designEdit(t,d):null,
     fmPanel(t,d),
     (d.font_top&&d.font_top.length>1&&!(S.fm&&S.fm[t.id]))?el('div',{class:'prop'},el('span',{class:'pl',text:d.font_auto&&!(d.style_locked||[]).includes('font')?'נבחר אוטומטית. עוד מתאימים':'מתאימים למקור'}),
       el('span',{class:'v row2'},...d.font_top.filter(([n])=>n!==curF).slice(0,4).map(([n,w])=>el('button',{class:'mini',dir:'ltr',text:n,style:`font-family:${face(n)}`,'aria-label':'החלף לגופן '+n,
@@ -861,8 +863,20 @@ function gotoEdge(which){if(!S.sel)return say('לא נבחר פריט');const it
 function step(dir){const L=items();if(!L.length)return;let i=S.sel?L.findIndex(x=>x.k===S.sel.k&&x.id===S.sel.id):-1;i=clamp(i+dir,0,L.length-1);select(L[i].k,L[i].id,true)}
 
 // ================================================================ jobs / status
-const JOBN={design:'עיצוב עם Claude',auto:'הכול אוטומטית',queue:'תור עבודה',review:'מיון עם Claude',playable:'הכנת וידאו לניגון',fontmatch:'חיפוש גופן דומה',fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
-async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay','fonts','translate_titles','translate_dialog','review','design'].includes(job))await flush();const r=await api('/api/run',{job,args});
+function designEdit(t,d){
+  // a change to the designed logo in plain words ("שים את היהלום ברגל של ה' במילה האבוד")
+  const ta=el('textarea',{id:'i-dedit',rows:3,dir:'rtl',placeholder:'למשל: שים את היהלום ברגל הקטנה של ה\' במילה "האבוד"','aria-describedby':'i-dedit-h'});
+  const go=()=>{const v=ta.value.trim();if(!v)return say('כתוב מה לשנות');run('design_edit',{id:t.id,text:v});ta.value=''};
+  ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();go()}});
+  return el('div',{class:'dedit'},
+    el('label',{for:'i-dedit',class:'pl',text:'שינוי בעיצוב - כתוב במילים שלך'}),ta,
+    el('p',{class:'note',id:'i-dedit-h',text:'Claude ישנה רק את מה שביקשת. Ctrl+Enter לשליחה.'}),
+    el('span',{class:'v row2'},
+      el('button',{class:'mini',text:'בצע שינוי',disabled:S.running,onclick:go}),
+      d.design_prev?el('button',{class:'mini',text:'בטל שינוי אחרון',disabled:S.running,
+        onclick:async()=>{const r=await api('/api/design_back',{id:t.id});await reloadData(false);renderAll();say(r.ok?'השינוי האחרון בוטל':'אין שינוי לבטל')}}):null))}
+const JOBN={design_edit:'שינוי עיצוב עם Claude',design:'עיצוב עם Claude',auto:'הכול אוטומטית',queue:'תור עבודה',review:'מיון עם Claude',playable:'הכנת וידאו לניגון',fontmatch:'חיפוש גופן דומה',fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
+async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay','fonts','translate_titles','translate_dialog','review','design','design_edit'].includes(job))await flush();const r=await api('/api/run',{job,args});
   if(r.need==='api_key'){say('לתרגום אוטומטי צריך מפתח של Claude - מכניסים אותו בהעדפות',true);openDlg('#d-settings');setTimeout(()=>{const k=$('#s-key');if(k){k.focus();k.scrollIntoView({block:'center'})}},150);return}
   if(!r.started)return say('פעולה אחרת עדיין רצה',true);wasRunning=true;S.job=job;say(`${JOBN[job]||job} התחיל`)}
 let wasRunning=false;

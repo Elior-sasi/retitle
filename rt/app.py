@@ -664,6 +664,26 @@ def job_design(gids=None):
     log(f"עוצבו {len(gids)} כרטיסים. אפשר לראות בתצוגה \"תוצאה\" ולבנות.")
 
 
+def job_design_edit():
+    """A change to a designed logo in the user's own words; Claude edits the design."""
+    from . import design, render
+    s = settings()
+    if not s.get("api_key"):
+        raise RuntimeError("אין מפתח API בהגדרות")
+    a = STATE.get("args") or {}
+    tid, text = a.get("id"), (a.get("text") or "").strip()
+    if not tid or not text:
+        raise RuntimeError("כתוב מה לשנות")
+    STATE.update(stage="Claude משנה את העיצוב")
+    prog(0.1)
+    with LOCK:
+        design.edit_card(STATE["proj"], tid, s["api_key"], text, log=log)
+    prog(0.8)
+    if os.path.exists(P("layers", "meta.json")):
+        render.build_layers(STATE["proj"], only={tid})
+    log("השינוי בוצע. אפשר לבטל אותו בכפתור \"בטל שינוי אחרון\".")
+
+
 def undo_design(tid):
     T = vio.load_json(P("titles.json"))
     for t in T["titles"]:
@@ -775,7 +795,7 @@ def job_queue():
     log("התור הסתיים.")
 
 
-JOBS = {"design": job_design, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
+JOBS = {"design": job_design, "design_edit": job_design_edit, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
@@ -1397,6 +1417,13 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"parts": []})
             return self._send(200, {"parts": [n for _, n, _ in auto_parts(b.get("opts") or {})],
                                     "key": bool(settings().get("api_key"))})
+        if u.path == "/api/design_back":
+            from . import design, render
+            with LOCK:
+                ok = design.back_card(STATE["proj"], b["id"])
+            if ok and os.path.exists(P("layers", "meta.json")):
+                render.build_layers(STATE["proj"], only={b["id"]})
+            return self._send(200, {"ok": ok})
         if u.path == "/api/undo_design":
             with LOCK:
                 undo_design(b["id"])
@@ -1488,7 +1515,7 @@ class H(BaseHTTPRequestHandler):
             if STATE["running"]:
                 return self._send(200, {"started": False})
             STATE["args"] = b.get("args") or {}
-            if b["job"] in ("translate_titles", "translate_dialog", "review", "design") and not settings().get("api_key"):
+            if b["job"] in ("translate_titles", "translate_dialog", "review", "design", "design_edit") and not settings().get("api_key"):
                 return self._send(200, {"started": False, "need": "api_key"})
             return self._send(200, {"started": start(b["job"])})
         if u.path == "/api/update/check":
