@@ -44,6 +44,8 @@ Spec (JSON; sizes are relative to the letter height "em" unless marked px):
                "taper": 1.0, "curve": 0.0, "rim": "#rrggbb" or null, "core": "#rrggbb" or null, "texture": 0, "glint": "#rrggbb" or null} or null,
    # a stick / swoosh under the letters, starting at the right: taper = tip thickness (0.2 = pointed brush stroke), curve = sag,
    # rim = colour of its lit top face, core = a light streak through it, glint = sparkle at the tip. Match the original's stick.
+ "bevel": {"size": 0.08, "angle": 135, "strength": 0.5, "light": "#rrggbb", "dark": "#rrggbb"} or null,   # rounded lit letter faces; angle = where the light comes from (135 = top left)
+ "light_match": 1.0,   # the original's own light (measured on its letters) is laid over the Hebrew: 1 = as in the original, 0 = off
  "lights": [{"x": 0.2, "y": 0.0, "radius": 0.8, "color": "#rrggbb", "strength": 0.4}],   # light on the letters as in the original
    # (a brighter, warmer side; the glow of a jewel or lamp on nearby letters): x, y in the letter block (0..1), radius in block sizes
  "transplants": [{"box": [x0, y0, x1, y1], "line": 0, "letter": 2, "mode": "in"|"replace"|"part", "rx": 0.5, "ry": 0.5, "scale": 0.4}]   # copy an element from the ORIGINAL image (pixel box in image 1) onto a Hebrew letter (index in the line, right to left from 0), centred at rx, ry of that letter, scale = height relative to the letter. "in": inside the letter - ONLY into a closed hole of that letter (ם ס ט), never on top of strokes. "replace": the element takes the letter's place (the letter is removed), for an element that stands for a letter in the original (a jewel as the O): pick the Hebrew letter with the same sound or shape (O -> ו, I -> י), so the word still reads. "block": any other element of the original that is not a letter (a caret, a star, a paw print, a ribbon, a crown, a sparkle, a stick you would rather copy than draw) - copied as it is and placed at rx, ry of the whole Hebrew letter block (0..1, may be outside), scale = its height relative to the block height, "mirror": true to flip it for right-to-left. "part": the element takes the place of the letter's detached part (the short left leg of ה, the leg of ק). With no fitting letter, leave the element out
@@ -121,6 +123,53 @@ def crops(proj, lines, margin=0.35):
     letters = (diff > 40).astype(np.uint8)
     inner = [box[0] - ox - x0, box[1] - oy - y0, box[2] - ox - x0, box[3] - oy - y0]
     return {"src": s, "clean": c, "letters": letters, "box": inner, "origin": (ox + x0, oy + y0)}
+
+
+def light_field(source):
+    """How the light falls on the original letters: per-channel gain (smooth, around 1) over the
+    original letter block, from the letters' own fill colour (marks, outlines and jewels left out)."""
+    if "_light" in source:
+        return source["_light"]
+    G = None
+    try:
+        s, L = source["src"], source.get("letters")
+        bx = source.get("box")
+        if L is not None and bx:
+            m = np.zeros(L.shape, bool)
+            m[max(0, bx[1]):bx[3], max(0, bx[0]):bx[2]] = True
+            m &= L > 0
+            lab = cv2.cvtColor(s, cv2.COLOR_BGR2LAB).astype(np.float32)
+            a, b = lab[..., 1] - 128, lab[..., 2] - 128
+            hue = np.degrees(np.arctan2(b, a)); chroma = np.hypot(a, b)
+            if m.sum() > 200:
+                h0 = np.median(hue[m & (chroma > 20)]) if (m & (chroma > 20)).sum() > 100 else None
+                if h0 is not None:
+                    fillm = m & (chroma > 20) & (np.abs((hue - h0 + 180) % 360 - 180) < 25)
+                    fillm &= lab[..., 0] > np.percentile(lab[..., 0][fillm], 8)        # not the dark marks
+                    ys, xs = np.where(fillm)
+                    if len(xs) > 200:
+                        X0, Y0, X1, Y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
+                        f = fillm[Y0:Y1, X0:X1].astype(np.float32)
+                        c = s[Y0:Y1, X0:X1].astype(np.float32)
+                        sg = max(4.0, 0.07 * max(X1 - X0, Y1 - Y0))
+                        num = cv2.GaussianBlur(c * f[..., None], (0, 0), sg)
+                        den = cv2.GaussianBlur(f, (0, 0), sg)[..., None]
+                        col = num / np.maximum(den, 1e-3)
+                        ref = np.median(c[f > 0], axis=0)
+                        # brightness carries the light; colour only a little (tints from sparse
+                        # areas would turn orange letters olive)
+                        g3 = col / np.maximum(ref, 1)
+                        lum = (g3 * np.array([0.114, 0.587, 0.299], np.float32)).sum(2, keepdims=True)
+                        G = lum + (g3 - lum) * 0.35
+                        # where the original has few letter pixels the field is a guess: lean to 1
+                        conf = np.clip(den / 0.35, 0, 1)
+                        G = 1 + (G - 1) * conf
+                        G = np.clip(G, 0.6, 1.6).astype(np.float32)
+                        G = cv2.resize(G, (min(256, G.shape[1]), min(256, G.shape[0])), interpolation=cv2.INTER_AREA)
+    except Exception:
+        G = None
+    source["_light"] = G
+    return G
 
 
 def palette(img, mask, k=5):
@@ -345,6 +394,16 @@ def render_spec(spec, source=None, em=200):
         rim = np.clip(M - _shift(M, d[0], d[1]), 0, 1)
         rim = cv2.GaussianBlur(rim, (0, 0), max(0.6, wd / 4))
         fill = fill * (1 - rim[..., None]) + np.array(_hex(hl.get("color"), (255, 255, 255)), np.float32) * rim[..., None]
+    lm = float(spec.get("light_match", 1.0) or 0)
+    if lm > 0 and source and "src" in source:
+        G = light_field(source)
+        if G is not None:
+            # the original's own light (brighter side, warm or cold tint, the glow of a jewel), measured
+            # on its letters and laid over the Hebrew letter block
+            g = cv2.resize(G, (max(1, x1 - x0 + 1), max(1, y1 - y0 + 1)), interpolation=cv2.INTER_CUBIC)
+            gain = np.ones((h, w, 3), np.float32)
+            gain[y0:y1 + 1, x0:x1 + 1] = 1 + (g - 1) * lm
+            fill = fill * gain
     for lt in spec.get("lights") or []:
         # light falling on the letters (a lamp, the glow of a jewel, the sun from one side): a soft
         # radial brightening in the light's colour, on the letters only
@@ -357,6 +416,22 @@ def render_spec(spec, source=None, em=200):
             fill = 255 - (255 - fill) * (1 - g[..., None] * c / 255)      # light adds (screen)
         except Exception:
             pass
+    bv = spec.get("bevel")
+    if bv:
+        # rounded, lit letter faces: light on the side facing the light, shade on the other side
+        sz = max(1.0, float(bv.get("size", 0.08)) * em)
+        Hm = cv2.GaussianBlur(M, (0, 0), sz)
+        gx = cv2.Sobel(Hm, cv2.CV_32F, 1, 0, ksize=3); gy = cv2.Sobel(Hm, cv2.CV_32F, 0, 1, ksize=3)
+        an = np.radians(float(bv.get("angle", 135)))          # where the light comes from (135 = top left)
+        lx, ly = np.cos(an), -np.sin(an)
+        sh_ = (gx * -lx + gy * -ly)
+        sh_ = sh_ / max(1e-6, np.percentile(np.abs(sh_[M > 0.5]), 95) if (M > 0.5).any() else 1)
+        sh_ = np.clip(sh_, -1, 1) * float(bv.get("strength", 0.5))
+        up = np.clip(sh_, 0, 1)[..., None]; dn = np.clip(-sh_, 0, 1)[..., None]
+        lc_ = np.array(_hex(bv.get("light"), (255, 230, 170)), np.float32)
+        dc_ = np.array(_hex(bv.get("dark"), (120, 50, 10)), np.float32)
+        fill = 255 - (255 - fill) * (1 - up * lc_ / 255)
+        fill = fill * (1 - dn) + dc_ * dn
     mk = spec.get("marks")
     if mk:
         S = _marks(M, boxes, mk, em, seed)
