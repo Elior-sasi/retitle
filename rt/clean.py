@@ -761,9 +761,49 @@ def clamp_spans(proj, T):
     return ch
 
 
+def extend_logos(proj, T):
+    """A logo that flies in fast (zoom blur) is often found by the text reader only once it slows down,
+    and the blur can even look like a cut. Its first frames are found here by the letters' own colours:
+    going back from the first known frame while about as much of that colour is there."""
+    ch = False
+    for gid, lines in groups(T).items():
+        for t in lines:
+            if not (t.get("design") or t.get("design_member") or t.get("styled")) or "mask" not in t or not t.get("cache"):
+                continue
+            lo = t["cache"][0]
+            if t["in"] <= lo:
+                continue
+            _CTX.update(proj=proj, gid=gid, T=T)
+            reg = t["region"]; bx = t.get("text_box", t["box"]); h = bx[3] - bx[1]
+            box = [bx[0] - reg[0] - h, bx[1] - reg[1] - h, bx[2] - reg[0] + h, bx[3] - reg[1] + h]
+
+            def cover(f):
+                im = _load(proj, gid, f)
+                return None if im is None else int((styled_mask(im, t, reg, box, wide=True) > 0).sum())
+            c0 = cover(t["in"])
+            if not c0:
+                continue
+            f = t["in"] - 1
+            while f >= lo:
+                c = cover(f)
+                if c is None or not (0.4 * c0 <= c <= 3.0 * c0):
+                    break
+                f -= 1
+            if f + 1 < t["in"]:
+                t["in"] = f + 1; ch = True
+    _IMG.clear()
+    if ch:
+        vio.save_json(os.path.join(proj, "titles.json"), T)
+    return ch
+
+
 def run(proj, only=None, progress=None):
     T = vio.load_json(os.path.join(proj, "titles.json"))
     clamp_spans(proj, T)
+    try:
+        extend_logos(proj, T)
+    except Exception as e:
+        print("extend_logos", e)
     stats = vio.load_json(os.path.join(proj, "clean_stats.json"), {})
     built = {}
     todo = {}

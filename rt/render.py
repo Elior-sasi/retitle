@@ -50,6 +50,25 @@ def _match(Dt, Dr, sc0):
     return best
 
 
+def _fix_jumps(fr, h):
+    """A frame whose position or size jumps far from both neighbours (the match locked on to something
+    else, often in the blur of a fast zoom) takes the motion its neighbours describe."""
+    ks = sorted(fr)
+    if len(ks) < 3:
+        return
+    big = lambda a, b: abs(a[0] - b[0]) > max(25, 0.6 * h) or abs(a[1] - b[1]) > max(25, 0.6 * h) or abs(a[2] - b[2]) > 0.25
+    # inside: both neighbours agree with each other but not with this frame
+    for i in range(1, len(ks) - 1):
+        a, b, c = fr[ks[i - 1]], fr[ks[i]], fr[ks[i + 1]]
+        if big(a, b) and big(b, c) and not big(a, c):
+            fr[ks[i]] = [round((a[j] + c[j]) / 2, 4) for j in range(3)] + [b[3]]
+    # the ends: carry the trend of the next two frames
+    for i, n1, n2 in ((0, 1, 2), (len(ks) - 1, len(ks) - 2, len(ks) - 3)):
+        a, b, c = fr[ks[i]], fr[ks[n1]], fr[ks[n2]]
+        if big(a, b) and not big(b, c):
+            fr[ks[i]] = [round(2 * b[j] - c[j], 4) for j in range(3)] + [a[3]]
+
+
 def track(proj, only=None):
     """Per frame [dx, dy, scale, alpha] of the source text relative to its reference frame.
     Text map = |source - cleaned| clipped (shape, independent of background brightness);
@@ -109,7 +128,12 @@ def track(proj, only=None):
                 # coarse scale from mass, refined by matching
                 m_ref = (Rn > 0.5).sum(); m = (Sn > 0.5).sum()
                 sc0 = float(np.clip(np.sqrt(m / max(1, m_ref)), 0.1, 5)) if al > 0.3 else prev_sc
-                bm = _match(Sn, Rn, sc0) or _match(Sn, Rn, prev_sc)
+                # the mass guess counts everything in the search window (a bigger line next to this one
+                # too), so the steady guesses - the last frame's scale and no change - also compete
+                bm = _match(Sn, Rn, sc0)
+                for c in (_match(Sn, Rn, prev_sc), _match(Sn, Rn, 1.0)):
+                    if c and (bm is None or c[3] > bm[3] + 0.08):     # clearly better only
+                        bm = c
                 if bm is None:
                     fr[f] = [0, 0, 1, round(al, 3)]; continue
                 sc, cx, cy, v = bm
@@ -120,6 +144,7 @@ def track(proj, only=None):
                     al = 1.0
                 prev_sc = sc
                 fr[f] = [round(dx, 2), round(dy, 2), round(float(sc), 4), round(al, 3)]
+            _fix_jumps(fr, h)
             vals = np.array(list(fr.values()))
             static = (np.abs(vals[:, :2]).max() < 1.5 and np.abs(vals[:, 2] - 1).max() < 0.025
                       and vals[:, 3].min() > 0.9)
@@ -134,6 +159,20 @@ def track(proj, only=None):
                 print("motion refine failed", t["id"], e)
             if t["anim"].get("mode") == "static":
                 t["anim"].pop("frames", None)
+        # a designed card's picture moves like the card's biggest line (the logo itself), not like the
+        # line it happens to be stored on (often a small "THE")
+        import copy
+        for t in lines:
+            if not (t.get("layer") or {}).get("design") or t.get("anim", {}).get("locked"):
+                continue
+            mem = [x for x in lines if (x is t or x.get("design_member") == t["id"]) and x.get("anim")]
+            big = max(mem, key=lambda x: (x["ref_box"][2] - x["ref_box"][0]) * (x["ref_box"][3] - x["ref_box"][1]), default=None)
+            if big is not None and big is not t:
+                a = copy.deepcopy(big["anim"])
+                for k in ("matte", "gain", "parts", "mref"):
+                    a.pop(k, None)
+                a["from"] = big["id"]
+                t["anim"] = a
     vio.save_json(os.path.join(proj, "titles.json"), T)
 
 
@@ -354,9 +393,55 @@ def build_layers(proj, only=None):
             cx = (rb[0] + rb[2]) / 2
         cx += st.get("nudge_x", 0)
         meta[t["id"]] = {"file": p, "ss": ss, "anchor": anc, "target": [cx, cy]}
+    _no_overlap(T, meta, W, P["info"]["height"])
     vio.save_json(os.path.join(proj, "layers", "meta.json"), meta)
     vio.save_json(os.path.join(proj, "titles.json"), T)
     return meta
+
+
+def _no_overlap(T, meta, W=None, H=None):
+    """Lines of one card must not run into each other: Hebrew letters are often taller than the source's
+    (final letters reach down, ל up), so lines set at the source's size can touch. Both lines are made
+    a little smaller, around their own centres, until there is a small gap."""
+    from .extract import groups
+    for gid, lines in groups(T).items():
+        boxes = []
+        for t in lines:
+            m = meta.get(t["id"])
+            if not m or "file" not in m or not os.path.exists(m["file"]):
+                continue
+            try:
+                im = Image.open(m["file"]); bb = im.getbbox()
+            except Exception:
+                continue
+            if not bb:
+                continue
+            ss = m["ss"]; ax, ay = m["anchor"]; tx, ty = m["target"]
+            # not much wider than the source line, and never past the frame's edges
+            if not (t.get("layer") or {}).get("type") == "image":
+                rb = t.get("ref_box", t["box"])
+                iw = (bb[2] - bb[0]) / ss
+                lim = 1.15 * (rb[2] - rb[0])
+                if W:
+                    room = 2 * min(tx - W * 0.03, W * 0.97 - tx)
+                    lim = min(lim, room) if room > 0 else lim
+                lim = max(lim, (rb[2] - rb[0]) * 0.8)
+                if iw > lim:
+                    ss = ss * iw / lim; m["ss"] = ss
+            boxes.append([t["id"], tx + (bb[0] - ax) / ss, ty + (bb[1] - ay) / ss, tx + (bb[2] - ax) / ss, ty + (bb[3] - ay) / ss])
+        boxes.sort(key=lambda b: b[2])
+        for a, b in zip(boxes, boxes[1:]):
+            ha, hb = a[4] - a[2], b[4] - b[2]
+            gap = 0.2 * min(ha, hb)
+            ov = a[4] - b[2] + gap
+            if a[1] >= b[3] or b[1] >= a[3] or ov <= 0:     # side by side, or already apart
+                continue
+            k = max(0.7, 1 - ov / max(1.0, (ha + hb) / 2))
+            for bb_ in (a, b):
+                meta[bb_[0]]["ss"] = meta[bb_[0]]["ss"] / k
+                cy = (bb_[2] + bb_[4]) / 2; cx = (bb_[1] + bb_[3]) / 2
+                bb_[1] = cx - (cx - bb_[1]) * k; bb_[3] = cx + (bb_[3] - cx) * k
+                bb_[2] = cy - (cy - bb_[2]) * k; bb_[4] = cy + (bb_[4] - cy) * k
 
 
 def _ink(img):
@@ -395,6 +480,12 @@ def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None, shift
             al = min(al, (b - f + 1) / (fo + 1))
     ss = meta["ss"]; ax, ay = meta["anchor"]; tx, ty = meta["target"]
     Hm = motion.homography(anim, f, part) if mode == "match" else None
+    if Hm is not None and part is None:
+        # the full fit is trusted while it agrees with the measured size; in fast zoom blur it can
+        # wander (stretched, sheared) - then the plain move and size are used
+        kh = float(np.sqrt(abs(np.linalg.det(np.asarray(Hm, np.float64)[:2, :2]))))
+        if abs(kh - sc) > 0.15 * max(sc, 1e-3):
+            Hm = None
     if Hm is not None:
         A0 = np.array([[1 / ss, 0, tx - ax / ss], [0, 1 / ss, ty - ay / ss], [0, 0, 1]], np.float64)
         M = Hm @ A0
