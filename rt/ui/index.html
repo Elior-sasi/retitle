@@ -287,6 +287,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 #boot.gone{opacity:0;pointer-events:none}
 @media (prefers-reduced-motion:reduce){#boot{transition:none}}
 table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-bottom:1px solid #333;padding:6px;text-align:right;vertical-align:top}table.cmp input{width:100%}table.cmp .mini{white-space:normal;text-align:right}
+.qcrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.qcgrid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;margin:8px 0}
 </style>
 </head>
 <body>
@@ -428,6 +429,8 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
     <label for="s-key">מפתח API של Anthropic<br><span class="unit">לא חובה</span></label>
     <div><input type="password" id="s-key" dir="ltr" autocomplete="off" aria-describedby="keyset" style="width:100%"><div id="keyset" class="unit"></div></div>
     <label for="s-model">מודל תרגום</label><input type="text" id="s-model" dir="ltr">
+    <label for="s-tmdb">מפתח TMDB<br><span class="unit">לא חובה - בלי מפתח התוכנה שואלת את השרת של Unwatch</span></label>
+    <div><input type="password" id="s-tmdb" dir="ltr" autocomplete="off" aria-describedby="tmdbset" style="width:100%"><div id="tmdbset" class="unit"></div></div>
     <label for="s-eng">מנוע תרגום<br><span class="unit">DictaLM - מודל עברי במחשב שלך, חינם, איטי</span></label>
     <div><select id="s-eng"><option value="claude">Claude</option><option value="dicta">DictaLM 3.0 (במחשב)</option></select>
       <div id="dl-st" class="unit" role="status" aria-live="polite"></div><label for="s-dq" class="unit">דיוק המודל הגדול (24B)</label><select id="s-dq"><option value="Q4_K_M">רגיל - 14.3GB, הכי מהיר</option><option value="Q6_K">גבוה - 19.3GB, איטי יותר</option><option value="Q8_0">כמעט מלא - 25.1GB, איטי מאוד, צריך 32GB RAM</option></select>
@@ -500,6 +503,23 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
 <label class="chk"><input type="checkbox" id="yt-a"> אם אין רשמיות - להשתמש בכתוביות האוטומטיות</label>
 <label for="yt-o">הזזה בשניות (אם הקובץ שלך מתחיל אחרת מהסרטון ביוטיוב)</label><input type="number" id="yt-o" step="0.1" value="0" dir="ltr"></div>
 <div class="df"><button class="cta" id="yt-go">הבא כתוביות</button><button data-close>ביטול</button></div></dialog>
+<dialog id="d-qc" aria-labelledby="dqc-h"><h2 class="dh" id="dqc-h">בדיקת QC לכתוביות</h2><div class="db">
+<p class="note" style="padding:0">הבדיקה לא משנה אף מילה - היא רק מסמנת. מבוסס על CueLint (רישיון MIT).</p>
+<div class="qcrow"><label for="qc-p">תקן</label><select id="qc-p"></select>
+<label for="qc-v">קהל</label><select id="qc-v"><option value="adult">מבוגרים</option><option value="children">ילדים</option></select>
+<button id="qc-go" class="cta">בדוק</button></div>
+<details id="qc-cl"><summary>לקוחות - תקן משלך</summary>
+<div class="qcgrid"><label for="qc-n">שם הלקוח</label><input id="qc-n" type="text">
+<label for="qc-cps">תווים בשנייה (מקסימום)</label><input id="qc-cps" type="number" value="17" dir="ltr">
+<label for="qc-cpl">תווים בשורה (מקסימום)</label><input id="qc-cpl" type="number" value="42" dir="ltr">
+<label for="qc-ln">שורות (מקסימום)</label><input id="qc-ln" type="number" value="2" dir="ltr">
+<label for="qc-mn">משך מינימלי (אלפיות)</label><input id="qc-mn" type="number" value="833" dir="ltr">
+<label for="qc-mx">משך מקסימלי (אלפיות)</label><input id="qc-mx" type="number" value="7000" dir="ltr">
+<label for="qc-gp">רווח מינימלי בין כתוביות (אלפיות)</label><input id="qc-gp" type="number" value="83" dir="ltr"></div>
+<div class="row2"><button id="qc-save">שמור לקוח</button><button id="qc-del">מחק לקוח נבחר</button></div></details>
+<p id="qc-sum" role="status" aria-live="polite"></p>
+<table class="cmp"><thead><tr><th scope="col">כתובית</th><th scope="col">זמן</th><th scope="col">חומרה</th><th scope="col">מה הבעיה</th></tr></thead><tbody id="qc-b"></tbody></table></div>
+<div class="df"><button data-close>סגור</button></div></dialog>
 <dialog id="d-cmp" aria-labelledby="dcm-h"><h2 class="dh" id="dcm-h">השוואת תרגום: Claude מול DictaLM</h2><div class="db">
 <p class="note" style="padding:0" id="cmp-note">בכל שורה בחר את התרגום שעדיף לך. אפשר גם לערוך לפני השמירה.</p>
 <table class="cmp"><thead><tr><th scope="col">מקור</th><th scope="col">Claude</th><th scope="col">DictaLM</th><th scope="col">ייכנס</th></tr></thead><tbody id="cmp-b"></tbody></table></div>
@@ -1006,13 +1026,44 @@ async function dlStatus(){const p=await api('/api/dicta');const st=$('#dl-st'),b
   else{st.textContent=(p.state==='error'?'ההורדה נכשלה: '+p.error+'. ':'')+'לא מותקן.';b.hidden=false}}
 $('#dl-i').onclick=async()=>{await api('/api/settings',{dicta_quant:$('#s-dq').value});await api('/api/dicta/install',{});say('מוריד את DictaLM ברקע');setTimeout(dlStatus,800)};
 async function loadSettings(){ppStatus();dlStatus();const s=await api('/api/settings');renderSync(s);renderGoogle();$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
-  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';$('#s-via').value=s.claude_via||'auto';$('#s-ppauto').checked=s.auto_propainter!==false;$('#s-eng').value=s.translate_engine||'claude';$('#s-dq').value=s.dicta_quant||'Q4_K_M';$('#s-via-h').textContent=s.claude_code_found?'Claude Code נמצא במחשב.':'Claude Code לא נמצא במחשב.';
+  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';$('#s-via').value=s.claude_via||'auto';$('#s-ppauto').checked=s.auto_propainter!==false;$('#s-eng').value=s.translate_engine||'claude';$('#tmdbset').textContent=s.tmdb_key_set?'מפתח שמור.':'אין מפתח.';$('#s-dq').value=s.dicta_quant||'Q4_K_M';$('#s-via-h').textContent=s.claude_code_found?'Claude Code נמצא במחשב.':'Claude Code לא נמצא במחשב.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#pp-i').onclick=async()=>{await api('/api/propainter/install',{});say('מתקין ברקע');setTimeout(ppStatus,800)};
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
-  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),claude_via:$('#s-via').value,auto_propainter:$('#s-ppauto').checked,translate_engine:$('#s-eng').value,dicta_quant:$('#s-dq').value,gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
+  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),claude_via:$('#s-via').value,auto_propainter:$('#s-ppauto').checked,translate_engine:$('#s-eng').value,tmdb_key:$('#s-tmdb').value.trim(),dicta_quant:$('#s-dq').value,gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';$('#s-tmdb').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
 function openYT(){closeMenu(true);const u=(S.data&&S.data.project&&S.data.project.youtube)||'';$('#yt-u').value=u;openDlg('#d-yt');$('#yt-u').focus()}
 $('#yt-go').onclick=()=>{const url=$('#yt-u').value.trim();if(!url){say('הדבק קישור');$('#yt-u').focus();return}$('#d-yt').close();run('youtube',{url,auto:$('#yt-a').checked,offset:+$('#yt-o').value||0})};
+// ---------------- CueLint: subtitle QC against broadcaster specs and the user's own client profiles
+const QC_HE={'reading-speed':d=>`קצב קריאה ${d.value} תווים בשנייה - מעל ${d.limit}`,'line-length':d=>`שורה ${d.lineIndex||''} באורך ${d.value} תווים - מעל ${d.limit}`,
+  'line-count':d=>`${d.value} שורות - מעל ${d.limit}`,'min-duration':d=>`משך ${d.value} אלפיות - פחות מ-${d.limit}`,'max-duration':d=>`משך ${d.value} אלפיות - יותר מ-${d.limit}`,
+  'min-gap':d=>`רווח של ${d.value} אלפיות עד הכתובית הבאה - פחות מ-${d.limit}`,'gap-quantization':d=>`רווח של ${d.value} אלפיות עד הבאה - בתחום אסור`,'overlap':d=>'חופפת לכתובית הבאה',
+  'reading-speed-wpm':d=>`קצב קריאה ${d.value} מילים בדקה - מעל ${d.limit}`,'min-duration-per-word':d=>`משך ${d.value} אלפיות - קצר מדי לכמות המילים (מינימום ${d.limit})`,'empty-cue':()=>'כתובית ריקה','zero-duration':()=>'כתובית בלי משך','duplicate-text':()=>'אותו טקסט כמו הכתובית הקודמת','trailing-space':()=>'רווח מיותר בסוף שורה',
+  'tag-balance':()=>'תגית עיצוב לא סגורה','ellipsis-style':()=>'שלוש נקודות - התקן דורש את התו "…"'};
+const QC_SEV={error:'שגיאה',warning:'אזהרה',info:'הערה'};
+function qcClients(){return (S.settings&&S.settings.qc_clients)||[]}
+function qcProfile(c){return {id:'client-'+c.name,name:c.name,variants:['adult','children'],defaultVariant:'adult',defaultLanguage:'he',countingMethod:'all',
+  resolve:()=>({'reading-speed':{max:+c.cps,unit:'cps',severity:'error'},'line-length':{max:+c.cpl,severity:'error'},'line-count':{max:+c.lines,severity:'error'},
+    'min-duration':{ms:+c.min_ms,severity:'error'},'max-duration':{ms:+c.max_ms,severity:'warning'},'min-gap':{ms:+c.gap_ms,severity:'error'},
+    'zero-duration':{severity:'error'},'empty-cue':{severity:'error'},'tag-balance':{severity:'warning'},'duplicate-text':{severity:'warning'},'trailing-space':{severity:'warning'}})}}
+function qcFill(){const sel=$('#qc-p');const cur=sel.value;sel.replaceChildren(el('option',{value:'netflix',text:'Netflix'}),el('option',{value:'bbc',text:'BBC'}),el('option',{value:'base',text:'כללי'}),
+  ...qcClients().map(c=>el('option',{value:'client:'+c.name,text:'לקוח: '+c.name})));if(cur)sel.value=cur}
+function loadQCLib(){return new Promise((ok,no)=>{if(window.CueLint)return ok();const sc=document.createElement('script');sc.src='/cuelint.web.js';sc.onload=ok;sc.onerror=no;document.head.append(sc)})}
+async function openQC(){closeMenu(true);S.settings=await api('/api/settings');qcFill();$('#qc-b').replaceChildren();$('#qc-sum').textContent='';openDlg('#d-qc')}
+function srtText(){const f=t=>{const ms=Math.round(t*1000),h=Math.floor(ms/3600000),m=Math.floor(ms/60000)%60,s2=Math.floor(ms/1000)%60,r=ms%1000;return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s2).padStart(2,'0')},${String(r).padStart(3,'0')}`};
+  return S.model.cues.filter(c=>(c.he||'').trim()).map((c,i)=>`${i+1}\n${f(c.start)} --> ${f(c.end)}\n${c.he}\n`).join('\n')}
+$('#qc-go').onclick=async()=>{try{await loadQCLib()}catch(e){return say('לא הצלחתי לטעון את CueLint')}
+  const txt=srtText();if(!txt){$('#qc-sum').textContent='אין עדיין כתוביות בעברית לבדוק.';return}
+  const v=$('#qc-p').value;let prof=v;if(v.startsWith('client:')){const c=qcClients().find(x=>'client:'+x.name===v);if(!c)return;prof=qcProfile(c)}
+  let r;try{r=CueLint.lint(txt,{profile:prof,lang:'he',variant:(v==='netflix'||v.startsWith('client:'))?$('#qc-v').value:undefined,frameRate:S.fps,filename:'he.srt'})}catch(e){$('#qc-sum').textContent='הבדיקה נכשלה: '+e.message;return}
+  const tb=$('#qc-b');tb.replaceChildren();const ft=ms=>{const s2=ms/1000;return tc(s2*S.fps)};
+  for(const d of r.diagnostics){const msg=(QC_HE[d.rule]||(()=>d.message))(d);
+    tb.append(el('tr',{},el('td',{text:String(d.cueIndex)}),el('td',{dir:'ltr',text:ft(d.start||0)}),el('td',{text:QC_SEV[d.severity]||d.severity}),el('td',{text:msg})))}
+  const e=r.diagnostics.filter(d=>d.severity==='error').length,w=r.diagnostics.length-e;
+  $('#qc-sum').textContent=r.diagnostics.length?`${r.cueCount} כתוביות: ${e} שגיאות, ${w} אזהרות.`:`${r.cueCount} כתוביות - הכול תקין לפי התקן.`};
+$('#qc-save').onclick=async()=>{const c={name:$('#qc-n').value.trim(),cps:+$('#qc-cps').value,cpl:+$('#qc-cpl').value,lines:+$('#qc-ln').value,min_ms:+$('#qc-mn').value,max_ms:+$('#qc-mx').value,gap_ms:+$('#qc-gp').value};
+  if(!c.name){say('תן שם ללקוח');$('#qc-n').focus();return}const cl=qcClients().filter(x=>x.name!==c.name).concat([c]);await api('/api/settings',{qc_clients:cl});S.settings=await api('/api/settings');qcFill();$('#qc-p').value='client:'+c.name;say('הלקוח נשמר')};
+$('#qc-del').onclick=async()=>{const v=$('#qc-p').value;if(!v.startsWith('client:'))return say('בחר לקוח ברשימה');const cl=qcClients().filter(x=>'client:'+x.name!==v);await api('/api/settings',{qc_clients:cl});S.settings=await api('/api/settings');qcFill();say('הלקוח נמחק')};
+$('#qc-p').addEventListener('change',()=>{const v=$('#qc-p').value;const c=qcClients().find(x=>'client:'+x.name===v);if(c){$('#qc-n').value=c.name;$('#qc-cps').value=c.cps;$('#qc-cpl').value=c.cpl;$('#qc-ln').value=c.lines;$('#qc-mn').value=c.min_ms;$('#qc-mx').value=c.max_ms;$('#qc-gp').value=c.gap_ms}});
 async function openCompare(){closeMenu(true);const d=await api('/api/compare');const tb=$('#cmp-b');tb.replaceChildren();
   if(!d.rows.length){$('#cmp-note').textContent='עוד אין השוואה. לחץ "תרגם מחדש בשניהם" - Claude ואז DictaLM (איטי, כמה דקות).'}
   else $('#cmp-note').textContent='בכל שורה בחר את התרגום שעדיף לך. אפשר גם לערוך לפני השמירה.';
@@ -1053,7 +1104,7 @@ $('#upd-go').onclick=async()=>{$('#d-upd').close();await flush();const r=await a
 const MENUS=[
  ['קובץ',[['פרויקט חדש מקובץ וידאו...','Ctrl+N',()=>openVideo()],['פתח פרויקט...','Ctrl+O',()=>openProjectFile()],['פרויקטים אחרונים...','',()=>openRecent()],['-'],['שמור','Ctrl+S',()=>saveNow(),'proj'],['שמור בשם...','Ctrl+Shift+S',()=>saveAs(),'proj'],['סדרה...','',()=>openSeries(),'proj'],['-'],['ייבוא SRT מקור (לתרגום)...','',()=>importSrt(false),'proj'],['ייבוא SRT בעברית...','',()=>importSrt(true),'proj'],['-'],['ייצוא מדיה (וידאו + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כותרות בלבד על רקע שקוף (MOV)','',()=>run('overlay'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks']]],
  ['עריכה',[['בטל','Ctrl+Z',()=>undo(),'undo'],['בצע שוב','Ctrl+Shift+Z',()=>redo(),'redo'],['-'],['בחר פריט במיקום הנגן','D',()=>selectAtPlayhead(),'proj'],['סמן תחילת טווח עבודה','I',()=>setRange('in'),'proj'],['סמן סוף טווח עבודה','O',()=>setRange('out'),'proj'],['נקה טווח עבודה','Ctrl+Shift+X',()=>setRange(null),'proj'],['-'],['תחילת הפריט = מיקום הנגן','Q',()=>setEdge('in'),'sel'],['סוף הפריט = מיקום הנגן','W',()=>setEdge('out'),'sel'],['-'],['להחליף את כל הכותרות','',()=>bulk(true),'proj'],['לא להחליף אף כותרת','',()=>bulk(false),'proj'],['-'],['העדפות...','Ctrl+,',()=>openDlg('#d-settings')]]],
- ['וידאו',[['הכול אוטומטית...','',()=>openAuto(),'proj'],['תור עבודה...','',()=>openQueue()],['-'],['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['Claude: מיין שוב כותרות / לוגואים / קרדיטים','',()=>run('review'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['כתוביות מיוטיוב במקום תמלול...','',()=>openYT(),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['השוואת תרגום: Claude מול DictaLM...','',()=>openCompare(),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['התאם גופנים אוטומטית','',()=>run('fonts'),'proj'],['בדיקת QA','',()=>openQA(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
+ ['וידאו',[['הכול אוטומטית...','',()=>openAuto(),'proj'],['תור עבודה...','',()=>openQueue()],['-'],['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['Claude: מיין שוב כותרות / לוגואים / קרדיטים','',()=>run('review'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['כתוביות מיוטיוב במקום תמלול...','',()=>openYT(),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['השוואת תרגום: Claude מול DictaLM...','',()=>openCompare(),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['התאם גופנים אוטומטית','',()=>run('fonts'),'proj'],['בדיקת QA','',()=>openQA(),'proj'],['בדיקת QC לכתוביות לפי לקוח (CueLint)...','',()=>openQC(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
  ['תצוגה',[['מקור','',()=>setMode('source'),'proj'],['תוצאה','T',()=>setMode('result'),'proj'],['זה לצד זה','Shift+T',()=>setMode('compare'),'proj'],['מסך מלא','Ctrl+`',()=>toggleFS(),'proj'],['-'],['הגדל זום','=',()=>zoomTo(S.zoom*1.5),'proj'],['הקטן זום','-',()=>zoomTo(S.zoom/1.5),'proj'],['התאם לחלון','\\',()=>fit(),'proj'],['-'],['יומן פעולות','',()=>openDlg('#d-log')]]],
  ['עזרה',[['קיצורי מקלדת','Ctrl+Alt+K',()=>openDlg('#d-help')],['-'],['בדוק עדכונים...','',()=>checkUpdate(true)]]]];
 const WHY={proj:'פתח וידאו קודם',undo:'אין מה לבטל',redo:'אין מה לשחזר',sel:'בחר פריט קודם',checks:'זמין אחרי ייצוא',subs:'לא זוהו כתוביות צרובות'};

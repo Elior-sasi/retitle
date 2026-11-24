@@ -354,6 +354,12 @@ def job_export():
 
     def chk():
         check.run(STATE["proj"])
+        g = vio.load_json(P("check", "guard.json"), {}).get("changed") or []
+        if g:
+            log(f"אזהרה: ב-{len(g)} פריימים השתנה משהו מחוץ לאזורי הכותרות (הראשון ב-{g[0]['tc']}) - "
+                f"התמונות בתיקיית check, guard_*.jpg")
+        else:
+            log("נבדק: מחוץ לאזורי הכותרות שום דבר לא השתנה.")
 
     def vqa():
         from . import visualqa, clean, render
@@ -642,8 +648,14 @@ def job_translate(kind):
         batches = [b for b in batches if b]
         prog(0.02)
         from concurrent.futures import ThreadPoolExecutor
+        tctx = translate.context(s.get("content"), "titles")
+        if s.get("tmdb", True):                        # the official Hebrew title from TMDB (own key, or via Unwatch)
+            from . import tmdb
+            h = tmdb.hint(STATE["proj"], s.get("tmdb_key", ""), log=log)
+            if h:
+                tctx = (tctx + "\n" if tctx else "") + h
         with ThreadPoolExecutor(workers) as ex:        # requests side by side (and one Message Batch in batch mode)
-            futs = [ex.submit(tr, bt, translate.context(s.get("content"), "titles"),
+            futs = [ex.submit(tr, bt, tctx,
                               {i: imgs[i] for i in imgs if any(x["id"] == i for x in bt)}) for bt in batches]
             for k, fu in enumerate(futs):
                 res.update(fu.result())
@@ -983,6 +995,8 @@ def agent_run(argv):
     code = 0
     with _AGENT_RUN, contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
         try:
+            if os.path.isabs(vio.FFMPEG) and os.path.dirname(vio.FFMPEG) not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = os.path.dirname(vio.FFMPEG) + os.pathsep + os.environ.get("PATH", "")
             if argv and argv[0] == "--py":
                 old = sys.argv[:]
                 sys.argv = argv[1:]
@@ -1075,6 +1089,12 @@ def job_agent():
                 log(f"rea-video לא הצליח ({str(e)[:160]}) - ממשיך בלעדיו")
         else:
             log("rea-video עוד לא מותקן (העדפות > מחיקה חזקה וזיהוי גופנים) - ממשיך בלעדיו")
+        import shutil                          # skills that ship with Retitle (qc-video, MIT) for Claude Code
+        sk = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills")
+        for name in (os.listdir(sk) if os.path.isdir(sk) else []):
+            dst = os.path.join(proj, ".claude", "skills", name)
+            shutil.rmtree(dst, ignore_errors=True)
+            shutil.copytree(os.path.join(sk, name), dst)
         part(0.28, 0.3, "Claude עובר על כל הטקסטים שזוהו")
         gl = (s.get("glossary") or "").strip()
         _, _, err = turn(f"""Project folder: {proj}
@@ -1714,6 +1734,9 @@ class H(BaseHTTPRequestHandler):
         if u.path in ("/", "/index.html"):
             with open(os.path.join(UI, "index.html"), "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
+        if u.path == "/cuelint.web.js":             # CueLint (MIT), subtitle QC, runs in the page
+            with open(os.path.join(UI, "cuelint.web.js"), "rb") as f:
+                return self._send(200, f.read(), "text/javascript; charset=utf-8")
         if u.path == "/splash.png":                  # the start-up picture, drawn by the page itself (same size as the splash)
             with open(os.path.join(UI, "splash.png"), "rb") as f:
                 return self._send(200, f.read(), "image/png")
@@ -1758,6 +1781,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/settings":
             s = settings(); s["api_key_set"] = s.get("api_key_saved", False); s["api_key"] = ""
             s["gh_token_set"] = bool(s.get("gh_token")); s["gh_token"] = ""
+            s["tmdb_key_set"] = bool(s.get("tmdb_key")); s["tmdb_key"] = ""
             s["sync_dir"] = vio.load_json(CFG, {}).get("sync_dir", ""); s["sync_found"] = detect_sync_dirs()
             return self._send(200, s)
         if u.path == "/api/fonts":
@@ -1905,7 +1929,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/settings":
             s = vio.load_json(CFG, {})          # the stored file (settings() holds the resolved Claude route)
             for k, v in b.items():
-                if k in ("api_key", "gh_token") and not v:
+                if k in ("api_key", "gh_token", "tmdb_key") and not v:
                     continue
                 s[k] = v
             os.makedirs(CFG_DIR, exist_ok=True)

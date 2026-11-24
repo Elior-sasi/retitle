@@ -41,6 +41,12 @@ project's rea folder - start from rea/VIDEO.md and open only what you need (shot
 overlay with its timing, style and entrance in video/ and packaging/, element crops, stems). Use rea-video the way
 you would in a chat: `rea-video tiles` to look closely at a stretch, `rea-video review` to check shots by eye.
 
+The qc-video skill (.claude/skills/qc-video) checks the encoded result for black, frozen, duplicate or flashing
+frames and level problems; there is no Python on this PC, so run its scanner as
+RT --py .claude/skills/qc-video/scripts/qc-scan.py <video> (ffmpeg is on the path there). The app also writes
+check/guard.json: frames where something changed OUTSIDE the title areas (with check/guard_<frame>.jpg) -
+anything listed there is a bug to fix (usually a "title" that is not text and should be translate=false).
+
 Hebrew rules: natural Hebrew a viewer reads in a glance, the official Hebrew title when there is one, no niqqud,
 plain " quotes, a regular hyphen - never an em dash, the user's name glossary always wins. A sentence split over
 several cards is translated as one sentence and split at the same places.

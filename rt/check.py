@@ -79,4 +79,55 @@ table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #666;padding
 <tbody>{''.join(rows)}</tbody></table></main></body></html>"""
     with open(os.path.join(d, "report.html"), "w", encoding="utf-8") as f:
         f.write(page)
+    try:
+        guard(proj, video_out)
+    except Exception as e:
+        print("guard:", e)
     return sheets
+
+
+def guard(proj, video_out=None, step_s=1.0, limit=0.004):
+    """Nothing outside the edited areas may change. About one frame a second, source vs encoded result,
+    outside every title region that is on screen then (and a margin): the share of pixels that changed by
+    more than compression noise. Frames over `limit` are listed in check/guard.json with a picture
+    (check/guard_<frame>.jpg: source, result, changed pixels in red)."""
+    P = vio.load_json(os.path.join(proj, "project.json"))
+    T = vio.load_json(os.path.join(proj, "titles.json"))
+    W, H, n, fps = P["info"]["width"], P["info"]["height"], P["n_frames"], P["info"]["fps"]
+    base = os.path.splitext(os.path.basename(P["video"]))[0]
+    video_out = video_out or os.path.join(proj, "out", f"{base}_HEB.mp4")
+    step = max(1, int(round(fps * step_s)))
+    fs = list(range(0, n, step))
+    act = [t for t in T["titles"] if t.get("translate", True) and t.get("region")]
+    src = dict(vio.frames_at(P["video"], W, H, [(f, f) for f in fs]))
+    dst = dict(vio.frames_at(video_out, W, H, [(f, f) for f in fs]))
+    d = os.path.join(proj, "check")
+    for old in os.listdir(d) if os.path.isdir(d) else []:
+        if old.startswith("guard_"):
+            os.remove(os.path.join(d, old))
+    bad = []
+    k = np.ones((3, 3), np.uint8)
+    for f in fs:
+        a, b = src.get(f), dst.get(f)
+        if a is None or b is None:
+            continue
+        zone = np.zeros((H, W), np.uint8)
+        for t in act:
+            if t["in"] - 3 <= f <= t["out"] + 3:
+                x0, y0, x1, y1 = t["region"]
+                m = max(8, int(0.02 * W))
+                zone[max(0, y0 - m):y1 + m, max(0, x0 - m):x1 + m] = 1
+        out = zone == 0
+        if out.sum() < 1000:
+            continue
+        diff = cv2.absdiff(cv2.GaussianBlur(a, (5, 5), 0), cv2.GaussianBlur(b, (5, 5), 0)).max(2)
+        ch = cv2.morphologyEx(((diff > 28) & out).astype(np.uint8), cv2.MORPH_OPEN, k)
+        frac = float(ch.sum()) / float(out.sum())
+        if frac > limit:
+            red = b.copy(); red[ch > 0] = (0, 0, 255)
+            sc = min(1.0, 640 / W)
+            row = np.hstack([cv2.resize(x, None, fx=sc, fy=sc) for x in (a, b, red)])
+            cv2.imwrite(os.path.join(d, f"guard_{f:06d}.jpg"), row, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            bad.append({"frame": f, "tc": vio.tc(f, fps), "changed": round(frac * 100, 2)})
+    vio.save_json(os.path.join(d, "guard.json"), {"checked": len(fs), "changed": bad})
+    return bad
