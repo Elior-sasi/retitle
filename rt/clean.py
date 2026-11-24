@@ -34,7 +34,19 @@ def line_mask(img, t, reg, f=None, proj=None, gid=None):
     chroma = fl is not None and ((fl[1] - 128) ** 2 + (fl[2] - 128) ** 2) ** 0.5 > 20
     if t.get("styled") or t.get("design") or t.get("design_member") or (chroma and t.get("kind") != "sub"):
         # coloured / designed lettering: shading and gradients go beyond one fill colour
-        m = m | styled_mask(img, t, reg, box, wide=bool((t.get("design") or t.get("design_member")) and f is not None))
+        m = m | styled_mask(img, t, reg, box)
+        if (t.get("design") or t.get("design_member")) and f is not None:
+            w = styled_mask(img, t, reg, box, wide=True)
+            # far from the logo only big pieces count (the logo zoomed or moved); small specks
+            # there are the scene's own colours (sparks, reflections) and stay
+            lh = int(max(8, (t.get("style") or {}).get("letter_h") or h))
+            near = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (lh | 1, lh | 1))) > 0
+            far = ((w > 0) & ~near).astype(np.uint8)
+            if far.any():
+                n_, lab_, st_, _ = cv2.connectedComponentsWithStats(far)
+                small = np.zeros(n_, bool); small[1:] = st_[1:, 4] < 0.5 * lh * lh
+                w[small[lab_] & (far > 0)] = 0
+            m = m | w
     if t.get("logo_bg") is not None and proj and f is not None:
         # whole logo: everything that differs from the background without the title, around the logo box
         from .extract import _bg_plate, logo_diff

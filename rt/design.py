@@ -41,12 +41,18 @@ Spec (JSON; sizes are relative to the letter height "em" unless marked px):
  "glow": {"color": "#rrggbb", "size": 0.15, "opacity": 0.5} or null,
  "marks": {"color": "#rrggbb", "per_letter": [1, 3], "length": 0.35, "width": 0.08, "chance": 0.7} or null,   # stripes from the letter edges (tiger, claws)
  "underline": {"color": "#rrggbb", "outline": "#rrggbb", "thickness": 0.08, "y": 0.18, "from": 0.0, "to": 1.0, "glint": "#rrggbb" or null} or null,
- "transplants": [{"box": [x0, y0, x1, y1], "line": 0, "letter": 2, "rx": 0.5, "ry": 0.5, "scale": 0.4}]   # copy an element from the ORIGINAL image (pixel box in image 1) onto a Hebrew letter (index in the line, right to left from 0), centred at rx, ry of that letter, scale = height relative to the letter
+ "transplants": [{"box": [x0, y0, x1, y1], "line": 0, "letter": 2, "mode": "in"|"replace", "rx": 0.5, "ry": 0.5, "scale": 0.4}]   # copy an element from the ORIGINAL image (pixel box in image 1) onto a Hebrew letter (index in the line, right to left from 0), centred at rx, ry of that letter, scale = height relative to the letter. "in": inside the letter - ONLY into a closed hole of that letter (ם ס ט), never on top of strokes. "replace": the element takes the letter's place (the letter is removed), for an element that stands for a letter in the original (a jewel as the O): pick the Hebrew letter with the same sound or shape (O -> ו, I -> י), so the word still reads. With no fitting letter, leave the element out
 }
+Legibility comes first: every Hebrew letter must read at a glance at video size. Keep the look-alike
+pairs apart - ה/ח (the gap of ה stays open), ד/ר, ו/ז/ן, נ/ג/כ, ב/כ, ס/ם, ט/מ. Condensed fonts, rough edges,
+extrusion, outlines and letter tilt must never close a gap or thin a letter into another; when a font's
+letters are too narrow for this, pick a fuller one (the shape and mood of the original still lead).
 Reply ONLY with JSON: {"spec": {...}, "notes_he": "one short Hebrew sentence about your choices"}"""
 
 REVIEW = """Image 1 is the original. Image 2 is the Hebrew version on the same background, at the same size.
-Review it as an art director: would this pass for the original designer's work? Compare character, weight,
+Review it as an art director. First read the Hebrew letter by letter: if any letter could be misread
+(ה like ח, נ like ג or ו, ד like ר...), it is not approved - fix the font or the effects. Then: would this pass
+for the original designer's work? Compare character, weight,
 colour, texture, depth, decorations, proportions and layout. If it is good, reply {"approved": true}.
 Otherwise return the corrected full spec: {"approved": false, "spec": {...}, "notes_he": "what you changed, short Hebrew"}.
 Reply ONLY with JSON."""
@@ -256,6 +262,19 @@ def render_spec(spec, source=None, em=200):
     """spec -> RGBA PIL image (tight). source: {"src": BGR crop} for transplants."""
     M, boxes, pad = letter_mask(spec, em)
     h, w = M.shape
+    for tr in spec.get("transplants") or []:
+        if tr.get("mode") == "replace":
+            # the element takes the letter's place (as the jewel is the O of LOST): the letter goes
+            try:
+                row = boxes[int(tr.get("line", 0))]
+                lb = row[min(len(row) - 1, int(tr.get("letter", 0)))]
+                n_, lab_, st_, cen_ = cv2.connectedComponentsWithStats((M > 0.3).astype(np.uint8))
+                for k in range(1, n_):
+                    cx_, cy_ = cen_[k]
+                    if lb[0] <= cx_ <= lb[2] and lb[1] <= cy_ <= lb[3]:
+                        M[cv2.dilate((lab_ == k).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0] = 0
+            except Exception:
+                pass
     seed = int((spec.get("letters") or {}).get("seed", 1))
     # rough edges
     ed = spec.get("edges") or {}
@@ -364,9 +383,32 @@ def render_spec(spec, source=None, em=200):
     if ul:
         img = _underline(img, M, ul, em)
     for tr in spec.get("transplants") or []:
-        img = _transplant(img, boxes, tr, source)
+        img = _transplant(img, boxes, tr, source, (spec.get("fill") or {}).get("colors"))
+    ys, xs = np.where(M > 0.3)
+    ink = [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1] if len(xs) else [0, 0, img.width, img.height]
+    for tr in spec.get("transplants") or []:
+        if tr.get("mode") == "replace":       # the element stands for a letter: it is part of the lettering
+            try:
+                row = boxes[int(tr.get("line", 0))]
+                lb = row[min(len(row) - 1, int(tr.get("letter", 0)))]
+                ink = [min(ink[0], int(lb[0])), min(ink[1], int(lb[1])), max(ink[2], int(lb[2])), max(ink[3], int(lb[3]))]
+            except Exception:
+                pass
     bb = img.getbbox()
-    return img.crop(bb) if bb else img
+    if bb:
+        img = img.crop(bb)
+        ink = [ink[0] - bb[0], ink[1] - bb[1], ink[2] - bb[0], ink[3] - bb[1]]
+    img.info["ink"] = ",".join(str(v) for v in ink)
+    return img
+
+
+def save(img, path):
+    """PNG with the letters' box kept in it (the build fits the letters, not the decorations)."""
+    from PIL import PngImagePlugin
+    pi = PngImagePlugin.PngInfo()
+    if img.info.get("ink"):
+        pi.add_text("ink", img.info["ink"])
+    img.save(path, pnginfo=pi)
 
 
 def _marks(M, boxes, mk, em, seed):
@@ -424,7 +466,7 @@ def _underline(img, M, ul, em):
     return img
 
 
-def _transplant(img, boxes, tr, source):
+def _transplant(img, boxes, tr, source, fills=None):
     """Copy an element (box in the source crop) onto a Hebrew letter, keyed out of its background."""
     if not source or "src" not in source:
         return img
@@ -437,9 +479,23 @@ def _transplant(img, boxes, tr, source):
         a = np.abs(s.astype(np.int16) - c.astype(np.int16)).max(2).astype(np.float32)
         a = np.clip((a - 25) / 40, 0, 1)
         # not the letter it sat on: drop pixels close to the letters' main colour
-        fc = np.array(_hex(source.get("fill_hex", "#000000")), np.float32)[::-1]
-        dist = np.linalg.norm(s.astype(np.float32) - fc, axis=2)
-        a *= np.clip((dist - 45) / 45, 0, 1)
+        # (the letter colours: the measured fill, else the colours the spec paints the letters in)
+        cols = [source["fill_hex"]] if source.get("fill_hex") not in (None, "#000000") else list(fills or [])
+        for hx in cols:
+            fc = np.array(_hex(hx), np.float32)[::-1]
+            dist = np.linalg.norm(s.astype(np.float32) - fc, axis=2)
+            a *= np.clip((dist - 45) / 45, 0, 1)
+        # the hole around the element (shadow inside a letter) also differs from the clean plate:
+        # split by lightness and keep the part that stands out most from the plate
+        L = cv2.cvtColor(s, cv2.COLOR_BGR2LAB)[..., 0]
+        Lc = float(cv2.cvtColor(c, cv2.COLOR_BGR2LAB)[..., 0].mean())
+        reg = a > 0.4
+        if reg.sum() > 50:
+            th, _ = cv2.threshold(L[reg].reshape(-1, 1), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            hi_, lo_ = reg & (L > th), reg & (L <= th)
+            if hi_.any() and lo_.any():
+                keep = hi_ if abs(L[hi_].mean() - Lc) >= abs(L[lo_].mean() - Lc) else lo_
+                a = a * cv2.GaussianBlur(keep.astype(np.float32), (0, 0), 1.0)
         # the element is one piece: keep the biggest blob (convex hull), soft edge
         m = (a > 0.4).astype(np.uint8)
         n, lab, st, _ = cv2.connectedComponentsWithStats(m)
@@ -454,7 +510,7 @@ def _transplant(img, boxes, tr, source):
         row = boxes[int(tr.get("line", 0))]
         lb = row[min(len(row) - 1, int(tr.get("letter", 0)))]
         lh = lb[3] - lb[1]
-        sc = float(tr.get("scale", 0.4)) * lh / max(1, el.height)
+        sc = float(tr.get("scale", 0.9 if tr.get("mode") == "replace" else 0.4)) * lh / max(1, el.height)
         el = el.resize((max(1, int(el.width * sc)), max(1, int(el.height * sc))), Image.LANCZOS)
         cx = lb[0] + (lb[2] - lb[0]) * float(tr.get("rx", 0.5)); cy = lb[1] + lh * float(tr.get("ry", 0.5))
         img.alpha_composite(el, (int(cx - el.width / 2), int(cy - el.height / 2)))
@@ -468,12 +524,16 @@ def composite(design, crops_, scale_to="box"):
     bg = cv2.cvtColor(crops_["clean"], cv2.COLOR_BGR2RGB)
     x0, y0, x1, y1 = crops_["box"]
     tw, th = x1 - x0, y1 - y0
-    sw, sh = tw / max(1, design.width), th / max(1, design.height)
+    from .render import _ink
+    ink = _ink(design) or (0, 0, design.width, design.height)
+    iw, ih = max(1, ink[2] - ink[0]), max(1, ink[3] - ink[1])
+    sw, sh = tw / iw, th / ih
     s = min(max(sw, sh), 1.2 * min(sw, sh))          # same rule as the build
     d = design.resize((max(1, int(design.width * s)), max(1, int(design.height * s))), Image.LANCZOS)
     im = Image.fromarray(bg).convert("RGBA")
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    im.alpha_composite(d, (int(cx - d.width / 2), int(cy - d.height / 2)))
+    ax, ay = (ink[0] + ink[2]) / 2 * s, (ink[1] + ink[3]) / 2 * s
+    im.alpha_composite(d, (int(cx - ax), int(cy - ay)))
     return im.convert("RGB")
 
 
@@ -573,7 +633,7 @@ def design_card(proj, gid, api_key, log=print, progress=None):
     img = render_spec(spec, cr)
     os.makedirs(os.path.join(proj, "logos"), exist_ok=True)
     rel = f"logos/{lines[0]['id']}_design.png"
-    img.save(os.path.join(proj, rel))
+    save(img, os.path.join(proj, rel))
     composite(img, cr).save(os.path.join(d, f"preview_{gid}.jpg"), quality=88)
     log("Claude עיצב: " + " ".join(n for n in notes if n))
     return spec, rel, lines, card_box(lines)
@@ -609,5 +669,5 @@ def rerender(proj, tid):
     _, lines = card(proj, t["group"])
     cr = crops(proj, [x for x in lines if x["id"] == tid or x.get("design_member") == tid] or lines)
     img = render_spec(t["design"], cr)
-    img.save(os.path.join(proj, t["layer"]["path"]))
+    save(img, os.path.join(proj, t["layer"]["path"]))
     return t["layer"]["path"]

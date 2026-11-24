@@ -319,18 +319,23 @@ def build_layers(proj, only=None):
             continue
         elif lay["type"] == "image":
             # a designed logo (transparent PNG): fitted to the width of the source text block
-            img = Image.open(os.path.join(proj, lay["path"])).convert("RGBA")
+            img = Image.open(os.path.join(proj, lay["path"]))
+            ink = _ink(img)
+            img = img.convert("RGBA")
             bb = img.getbbox() or (0, 0, img.width, img.height)
             img = img.crop(bb)
+            ink = (ink[0] - bb[0], ink[1] - bb[1], ink[2] - bb[0], ink[3] - bb[1]) if ink else (0, 0, img.width, img.height)
+            iw0, ih0 = max(1, ink[2] - ink[0]), max(1, ink[3] - ink[1])
             rb = lay.get("box") or t.get("ref_box", t["box"])      # a designed card covers the whole card
             tw = max(8.0, (rb[2] - rb[0]) * t.get("style", {}).get("size_ratio", 1.0))
-            ss = img.width / tw
+            ss = iw0 / tw
             if lay.get("box"):
-                # cover the original card (what is left of it must hide behind the Hebrew), within reason
+                # the Hebrew letters cover the original letters (what is left of them must hide behind
+                # the Hebrew), within reason; underline, shadow and sparkles come on top of that
                 th = max(8.0, (rb[3] - rb[1]) * t.get("style", {}).get("size_ratio", 1.0))
-                sw, sh = tw / img.width, th / img.height
+                sw, sh = tw / iw0, th / ih0
                 ss = 1 / min(max(sw, sh), 1.2 * min(sw, sh))
-            anc = (img.width / 2, img.height / 2); ink = (0, 0, img.width, img.height)
+            anc = ((ink[0] + ink[2]) / 2, (ink[1] + ink[3]) / 2)
         else:
             continue
         p = os.path.join(d, f"{t['id']}.png")
@@ -352,6 +357,15 @@ def build_layers(proj, only=None):
     vio.save_json(os.path.join(proj, "layers", "meta.json"), meta)
     vio.save_json(os.path.join(proj, "titles.json"), T)
     return meta
+
+
+def _ink(img):
+    """The letters' box inside a designed logo PNG (written by design.save), or None."""
+    try:
+        v = [int(x) for x in str(img.info.get("ink", "")).split(",")]
+        return tuple(v) if len(v) == 4 and v[2] > v[0] and v[3] > v[1] else None
+    except ValueError:
+        return None
 
 
 def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None, shift=(0, 0)):
