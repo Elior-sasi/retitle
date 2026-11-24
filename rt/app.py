@@ -525,6 +525,47 @@ def job_transcribe():
     log("התמלול מוכן. בחר כתובית והקלד עברית.")
 
 
+def job_youtube():
+    """Dialogue from the video's own captions on YouTube (youtube-transcript-api, MIT) instead of Whisper: the
+    studio's subtitles are exact text (names, terms) even where music covers the voice. Generated (automatic)
+    captions only when asked - they are speech recognition too."""
+    import re as _re
+    from youtube_transcript_api import YouTubeTranscriptApi
+    a = STATE.get("args") or {}
+    url = (a.get("url") or "").strip()
+    m = _re.search(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([\w-]{11})", url) or _re.fullmatch(r"([\w-]{11})", url)
+    if not m:
+        raise RuntimeError("זה לא נראה כמו קישור לסרטון ביוטיוב")
+    vid = m.group(1)
+    want = {"eng": "en", "jpn": "ja", "kor": "ko"}.get(settings().get("src_lang") or "eng", "en")
+    api = YouTubeTranscriptApi()
+    tl = list(api.list(vid))
+    man = [t for t in tl if not t.is_generated]
+    gen = [t for t in tl if t.is_generated]
+    pick = next((t for t in man if t.language_code.split("-")[0] == want), None) or (man[0] if man else None)
+    if pick is None and a.get("auto"):
+        pick = next((t for t in gen if t.language_code.split("-")[0] == want), None) or (gen[0] if gen else None)
+    if pick is None:
+        raise RuntimeError("לסרטון הזה אין ביוטיוב כתוביות רשמיות" + (" (יש רק אוטומטיות - אפשר לסמן שמותר להשתמש בהן)" if gen else ""))
+    log(f"מוריד כתוביות {'רשמיות' if not pick.is_generated else 'אוטומטיות'} מיוטיוב ({pick.language})")
+    sn = [x for x in pick.fetch() if x.text.strip()]
+    off = float(a.get("offset") or 0)
+    cues = []
+    for i, x in enumerate(sn):
+        txt = _re.sub(r"\s+", " ", x.text.replace("\n", " ")).strip()
+        if _re.fullmatch(r"[\[(♪].*[\])♪]", txt):                 # [Music], (laughs), ♪...♪
+            continue
+        st = x.start + off
+        en = x.start + x.duration + off
+        if i + 1 < len(sn):
+            en = min(en, sn[i + 1].start + off)
+        cues.append({"n": len(cues) + 1, "start": round(max(0, st), 3), "end": round(max(st + 0.3, en), 3), "src": txt, "he": ""})
+    with LOCK:
+        vio.save_json(P("dialog.json"), {"cues": cues})
+        PJ = vio.load_json(P("project.json")); PJ["youtube"] = url; vio.save_json(P("project.json"), PJ)
+    log(f"{len(cues)} כתוביות נכנסו מיוטיוב. התזמון הוא של הסרטון ביוטיוב - אם הקובץ שלך חתוך אחרת, הזז בשדה ההזזה.")
+
+
 def job_srt():
     from . import srt
     p, w = srt.build(STATE["proj"], rle=settings().get("srt_rle", True))
@@ -1192,7 +1233,7 @@ def job_queue():
     log("התור הסתיים.")
 
 
-JOBS = {"translate_compare": job_translate_compare, "agent": job_agent, "design": job_design, "design_edit": job_design_edit, "propaint": job_propaint, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
+JOBS = {"youtube": job_youtube, "translate_compare": job_translate_compare, "agent": job_agent, "design": job_design, "design_edit": job_design_edit, "propaint": job_propaint, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
