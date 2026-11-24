@@ -482,6 +482,8 @@ def classify_keep(titles, P, langs="eng"):
         alone = len(groups[t["group"]]) == 1
         if _studio(t["src"]):
             keep(t, "לוגו של חברה")
+        elif k in SIGNS and alone and h < 0.1 * H:
+            keep(t, "טקסט בתוך התמונה")          # a sign in the scene (EXIT, STOP, TAXI...)
         elif _PLATE.match(k) and " " not in t["src"].strip():
             keep(t, "טקסט בתוך התמונה")          # licence plates, codes, serials
         elif gsmall(t["group"]) and dur < 1.5 and len(k) <= 10 and " " not in t["src"].strip():
@@ -534,6 +536,12 @@ def merge_cards(titles, every):
 def _near(A, B):
     h = max(A[3] - A[1], B[3] - B[1])
     return max(B[0] - A[2], A[0] - B[2]) < h and max(B[1] - A[3], A[1] - B[3]) < h
+
+
+SIGNS = set("""exit stop open closed police taxi hotel motel bar cafe pub pull push entrance noentry oneway
+toilet toilets wc parking garage bank pharmacy hospital emergency danger warning caution keepout private
+office shop store market sale school bus station platform gate arrivals departures no yes on off
+tickets ticket cinema theatre theater restaurant pizza diner bakery salon florist liquor""".split())
 
 
 SHORT_WORDS = set("""a i an as at be by do go he if in is it me my no of oh ok on or so to up us we

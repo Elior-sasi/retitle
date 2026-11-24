@@ -517,7 +517,7 @@ const mt=id=>S.model.titles.find(x=>x.id===id), mc=n=>S.model.cues.find(x=>x.n==
 const dt=id=>((S.data&&S.data.titles||{}).titles||[]).find(x=>x.id===id), dc=n=>((S.data&&S.data.dialog||{}).cues||[]).find(x=>x.n===n);
 
 // ================================================================ data
-async function reloadData(keepModel){const d=await api('/api/project');if(d.error)return;S.data=d;S.fps=d.project.info.fps;S.n=d.n_frames||1;setTimeout(showRange,0);
+async function reloadData(keepModel){const d=await api('/api/project');if(d.error)return;S.data=d;if(!keepModel)S.fileStamp=Date.now();S.fps=d.project.info.fps;S.n=d.n_frames||1;setTimeout(showRange,0);
   if(!keepModel)modelFromData();else{const ids=new Set(S.model.titles.map(t=>t.id));
     if(((d.titles||{}).titles||[]).some(t=>!ids.has(t.id))||((d.dialog||{}).cues||[]).length!==S.model.cues.length)modelFromData()}
   const name=d.project.video.split(/[\\/]/).pop();
@@ -552,7 +552,7 @@ function renderList(){const ul=$('#items');ul.replaceChildren();
       if(t.translate&&dirty.has(d.group))chips.push(el('span',{class:'chip warn',text:'דורש בנייה'}));
       return el('li',{},el('button',{class:'item','aria-current':isSel('t',t.id)?'true':'false',onclick:()=>select('t',t.id,true),
         'aria-label':`${d.src||''}. ${t.he?'עברית: '+t.he:'בלי תרגום'}. ${tc(t.in)} עד ${tc(t.out)}${chips.length?'. '+chips.map(c=>c.textContent).join(', '):''}`},
-        el('img',{src:`/api/file?p=thumbs/${t.id}.jpg`,alt:''}),
+        el('img',{src:`/api/file?k=${fileKey()}&p=thumbs/${t.id}.jpg`,alt:''}),
         el('span',{style:'min-width:0'},el('span',{class:'src',lang:'und',text:d.src||''}),el('div',{class:'he',text:t.he||'—'}),
           el('div',{class:'meta'},el('bdi',{dir:'ltr',text:tc(t.in)}),...chips))))};
     // one entry per card (a title on screen), its lines under it; what stays as it is folds away at the end
@@ -608,7 +608,7 @@ function renderInsp(){const box=$('#ec');box.replaceChildren();$('#insp-name').t
   if(!S.sel){box.append(el('p',{class:'empty',text:S.proj?'בחר כותרת או כתובית ברשימה או בציר הזמן.':'אין פריט נבחר.'}));return}
   if(S.sel.k==='t')inspTitle(box);else inspCue(box)}
 function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;const st=d.style||{};$('#insp-name').textContent=t.id;
-  box.append(el('div',{class:'ec-head'},el('img',{src:`/api/file?p=thumbs/${t.id}.jpg`,alt:`הכותרת במקור: ${d.src}`}),
+  box.append(el('div',{class:'ec-head'},el('img',{src:`/api/file?k=${fileKey()}&p=thumbs/${t.id}.jpg`,alt:`הכותרת במקור: ${d.src}`}),
     el('div',{style:'min-width:0'},el('div',{class:'src',lang:'und',text:d.src}),el('div',{class:'sub',text:`${tc(t.in)} - ${tc(t.out)}`}))));
   const curMode=!t.translate?'keep':(t.mode==='remove'?'remove':'replace');
   const md=el('div',{class:'seg',role:'group','aria-label':'מה לעשות עם הטקסט במקור'});
@@ -736,7 +736,7 @@ function renderMedia(){const vc=$('#vclip'),cv=$('#acv');if(!vc||!S.data)return;
   vc.querySelectorAll('img').forEach(e=>e.remove());
   if(M&&M.count){const info=S.data.project.info,h=VLANE-6,tw=Math.max(24,Math.round(h*info.width/info.height));
     for(let x=Math.floor(x0/tw)*tw;x<Math.min(x1,full);x+=tw){const sec=x/pxf()/S.fps;const k=clamp(Math.round(sec/M.step)+1,1,M.count);
-      vc.append(el('img',{class:'th',alt:'',loading:'lazy',src:`/api/file?p=media/thumbs/${String(k).padStart(5,'0')}.jpg`,style:`left:${x}px;width:${tw}px`}))}}
+      vc.append(el('img',{class:'th',alt:'',loading:'lazy',src:`/api/file?k=${fileKey()}&p=media/thumbs/${String(k).padStart(5,'0')}.jpg`,style:`left:${x}px;width:${tw}px`}))}}
   const top=S.tlTop.a+3,h=LANE-6,dpr=window.devicePixelRatio||1;
   const w=Math.max(0,Math.min(vw,full-x0));cv.style.left=x0+'px';cv.style.top=top+'px';cv.style.width=w+'px';cv.style.height=h+'px';
   cv.width=Math.max(1,Math.round(w*dpr));cv.height=Math.round(h*dpr);const g=cv.getContext('2d');g.scale(dpr,dpr);
@@ -845,6 +845,9 @@ $('#qu-clear').onclick=async()=>{const r=await api('/api/queue',{act:'clear_done
 $('#qu-close').onclick=()=>$('#d-queue').close();
 $('#qu-go').onclick=async()=>{const r=await api('/api/run',{job:'queue',args:{titles:$('#qu-t').checked,dialog:$('#qu-d').checked}});
   if(!r.started)return say('פעולה אחרת עדיין רצה',true);wasRunning=true;$('#d-queue').close();say('התור התחיל')};
+// files of the project (thumbnails...) are named the same in every project: the key keeps the browser's
+// image memory from showing another project's pictures, and refreshes them after a new analysis
+function fileKey(){return encodeURIComponent((S.proj||'')+':'+(S.fileStamp||0))}
 function showRange(){const rg=S.data&&S.data.project.range;$('#rngchip').hidden=!rg;
   if(rg)$('#rng-txt').textContent=`טווח עבודה: ${tc(rg[0])} - ${tc(rg[1])} · ניתוח ותמלול רק בו`}
 async function setRange(which){if(!S.proj)return say('פתח וידאו קודם');const cur=S.data.project.range;let rg=null;
@@ -938,7 +941,7 @@ async function loadSettings(){const s=await api('/api/settings');renderSync(s);r
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
   content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
-function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
+function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?k=${fileKey()}&p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
 
 // ================================================================ import / hardsubs / QA / update
 async function importSrt(heb){closeMenu(true);if(S.model.cues.length&&!confirm('ייבוא יחליף את הכתוביות הקיימות. להמשיך?'))return;
