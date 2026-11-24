@@ -28,6 +28,13 @@ Rules:
 - Keep the meaning and tone; on-screen text must be short enough to fit where the source was.
 - Keep the split across items: each item is one line/caption and its Hebrew must stand on its own
   but read naturally together with its neighbours (items with the same "group" are one sentence).
+- On-screen title cards (a trailer, an opening) often run as ONE sentence over several cards in a row
+  (IT'S TIME / FOR A TRUE HERO / TO EARN HIS STRIPES). Items come in screen order: read the run as one sentence,
+  write it as natural Hebrew, then split it over the same cards in Hebrew word order (each card still says
+  something on its own) - not a word-by-word rendering of each card.
+- Titles of films, series, games and books: the official Hebrew title of the Israeli release when you know it;
+  otherwise a natural, catchy Hebrew title in the same spirit (a pun or idiom may become a Hebrew one), not a
+  transliteration - unless the title is usually kept as is in Israel.
 - Names: use the glossary spellings exactly. Names not in the glossary: standard Hebrew transliteration.
 - Return ONLY a JSON object {"items": [{"id": ..., "he": ...}, ...]} with the same ids."""
 

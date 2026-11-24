@@ -38,7 +38,19 @@ SYSTEM = ("You are a type designer helping localize on-screen video titles into 
           "(playful, epic, elegant, technical, hand-made, horror). Ignore colour, outline, shadow, 3D, texture and size. Hebrew and "
           "Latin letterforms differ - compare the design language, not letter shapes. Also name the Latin typeface of the original "
           "if you recognize it (or the closest known one). Reply ONLY with JSON: {\"best\": n, \"ranking\": [n...], \"latin_font\": "
-          "\"...\", \"reason_he\": \"one short Hebrew sentence\", \"settings_he\": \"optional Hebrew tip on weight/width\"}")
+          "\"...\", \"reason_he\": \"one short Hebrew sentence\", \"settings_he\": \"optional Hebrew tip on weight/width\", "
+          "\"look\": {\"weight\": 400-900 or null, \"fill\": [\"#top\", \"#bottom\"] (one colour twice if flat), "
+          "\"extrude\": {\"dir\": \"down\"|\"down-right\"|\"down-left\"|\"right\"|\"left\", \"depth\": 0.0-0.15 (of letter height), "
+          "\"color\": \"#hex\"} or null, \"outline\": {\"width\": 0.0-0.1, \"color\": \"#hex\"} or null, "
+          "\"shadow\": {\"dx\": -0.1..0.1, \"dy\": -0.1..0.1, \"blur\": 0-0.1, \"color\": \"#hex\", \"opacity\": 0-1} or null}}. "
+          "\"look\" describes the ORIGINAL's colouring and depth exactly as you see it (the 3D side face may be lit in another "
+          "colour than the letters, e.g. pale blue-grey); distances are fractions of the letter height.")
+
+# Hebrew display fonts always offered to Claude next to the measured candidates: the measurement alone
+# misses whole families (a rounded heavy font can lose to a sans on stroke statistics)
+CURATED = [("Fredoka", 700), ("Rubik", 700), ("Secular One", None), ("Suez One", None), ("Karantina", 700),
+           ("Heebo", 800), ("Frank Ruhl Libre", 700), ("Bona Nova", 700), ("Playpen Sans Hebrew", 700),
+           ("M PLUS Rounded 1c", 800), ("Amatic SC", 700), ("Gveret Levin", None), ("Assistant", 800), ("Bellefair", None)]
 
 
 # ------------------------------------------------------------------ the original letters
@@ -383,6 +395,17 @@ def match(proj, t, top=8, api_key="", model="claude-sonnet-5-5", include_remote=
             d = os.path.join(proj, "fontmatch"); os.makedirs(d, exist_ok=True)
             crop, _ = crop_of(proj, t, pad=12)
             cj = os.path.join(d, f"crop_{t['id']}.jpg"); cv2.imwrite(cj, crop)
+            names = {r_["font"] for r_ in rows}
+            for n_, w_ in CURATED:
+                if n_ in names or len(rows) >= 16:
+                    continue
+                try:
+                    from . import render as _r
+                    _r._font(n_, 40, w_)
+                    rows.append({"font": n_, "weight": w_, "wdth": None, "score": None, "diff": ""})
+                    names.add(n_)
+                except Exception:
+                    pass
             sj = sheet(rows, t.get("he") or SAMPLE, os.path.join(d, f"fontmatch_{t['id']}.jpg"))
             r = ask_claude(api_key, model, cj, sj, len(rows))
             order = [int(x) for x in (r.get("ranking") or []) if str(x).isdigit() and 1 <= int(x) <= len(rows)]
@@ -392,10 +415,56 @@ def match(proj, t, top=8, api_key="", model="claude-sonnet-5-5", include_remote=
             order = list(dict.fromkeys(order)) + [i for i in range(1, len(rows) + 1) if i not in order]
             out["rows"] = [rows[i - 1] for i in order]
             out.update(latin_font=r.get("latin_font", "") or "", reason_he=r.get("reason_he", "") or "",
-                       settings_he=r.get("settings_he", "") or "", by_claude=True)
+                       settings_he=r.get("settings_he", "") or "", by_claude=True, look=r.get("look") or None)
         except Exception as e:
             log(f"Claude לא זמין לבחירת הגופן, נשאר הדירוג המקומי ({e.__class__.__name__})")
     return out
+
+
+def _bgr(hx):
+    hx = str(hx or "").lstrip("#")
+    if len(hx) != 6:
+        return None
+    r, g, b = (int(hx[i:i + 2], 16) for i in (0, 2, 4))
+    return [b, g, r]
+
+
+def apply_look(t, look):
+    """Claude's reading of the original's colouring and depth -> the title's style (locked parts stay)."""
+    if not isinstance(look, dict):
+        return
+    st = t.setdefault("style", {}); lock = set(t.get("style_locked", []))
+    lh = float(st.get("letter_h") or (t["ref_box"][3] - t["ref_box"][1]) * 0.75)
+    fl = [c for c in (_bgr(x) for x in (look.get("fill") or [])) if c]
+    if fl and "fill" not in lock:
+        st["fill"] = fl[0]
+        if len(fl) > 1 and fl[0] != fl[-1]:
+            st["gradient"] = [fl[0], fl[-1]]
+        else:
+            st.pop("gradient", None)
+    ex = look.get("extrude")
+    if "extrude" not in lock:
+        if isinstance(ex, dict) and _bgr(ex.get("color")) and float(ex.get("depth") or 0) > 0:
+            dxy = {"down": (0, 1), "down-right": (0.7, 0.7), "down-left": (-0.7, 0.7), "right": (1, 0), "left": (-1, 0)}.get(ex.get("dir"), (0, 1))
+            steps = int(max(1, round(float(ex["depth"]) * lh / max(abs(dxy[0]), abs(dxy[1])))))
+            st["extrude"] = {"dx": dxy[0], "dy": dxy[1], "steps": min(steps, 60), "color": _bgr(ex["color"])}
+        else:
+            st.pop("extrude", None)
+    ol = look.get("outline")
+    if "outline" not in lock:
+        st["outline"] = {"width": max(1, round(float(ol.get("width") or 0) * lh)), "color": _bgr(ol.get("color")) or [0, 0, 0]} \
+            if isinstance(ol, dict) and float(ol.get("width") or 0) > 0.005 else None
+    sh = look.get("shadow")
+    if "shadow" not in lock:
+        st["shadow"] = {"dx": round(float(sh.get("dx") or 0) * lh, 1), "dy": round(float(sh.get("dy") or 0) * lh, 1),
+                        "blur": round(float(sh.get("blur") or 0) * lh, 1), "color": _bgr(sh.get("color")) or [0, 0, 0],
+                        "opacity": float(sh.get("opacity") or 0.6)} if isinstance(sh, dict) else None
+    w = look.get("weight")
+    if w and "font" not in lock:
+        try:
+            st["weight"] = int(w)
+        except (TypeError, ValueError):
+            pass
 
 
 def apply_row(t, row):
@@ -410,7 +479,8 @@ def apply_row(t, row):
 
 def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print, only=None):
     """Automatic pick at analysis time, for titles whose font nobody chose (not locked, not from the series).
-    Local ranking only - the Claude check is per title, from the "find a similar font" button."""
+    With an API key Claude picks the font and reads the look (colours, 3D side, outline, shadow) per card;
+    without one, the local ranking."""
     T = vio.load_json(os.path.join(proj, "titles.json"))
     todo = [t for t in T["titles"] if t.get("translate", True) and t.get("mode") != "remove" and t.get("kind") != "sub"
             and "font" not in t.get("style_locked", []) and not t.get("from_series")
@@ -419,6 +489,29 @@ def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print, o
         return 0
     cands = candidate_traits(progress=lambda x: progress(0.8 * x) if progress else None)
     done = 0
+    if api_key:
+        # Claude as the typographer: one look per card (the lines of a card share a typeface and look)
+        cards = {}
+        for t in todo:
+            cards.setdefault(t.get("group", t["id"]), []).append(t)
+        for i, (gid, ls) in enumerate(cards.items()):
+            if progress:
+                progress(0.8 + 0.2 * i / max(1, len(cards)))
+            big = max(ls, key=lambda x: (x["ref_box"][3] - x["ref_box"][1]))
+            try:
+                r = match(proj, big, top=8, api_key=api_key, model=model, log=log)
+            except Exception as e:
+                log(f"בחירת הגופן עם Claude לא הצליחה ({e.__class__.__name__})")
+                r = {}
+            if not r.get("rows") or not r.get("by_claude"):
+                continue
+            for t in ls:
+                apply_row(t, r["rows"][0])
+                apply_look(t, r.get("look"))
+                t["font_top"] = [[x["font"], x["weight"], x["wdth"], x.get("diff", "")] for x in r["rows"][:5]]
+                t["font_auto"] = True; t["font_by_claude"] = True
+                done += 1
+        todo = [t for t in todo if not t.get("font_by_claude")]
     for i, t in enumerate(todo):
         if progress:
             progress(0.8 + 0.2 * i / len(todo))

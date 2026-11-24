@@ -517,7 +517,7 @@ def job_translate(kind):
         # whole cards stay together in one request (their lines are translated as one sentence)
         batches, cur = [], []
         for it in items:
-            if cur and len(cur) >= 12 and cur[-1]["group"] != it["group"]:
+            if cur and len(cur) >= 40 and cur[-1]["group"] != it["group"]:   # a trailer's cards together: one sentence can run across them
                 batches.append(cur); cur = []
             cur.append(it)
         if cur:

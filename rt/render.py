@@ -50,6 +50,29 @@ def _match(Dt, Dr, sc0):
     return best
 
 
+def _sharp(D):
+    """Edge energy per unit of ink of a text map (falls as the text blurs)."""
+    m = D > 0.05
+    if m.sum() < 30:
+        return 0.0
+    lap = np.abs(cv2.Laplacian(D.astype(np.float32), cv2.CV_32F))
+    return float(lap[m].mean() / max(1e-3, D[m].mean()))
+
+
+def _blur_of(Sn, Rn, sc, sharp_ref):
+    """Gaussian sigma (frame px) that makes the reference text as soft as it is in this frame."""
+    s_now = _sharp(Sn)
+    if not sharp_ref or not s_now or s_now >= 0.8 * sharp_ref:
+        return 0.0
+    R = cv2.resize(Rn, (max(8, int(Rn.shape[1] * sc)), max(8, int(Rn.shape[0] * sc))), interpolation=cv2.INTER_AREA) if abs(sc - 1) > 0.02 else Rn
+    best = 0.0
+    for sg in (1, 1.5, 2, 3, 4, 6, 8, 11, 15, 20):
+        if _sharp(cv2.GaussianBlur(R, (0, 0), sg)) <= s_now:
+            best = sg
+            break
+    return float(best or 20)
+
+
 def _fix_jumps(fr, h):
     """A frame whose position or size jumps far from both neighbours (the match locked on to something
     else, often in the blur of a fast zoom) takes the motion its neighbours describe."""
@@ -114,6 +137,9 @@ def track(proj, only=None):
             Rn = np.minimum(R, p_ref * 0.5) / (p_ref * 0.5)
             rcx = (rx0 + rx1) / 2; rcy = (ry0 + ry1) / 2
             fr = {}
+            blur = {}
+            Rraw = R / max(1e-3, p_ref)                 # not clipped: clipping would hide the blur
+            sharp_ref = _sharp(Rraw)
             prev_sc = 1.0
             for f in range(t["in"], t["out"] + 1):
                 D = tmap(f)
@@ -144,6 +170,11 @@ def track(proj, only=None):
                     al = 1.0
                 prev_sc = sc
                 fr[f] = [round(dx, 2), round(dy, 2), round(float(sc), 4), round(al, 3)]
+                # motion / focus blur of the original (fast zoom, pop-in): the Hebrew gets the same blur
+                if al > 0.3:
+                    sg = _blur_of(S / max(1e-3, p), Rraw, sc, sharp_ref)
+                    if sg > 1.0:
+                        blur[f] = round(sg, 1)
             _fix_jumps(fr, h)
             vals = np.array(list(fr.values()))
             static = (np.abs(vals[:, :2]).max() < 1.5 and np.abs(vals[:, 2] - 1).max() < 0.025
@@ -157,6 +188,8 @@ def track(proj, only=None):
                 motion.refine(proj, t, gid, lines, rects)
             except Exception as e:
                 print("motion refine failed", t["id"], e)
+            if blur and t["anim"].get("mode") == "match":
+                t["anim"]["blur"] = {str(k): v for k, v in blur.items()}
             if t["anim"].get("mode") == "static":
                 t["anim"].pop("frames", None)
         # a designed card's picture moves like the card's biggest line (the logo itself), not like the
@@ -481,10 +514,10 @@ def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None, shift
     ss = meta["ss"]; ax, ay = meta["anchor"]; tx, ty = meta["target"]
     Hm = motion.homography(anim, f, part) if mode == "match" else None
     if Hm is not None and part is None:
-        # the full fit is trusted while it agrees with the measured size; in fast zoom blur it can
-        # wander (stretched, sheared) - then the plain move and size are used
-        kh = float(np.sqrt(abs(np.linalg.det(np.asarray(Hm, np.float64)[:2, :2]))))
-        if abs(kh - sc) > 0.15 * max(sc, 1e-3):
+        # the full fit is trusted unless it stretches the title much more one way than the other
+        # (in fast zoom blur it can wander off) - then the plain move and size are used
+        sv = np.linalg.svd(np.asarray(Hm, np.float64)[:2, :2], compute_uv=False)
+        if sv[1] <= 1e-6 or sv[0] / sv[1] > 1.35:
             Hm = None
     if Hm is not None:
         A0 = np.array([[1 / ss, 0, tx - ax / ss], [0, 1 / ss, ty - ay / ss], [0, 0, 1]], np.float64)
@@ -497,6 +530,14 @@ def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None, shift
         M = np.float32([[k, 0, tx + dx - ax * k], [0, k, ty + dy - ay * k]])
         out = cv2.warpAffine(layer_rgba, M, (W, H), flags=cv2.INTER_AREA if k < 1 else cv2.INTER_LINEAR,
                              borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+    bl = (anim.get("blur") or {}).get(str(f))
+    if bl:
+        a = out[..., 3]
+        ys, xs = np.nonzero(a > 0.002)
+        if len(xs):
+            p = int(bl * 3) + 2
+            y0, y1, x0, x1 = max(0, ys.min() - p), min(H, ys.max() + p + 1), max(0, xs.min() - p), min(W, xs.max() + p + 1)
+            out[y0:y1, x0:x1] = cv2.GaussianBlur(out[y0:y1, x0:x1], (0, 0), float(bl))
     out, matted = motion.apply_maps(out, proj, tid, anim, f, W, H, shift) if (proj and tid) else (out, False)
     if not matted:
         if al <= 0.001:
