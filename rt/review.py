@@ -22,8 +22,10 @@ line boxed in yellow. Decide what it is:
   clothing, packaging, graffiti - unless the shot is clearly about reading it.
 - "dialogue": burned-in subtitles of the spoken dialogue.
 - "noise": not real text (patterns, drawings or textures read as letters).
-Also give "text": the correct reading of the line (fix OCR mistakes and missing spaces), same language.
-Return ONLY JSON: {"items": [{"id": "...", "kind": "...", "text": "...", "why": "few words"}]}"""
+Also give "text": the correct reading of the line (fix OCR mistakes and missing spaces), same language,
+and for titles "styled": true when the lettering is a designed logo or display art (painted, 3D, textured,
+decorated, custom letters) that a plain font would not match; false for ordinary typeset text.
+Return ONLY JSON: {"items": [{"id": "...", "kind": "...", "text": "...", "styled": false, "why": "few words"}]}"""
 
 
 def _jpg(img, w):
@@ -104,6 +106,7 @@ def classify(proj, api_key, model="", only=None, progress=None, log=print):
             t["ocr_src"] = t.get("ocr_src", t["src"]); t["src"] = it["text"].strip()
         if kind == "title":
             t["translate"] = True; t.pop("auto_reason", None)
+            t["styled"] = bool(it.get("styled"))
             if t.get("kind") == "sub":
                 t["kind"] = "text"; t.pop("mode", None)
         elif kind == "dialogue":

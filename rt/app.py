@@ -623,6 +623,50 @@ def job_review():
     log("Claude מיין: " + (", ".join(f"{names[k]} {v}" for k, v in cnt.items()) or "אין מה לבדוק"))
 
 
+def job_design(gids=None):
+    """Claude designs styled cards like a graphic designer (font, layout, colour, texture, depth,
+    decorations). gids: the cards to design; None = every styled card that has Hebrew and no design yet."""
+    from . import design, render
+    s = settings()
+    if not s.get("api_key"):
+        raise RuntimeError("אין מפתח API בהגדרות")
+    args = STATE.get("args") or {}
+    if gids is None and args.get("gid"):
+        gids = [args["gid"]]
+    T = vio.load_json(P("titles.json"))
+    if gids is None:
+        gids = []
+        for t in T["titles"]:
+            if t.get("styled") and t.get("translate", True) and t.get("he") and not t.get("design") \
+                    and not t.get("design_member") and t["group"] not in gids:
+                gids.append(t["group"])
+    if not gids:
+        log("אין כותרות מעוצבות שמחכות לעיצוב.")
+        return
+    done = set()
+    for k, g in enumerate(gids):
+        STATE.update(stage=f"Claude מעצב כמו מעצב גרפי ({k + 1} מתוך {len(gids)})")
+        RANGE[:] = [k / len(gids), (k + 1) / len(gids)]
+        spec, rel, lines, box = design.design_card(STATE["proj"], g, s["api_key"], log=log, progress=prog)
+        with LOCK:
+            design.apply(STATE["proj"], lines, spec, rel, box)
+        done.update(t["id"] for t in lines)
+    RANGE[:] = [0.0, 1.0]
+    if os.path.exists(P("layers", "meta.json")):
+        render.build_layers(STATE["proj"], only=done)
+    log(f"עוצבו {len(gids)} כרטיסים. אפשר לראות בתצוגה \"תוצאה\" ולבנות.")
+
+
+def undo_design(tid):
+    T = vio.load_json(P("titles.json"))
+    for t in T["titles"]:
+        if t["id"] == tid:
+            t.pop("design", None); t["layer"] = {"type": "text"}
+        elif t.get("design_member") == tid:
+            t.pop("design_member", None); t.pop("mode", None)
+    vio.save_json(P("titles.json"), T)
+
+
 def auto_parts(opts=None):
     """What "all in one click" will do for the open project (the dialog shows the same list)."""
     s = settings(); opts = opts or {}
@@ -636,6 +680,7 @@ def auto_parts(opts=None):
             parts.append(("analyze", "ניתוח הכותרות", 0.35))
         if key:
             parts.append(("translate_titles", "תרגום הכותרות", 0.05))
+            parts.append(("design", "עיצוב כותרות מעוצבות ולוגואים (Claude)", 0.06))
     if want_d and vio.load_json(P("project.json")).get("info", {}).get("has_audio", True):
         if not D:
             parts.append(("transcribe", "תמלול הדיאלוג", 0.25))
@@ -705,7 +750,7 @@ def job_queue():
     log("התור הסתיים.")
 
 
-JOBS = {"auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
+JOBS = {"design": job_design, "auto": job_auto, "queue": job_queue, "review": job_review, "playable": job_playable, "analyze": job_analyze, "update": job_update, "build": job_build, "export": job_export,
         "transcribe": job_transcribe, "overlay": job_overlay, "fonts": job_fonts, "fontmatch": job_fontmatch, "srt": job_srt,
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
@@ -1325,6 +1370,13 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"parts": []})
             return self._send(200, {"parts": [n for _, n, _ in auto_parts(b.get("opts") or {})],
                                     "key": bool(settings().get("api_key"))})
+        if u.path == "/api/undo_design":
+            with LOCK:
+                undo_design(b["id"])
+            from . import render
+            if os.path.exists(P("layers", "meta.json")):
+                render.build_layers(STATE["proj"])
+            return self._send(200, {"ok": True})
         if u.path == "/api/range":
             if not STATE["proj"]:
                 return self._send(400, {"error": "no project"})
@@ -1409,7 +1461,7 @@ class H(BaseHTTPRequestHandler):
             if STATE["running"]:
                 return self._send(200, {"started": False})
             STATE["args"] = b.get("args") or {}
-            if b["job"] in ("translate_titles", "translate_dialog", "review") and not settings().get("api_key"):
+            if b["job"] in ("translate_titles", "translate_dialog", "review", "design") and not settings().get("api_key"):
                 return self._send(200, {"started": False, "need": "api_key"})
             return self._send(200, {"started": start(b["job"])})
         if u.path == "/api/update/check":

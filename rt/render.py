@@ -322,7 +322,7 @@ def build_layers(proj, only=None):
             img = Image.open(os.path.join(proj, lay["path"])).convert("RGBA")
             bb = img.getbbox() or (0, 0, img.width, img.height)
             img = img.crop(bb)
-            rb = t.get("ref_box", t["box"])
+            rb = lay.get("box") or t.get("ref_box", t["box"])      # a designed card covers the whole card
             tw = max(8.0, (rb[2] - rb[0]) * t.get("style", {}).get("size_ratio", 1.0))
             ss = img.width / tw
             anc = (img.width / 2, img.height / 2); ink = (0, 0, img.width, img.height)
@@ -332,7 +332,7 @@ def build_layers(proj, only=None):
         img.save(p)
         # target anchor in frame coords: source box centre (or aligned edge)
         bx = t["box"]; st = t.get("style", {})
-        rb = t.get("ref_box", bx)
+        rb = lay.get("box") or t.get("ref_box", bx)
         cy = (rb[1] + rb[3]) / 2 + st.get("nudge_y", 0)
         al = st.get("align", "center")
         iw = (ink[2] - ink[0]) / ss

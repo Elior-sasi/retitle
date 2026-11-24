@@ -653,7 +653,11 @@ function inspTitle(box){const t=mt(S.sel.id),d=dt(S.sel.id);if(!t||!d)return;con
   box.append(group('גופן ומראה',true,
     prop('גופן','i-font',el('span',{class:'v'},fs)),
     el('div',{class:'prop'},el('span',{class:'pl',text:''}),el('span',{class:'v row2'},
-      el('button',{class:'mini',id:'b-fm',text:'מצא גופן דומה',disabled:S.running,onclick:()=>findFont(t.id,false)}))),
+      el('button',{class:'mini',id:'b-fm',text:'מצא גופן דומה',disabled:S.running,onclick:()=>findFont(t.id,false)}),
+      d.design?el('button',{class:'mini',text:'בטל עיצוב - חזור לטקסט',onclick:async()=>{await api('/api/undo_design',{id:t.id});await reloadData(false);renderAll();say('חזר לטקסט רגיל')}})
+        :el('button',{class:'mini',text:'עצב עם Claude כמו מעצב',title:'לוגו או כותרת מעוצבת: גופן, צבע, מרקם, עומק וקישוטים כמו במקור',disabled:S.running||!t.he,
+          onclick:()=>{if(!t.he)return say('קודם צריך עברית');run('design',{gid:d.group})}}))),
+    d.design?el('p',{class:'note',text:'הכרטיס עוצב על ידי Claude ומוצג כתמונה. כל שורות הכרטיס בתוכו.'}):null,
     fmPanel(t,d),
     (d.font_top&&d.font_top.length>1&&!(S.fm&&S.fm[t.id]))?el('div',{class:'prop'},el('span',{class:'pl',text:d.font_auto&&!(d.style_locked||[]).includes('font')?'נבחר אוטומטית. עוד מתאימים':'מתאימים למקור'}),
       el('span',{class:'v row2'},...d.font_top.filter(([n])=>n!==curF).slice(0,4).map(([n,w])=>el('button',{class:'mini',dir:'ltr',text:n,style:`font-family:${face(n)}`,'aria-label':'החלף לגופן '+n,
@@ -853,8 +857,8 @@ function gotoEdge(which){if(!S.sel)return say('לא נבחר פריט');const it
 function step(dir){const L=items();if(!L.length)return;let i=S.sel?L.findIndex(x=>x.k===S.sel.k&&x.id===S.sel.id):-1;i=clamp(i+dir,0,L.length-1);select(L[i].k,L[i].id,true)}
 
 // ================================================================ jobs / status
-const JOBN={auto:'הכול אוטומטית',queue:'תור עבודה',review:'מיון עם Claude',playable:'הכנת וידאו לניגון',fontmatch:'חיפוש גופן דומה',fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
-async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay','fonts','translate_titles','translate_dialog','review'].includes(job))await flush();const r=await api('/api/run',{job,args});
+const JOBN={design:'עיצוב עם Claude',auto:'הכול אוטומטית',queue:'תור עבודה',review:'מיון עם Claude',playable:'הכנת וידאו לניגון',fontmatch:'חיפוש גופן דומה',fonts:'התאמת גופנים',overlay:'ייצוא כותרות בלבד',update:'עדכון',analyze:'ניתוח כותרות',build:'בניית תצוגה',export:'ייצוא',transcribe:'תמלול',srt:'יצירת SRT',translate_titles:'תרגום כותרות',translate_dialog:'תרגום כתוביות'};
+async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח');if(['build','export','srt','overlay','fonts','translate_titles','translate_dialog','review','design'].includes(job))await flush();const r=await api('/api/run',{job,args});
   if(r.need==='api_key'){say('לתרגום אוטומטי צריך מפתח של Claude - מכניסים אותו בהעדפות',true);openDlg('#d-settings');setTimeout(()=>{const k=$('#s-key');if(k){k.focus();k.scrollIntoView({block:'center'})}},150);return}
   if(!r.started)return say('פעולה אחרת עדיין רצה',true);wasRunning=true;S.job=job;say(`${JOBN[job]||job} התחיל`)}
 let wasRunning=false;
