@@ -1059,7 +1059,7 @@ def job_agent():
     def part(a, b, name):
         PHASE.update(range=[base[0] + (base[1] - base[0]) * a, base[0] + (base[1] - base[0]) * b], name=name)
         RANGE[:] = [0.0, 1.0]
-        STATE.update(stage=name, step=0, steps=0)
+        STATE.update(stage="", step=0, steps=0)          # the phase name is shown already - no repeat
         prog(0)
 
     def turn(prompt, stage):

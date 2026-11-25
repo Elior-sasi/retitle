@@ -67,13 +67,30 @@ def env():
 
 
 def decompose(proj, log=print, cancel=lambda: False, lang="en"):
-    """rea-video decompose of the project's video into <proj>/rea (once; kept for later runs)."""
+    """rea-video decompose of the project's video into <proj>/rea (once; kept for later runs). With a work range
+    only that stretch is cut out and decomposed (rea/range.json says where it starts, so its times can be
+    mapped back: video time = rea time + start)."""
     out = os.path.join(proj, "rea")
-    if os.path.exists(os.path.join(out, "VIDEO.md")):
+    P = vio.load_json(os.path.join(proj, "project.json"))
+    rng = P.get("range")
+    fps = P["info"]["fps"]
+    want = {"range": rng}
+    if os.path.exists(os.path.join(out, "VIDEO.md")) and vio.load_json(os.path.join(out, "range.json"), {"range": None}) == want:
         return out
     if not ready():
         raise RuntimeError("rea-video עוד לא מותקן")
-    video = vio.load_json(os.path.join(proj, "project.json"))["video"]
+    shutil.rmtree(out, ignore_errors=True)
+    video = P["video"]
+    clip = None
+    if rng:
+        a, b = rng[0] / fps, (rng[1] + 1) / fps
+        clip = os.path.join(proj, "rea_range.mp4")
+        log(f"rea-video יפרק רק את טווח העבודה ({vio.tc(rng[0], fps)} - {vio.tc(rng[1], fps)})")
+        subprocess.run([vio.FFMPEG, "-v", "error", "-y", "-ss", f"{a:.3f}", "-i", video, "-t", f"{b - a:.3f}",
+                        "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
+                        "-c:a", "aac", "-b:a", "192k", clip], check=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        video = clip
     s = vio.load_json(os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), "Retitle", "settings.json"), {})
     ocr = {"eng": "en", "jpn": "ja", "kor": "ko"}.get(s.get("src_lang") or "eng", "en")
     cmd = [exe(), "decompose", video, "-o", out, "--lang", lang, "--ocr-lang", ocr]
@@ -88,6 +105,10 @@ def decompose(proj, log=print, cancel=lambda: False, lang="en"):
             break
     if p.wait() != 0 or not os.path.exists(os.path.join(out, "VIDEO.md")):
         raise RuntimeError("rea-video נכשל: " + "".join(tail)[-300:])
+    want["start_s"] = round(rng[0] / fps, 3) if rng else 0.0
+    vio.save_json(os.path.join(out, "range.json"), want)
+    if clip and os.path.exists(clip):
+        os.remove(clip)
     return out
 
 

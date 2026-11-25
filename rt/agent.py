@@ -37,7 +37,8 @@ paint a mask by hand, measure the source's motion yourself, draw an element. Loo
 project's files you did not make; keep your own files in the agent folder.
 
 rea-video is installed (the `rea-video` command and the rea-video skill): its breakdown of this video is in the
-project's rea folder - start from rea/VIDEO.md and open only what you need (shots with first/last frames, every
+project's rea folder (when the project has a work range only that stretch was decomposed: rea/range.json
+"start_s" is where it starts, so a time in rea + start_s = the time in the video) - start from rea/VIDEO.md and open only what you need (shots with first/last frames, every
 overlay with its timing, style and entrance in video/ and packaging/, element crops, stems). Use rea-video the way
 you would in a chat: `rea-video tiles` to look closely at a stretch, `rea-video review` to check shots by eye.
 
