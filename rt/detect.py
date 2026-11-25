@@ -1,5 +1,5 @@
 """Pass 2: OCR the sampled frames, link detections into on-screen text events."""
-import os, glob, subprocess, csv, io, re, unicodedata
+import os, glob, subprocess, csv, io, re, unicodedata, shutil
 from difflib import SequenceMatcher
 from multiprocessing import Pool
 import cv2, numpy as np
@@ -211,6 +211,53 @@ def _live(proj, f, words):
     live.show(proj, f"מחפש טקסט - פריים {fr}" + (f" - נמצא: {' '.join(w['text'] for w in words)[:40]}" if words else ""), img, width=960)
 
 
+class _Found:
+    """While the analysis runs: the texts found so far, for the provisional list in the app
+    (live/found.json + a small picture each). Duplicates of the same text are counted, not repeated;
+    the final list after the analysis replaces it."""
+    def __init__(self, proj, W):
+        import time
+        self.d = os.path.join(proj, "live", "found")
+        shutil.rmtree(self.d, ignore_errors=True)
+        os.makedirs(self.d, exist_ok=True)
+        self.proj, self.W, self.items, self.t, self.time = proj, W, {}, 0.0, time.time
+
+    def add(self, f, words):
+        fr = int(os.path.basename(f)[:-4])
+        img = None
+        for ln in _lines(words):
+            key = norm(ln["text"])
+            if len(key) < 2:
+                continue
+            it = self.items.get(key)
+            if it:
+                it["n"] += 1; it["last"] = max(it["last"], fr); it["first"] = min(it["first"], fr)
+                continue
+            if len(self.items) >= 400:
+                continue
+            k = len(self.items)
+            if img is None:
+                img = cv2.imread(f)
+            if img is not None:
+                sh = img.shape[1] / max(1.0, self.W)
+                x0, y0, x1, y1 = (int(v * sh) for v in ln["box"])
+                pad = max(4, (y1 - y0) // 3)
+                crop = img[max(0, y0 - pad):y1 + pad, max(0, x0 - pad):x1 + pad]
+                if crop.size:
+                    if crop.shape[1] > 320:
+                        crop = cv2.resize(crop, (320, max(1, int(crop.shape[0] * 320 / crop.shape[1]))), interpolation=cv2.INTER_AREA)
+                    cv2.imwrite(os.path.join(self.d, f"{k}.jpg"), crop, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            self.items[key] = {"k": k, "text": ln["text"], "first": fr, "last": fr, "n": 1}
+        self.flush()
+
+    def flush(self, force=False):
+        if not force and self.time() - self.t < 2:
+            return
+        self.t = self.time()
+        L = sorted(self.items.values(), key=lambda x: x["first"])
+        vio.save_json(os.path.join(self.proj, "live", "found.json"), {"items": L, "t": self.t})
+
+
 def run(proj, langs="eng", workers=None, scale=None, progress=None, rng=None):
     P = vio.load_json(os.path.join(proj, "project.json"))
     S = vio.load_json(os.path.join(proj, "shots.json"))
@@ -226,6 +273,7 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None, rng=None):
     workers = workers or (2 if gpu else max(1, min(4, (os.cpu_count() or 2) - 1)))
     print("OCR:", "graphics card (DirectML)" if gpu else "CPU", workers, "processes")
     res = {}
+    found = _Found(proj, W)
     with Pool(workers) as pool:
         for k, (f, r) in enumerate(pool.imap_unordered(_ocr, [(f, langs, scale) for f in files], chunksize=4)):
             res[f] = r
@@ -233,6 +281,9 @@ def run(proj, langs="eng", workers=None, scale=None, progress=None, rng=None):
                 progress(k / max(1, len(files)))
             if r or k % 8 == 0:
                 _live(proj, f, r)
+            if r:
+                found.add(f, r)
+    found.flush(force=True)
     every = S["every"]
     order = sorted(set(S.get("samples") or []) | {int(os.path.basename(f)[:-4]) for f in files})
     sidx = {fr: k for k, fr in enumerate(order)}

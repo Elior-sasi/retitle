@@ -177,6 +177,8 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 .wrange{position:absolute;top:0;background:rgba(255,209,102,.10);border-inline:2px solid #ffd166;pointer-events:none;z-index:1}
 .wrange-r{position:absolute;top:0;height:30px;background:rgba(255,209,102,.45);pointer-events:none}
 .opts{border:1px solid #3a3a44;border-radius:6px;padding:8px 12px;margin:0 0 10px}.opts legend{padding:0 6px}
+.item.prov{opacity:.75;display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid #333}.item.prov img{width:120px;max-height:60px;object-fit:contain;background:#111;border-radius:3px}
+.pvt{font-size:1.05em;color:#ddd;text-align:right}.pvm{color:#aaa;font-size:.9em}
 .trv{list-style:none;margin:0;padding:0;max-height:62vh;overflow:auto}.trv li{display:grid;grid-template-columns:160px 1fr;gap:6px 12px;padding:10px 4px;border-bottom:1px solid #3a3a44;align-items:center}
 .trv img{grid-row:span 3;width:160px;border-radius:4px;background:#111}.trv .src{direction:ltr;text-align:right;font-size:1.05em;color:#ddd}.trv .src small{color:#aaa;margin-inline-start:8px}
 .trv input[type=text]{font-size:1.25em;padding:6px 8px;direction:rtl;width:100%;box-sizing:border-box}.trv input[type=text]:disabled{opacity:.5}
@@ -468,7 +470,8 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
 <dialog id="d-qa" aria-labelledby="dq-h"><h2 class="dh" id="dq-h">בדיקת QA</h2><div class="db"><p class="note" id="qa-sum" style="padding:0 0 6px" role="status"></p><table class="kt qa"><tbody id="qa-list"></tbody></table></div><div class="df"><button class="qbtn" id="qa-re">בדוק שוב</button><button class="cta" data-close>סגור</button></div></dialog>
 <dialog id="d-auto" aria-labelledby="da-h"><h2 class="dh" id="da-h">הכול אוטומטית</h2><div class="db">
 <fieldset class="opts"><legend>מה לעשות</legend><label class="chk"><input type="checkbox" id="au-t" checked> כותרות על המסך (ניתוח, תרגום, בנייה וייצוא)</label>
-<label class="chk"><input type="checkbox" id="au-d" checked> דיאלוג (תמלול, תרגום וקובץ SRT)</label></fieldset>
+<label class="chk"><input type="checkbox" id="au-d" checked> דיאלוג (תמלול, תרגום וקובץ SRT)</label>
+<label for="au-yt">קישור ליוטיוב (לא חובה) - אם יש לסרטון כתוביות ביוטיוב, הן ייכנסו במקום התמלול</label><input type="url" id="au-yt" dir="ltr" style="width:100%" placeholder="https://www.youtube.com/watch?v=..."></fieldset>
 <fieldset class="opts"><legend>רמת העבודה</legend>
 <label class="chk"><input type="radio" name="au-m" id="au-m1" value="auto" checked> רגיל - המנוע עושה את רוב העבודה, Claude רק בכמה נקודות (מהיר, מעט מהמכסה)</label>
 <label class="chk"><input type="radio" name="au-m" id="au-m2" value="agent"> מלא - Claude Code עובר על כל כרטיס כמו בצ'אט, מתקן ובודק שוב (הכי טוב, איטי, יותר מהמכסה של המנוי)</label>
@@ -613,6 +616,12 @@ function renderList(){const ul=$('#items');ul.replaceChildren();
   $('#bulk').style.display=(S.tab==='t'&&S.model.titles.length>1)?'flex':'none';
   const q=S.filter.trim().toLowerCase();const dirty=new Set((S.data&&S.data.dirty)||[]);
   if(S.tab==='t'){
+    if(!S.model.titles.length&&S.found&&S.found.length){      // provisional: what the analysis found so far
+      ul.append(el('li',{class:'note',role:'status',style:'padding:10px 14px',text:`זוהו עד עכשיו ${S.found.length} טקסטים - רשימה זמנית, הרשימה הסופית תופיע בסוף הניתוח`}));
+      for(const it of S.found)ul.append(el('li',{class:'item prov','aria-label':`זוהה, עדיין לא סופי: ${it.text}, ${tc(it.first)}`},
+        el('img',{src:`/api/file?k=${fileKey()}&p=live/found/${it.k}.jpg`,alt:'',loading:'lazy'}),
+        el('div',{class:'pv'},el('div',{class:'pvt',lang:'en',dir:'ltr',text:it.text}),el('div',{class:'pvm',text:`${tc(it.first)} · זוהה - עדיין לא סופי`+(it.n>1?` · ב-${it.n} דגימות`:'')}))));
+      return}
     if(!S.model.titles.length){ul.append(el('li',{class:'note',style:'padding:14px;text-align:center',text:S.proj?'אין עדיין כותרות. "נתח כותרות" מזהה את הטקסט על המסך.':'ייבא וידאו כדי להתחיל.'}));return}
     const item=t=>{const d=dt(t.id)||{};const chips=[];
       if(d.kind==='sub')chips.push(el('span',{class:'chip off',text:'כתובית צרובה'}));
@@ -905,17 +914,19 @@ async function planAuto(){if(autoMode()==='agent'){const s=await api('/api/setti
   const ap=AGENT_PLAN.slice();if($('#au-rv').checked)ap.splice(2,0,'עצירה: אתה מאשר ומתקן את התרגום');
   $('#au-plan').replaceChildren(...ap.map(n=>el('li',{text:n})));
   $('#au-note').textContent=s.claude_code_found?'':'המצב המלא צריך את Claude Code במחשב, מחובר למנוי (העדפות > Claude).';$('#au-go').disabled=!s.claude_code_found;return}
-  const r=await api('/api/auto_plan',{opts:{titles:$('#au-t').checked,dialog:$('#au-d').checked}});
+  const r=await api('/api/auto_plan',{opts:{titles:$('#au-t').checked,dialog:$('#au-d').checked,youtube:$('#au-d').checked?$('#au-yt').value.trim():''}});
   const pp=(r.parts||[]).slice();if($('#au-rv').checked){const k=pp.findIndex(n=>/עיצוב|בנייה/.test(n));if(k>=0)pp.splice(k,0,'עצירה: אתה מאשר ומתקן את התרגום')}
   $('#au-plan').replaceChildren(...pp.map(n=>el('li',{text:n})));
   $('#au-note').textContent=r.key?'':'אין מפתח Claude בהעדפות - התרגום האוטומטי ידולג (אפשר להוסיף מפתח בהעדפות).';
   $('#au-go').disabled=!(r.parts||[]).length}
-function openAuto(){if(!S.proj)return say('פתח וידאו קודם');openDlg('#d-auto');planAuto()}
+function openAuto(){if(!S.proj)return say('פתח וידאו קודם');$('#au-yt').value=(S.data&&S.data.project&&S.data.project.youtube)||'';openDlg('#d-auto');planAuto()}
 $('#au-t').onchange=planAuto;$('#au-d').onchange=planAuto;$('#au-m1').onchange=planAuto;$('#au-m2').onchange=planAuto;$('#au-cancel').onclick=()=>$('#d-auto').close();
 $('#au-go').onclick=()=>{$('#d-auto').close();const rv=$('#au-rv').checked;try{localStorage.setItem('rt_review',rv?'1':'0')}catch(e){}
-  if(autoMode()==='agent')run('agent',{dialog:$('#au-d').checked,rounds:10,review:rv});else run('auto',{titles:$('#au-t').checked,dialog:$('#au-d').checked,review:rv})};
+  const yt=$('#au-d').checked?$('#au-yt').value.trim():'';
+  if(autoMode()==='agent')run('agent',{dialog:$('#au-d').checked,rounds:10,review:rv,youtube:yt});else run('auto',{titles:$('#au-t').checked,dialog:$('#au-d').checked,review:rv,youtube:yt})};
 try{$('#au-rv').checked=localStorage.getItem('rt_review')==='1'}catch(e){}
 $('#au-rv').onchange=()=>planAuto();
+$('#au-yt').onchange=()=>planAuto();
 async function openReview(){const r=await api('/api/tr_review',{act:'get'});const L=$('#trv-list');
   L.replaceChildren(...r.cards.map(c=>{const inp=el('input',{type:'text',value:c.he,'aria-label':'עברית עבור '+c.src,lang:'he',dir:'rtl'});inp.dataset.id=c.id;
     const ck=el('input',{type:'checkbox'});ck.checked=c.translate;ck.dataset.id=c.id;inp.disabled=!c.translate;ck.onchange=()=>{inp.disabled=!ck.checked};
@@ -975,6 +986,8 @@ async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח
 let wasRunning=false;
 async function poll(){let s;try{s=await api('/api/status?f='+(document.hasFocus()&&!document.hidden?1:0))}catch(e){return}
   $('#logbox').textContent=s.log.join('\n');S.running=s.running;
+  if(s.found_t&&s.found_t!==S.foundT){S.foundT=s.found_t;api(`/api/file?k=${fileKey()}&p=live/found.json&t=${s.found_t}`).then(r=>{S.found=(r&&r.items)||[];if(!S.model.titles.length&&S.tab==='t')renderList()}).catch(()=>{})}
+  if(!s.running&&S.found){S.found=null;S.foundT=0}
   if(s.waiting==='tr_review'&&!$('#d-trv').open&&!S.trvOpening){S.trvOpening=true;openReview().finally(()=>S.trvOpening=false)}
   if(!s.waiting&&$('#d-trv').open)$('#d-trv').close();
   if(s.proj&&s.proj!==S.proj&&!S.loading){S.loading=true;try{await loadProject(s.proj)}finally{S.loading=false}}S.proj=s.proj;

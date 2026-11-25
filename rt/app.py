@@ -952,7 +952,9 @@ def auto_parts(opts=None):
         if key:
             parts.append(("design", "עיצוב כותרות מעוצבות ולוגואים (Claude)", 0.06))
     if want_d and vio.load_json(P("project.json")).get("info", {}).get("has_audio", True):
-        if not D:
+        if (opts.get("youtube") or "").strip():
+            parts.append(("youtube", "כתוביות מיוטיוב", 0.03))
+        elif not D:
             parts.append(("transcribe", "תמלול הדיאלוג", 0.25))
         if tkey:
             parts.append(("translate_dialog", "תרגום הכתוביות", 0.05))
@@ -1040,6 +1042,16 @@ def job_auto(opts=None):
             elif job == "fonts":
                 fonts_auto(only={t["id"] for t in vio.load_json(P("titles.json"))["titles"]
                                  if t.get("translate", True) and t.get("font_auto") and not t.get("font_by_claude")})
+            elif job == "youtube":
+                yargs = {"url": opts.get("youtube"), "auto": True, "translate": False}
+                keep = STATE.get("args"); STATE["args"] = yargs
+                try:
+                    job_youtube()
+                except Exception as e:                # no captions / blocked: fall back to transcription
+                    log(f"כתוביות מיוטיוב לא הצליחו ({e}) - מתמלל במקום")
+                    job_transcribe()
+                finally:
+                    STATE["args"] = keep
             elif job == "translate_dialog":
                 job_translate("dialog")
             else:
@@ -1219,7 +1231,17 @@ Lines:
         if opts.get("dialog", True) and vio.load_json(P("project.json")).get("info", {}).get("has_audio", True):
             D = vio.load_json(P("dialog.json"), {"cues": []})["cues"]
             part(0.42, 0.47, "תמלול ותרגום הדיאלוג")
-            if not D:
+            yt = ((STATE.get("args") or {}).get("youtube") or "").strip()
+            if yt:
+                keep = STATE.get("args"); STATE["args"] = {"url": yt, "auto": True, "translate": False}
+                try:
+                    job_youtube()
+                except Exception as e:
+                    log(f"כתוביות מיוטיוב לא הצליחו ({e}) - מתמלל במקום")
+                    job_transcribe()
+                finally:
+                    STATE["args"] = keep
+            elif not D:
                 job_transcribe()
             if s.get("api_key"):
                 try:
@@ -1883,7 +1905,9 @@ class H(BaseHTTPRequestHandler):
                                     "stage": STATE["stage"], "step": STATE["step"], "steps": STATE["steps"], "phase": PHASE["name"],
                                     "queue": QUEUE,
                                     "elapsed": round((time.time() if STATE["running"] else STATE.get("t1", time.time())) - STATE["t0"], 1) if STATE["t0"] else 0,
-                                    "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"], "claude_turn": bool(PHASE.get("claude_turn")), "waiting": WAIT["kind"] if PHASE.get("waiting") else None,
+                                    "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"], "claude_turn": bool(PHASE.get("claude_turn")), "found_t": (os.path.getmtime(P("live", "found.json")) if STATE["running"] and STATE.get("proj")
+                         and os.path.exists(P("live", "found.json"))
+                         and os.path.getmtime(P("live", "found.json")) >= (STATE["t0"] or 0) else 0), "waiting": WAIT["kind"] if PHASE.get("waiting") else None,
                                     "live": _live()})
         if u.path == "/api/live":
             f = os.path.join(STATE["proj"] or "", "live", "live.jpg")
