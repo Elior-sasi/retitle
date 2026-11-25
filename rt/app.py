@@ -216,6 +216,15 @@ def needs_extract(T):
             return True                               # moved to a new card (e.g. by Claude): its frames are elsewhere
         if t["in"] < t["cache"][0] or t["out"] > t["cache"][1]:
             return True
+    if STATE.get("proj"):
+        from .extract import cache_size_ok
+        seen = set()
+        for t in T["titles"]:
+            g = t.get("group")
+            if t.get("translate", True) and t.get("region") and g not in seen:
+                seen.add(g)
+                if not cache_size_ok(P("cache", g), t["region"]):
+                    return True                       # the region changed after its frames were saved
     return False
 
 

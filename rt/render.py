@@ -43,7 +43,8 @@ def _match(Dt, Dr, sc0):
         if tw < 8 or th < 8 or tw >= Dt.shape[1] or th >= Dt.shape[0]:
             continue
         tp = cv2.resize(Dr, (tw, th), interpolation=cv2.INTER_AREA)
-        r = cv2.matchTemplate(Dt, tp, cv2.TM_CCORR_NORMED)
+        # zero-mean correlation: plain correlation of all-positive maps favours smaller and smaller templates
+        r = cv2.matchTemplate(Dt, tp, cv2.TM_CCOEFF_NORMED)
         _, v, _, loc = cv2.minMaxLoc(r)
         if best is None or v > best[3]:
             best = (sc, loc[0] + tw / 2, loc[1] + th / 2, v)
@@ -92,6 +93,51 @@ def _fix_jumps(fr, h):
             fr[ks[i]] = [round(2 * b[j] - c[j], 4) for j in range(3)] + [a[3]]
 
 
+def _steady_ref(proj, gid, lines, t):
+    """The reference frame must show the title at its steady size. A logo detected on a frame of its fly-in or
+    zoom-through (bigger, cut off, blurred) made every other frame look 'smaller' and the Hebrew was drawn huge.
+    With SAM 2's exact masks of the card: if the reference frame's mask is far from the card's usual size, move
+    the reference to a steady frame and carry the boxes over (same scale and shift as the mask's box)."""
+    d = os.path.join(proj, "sam", gid)
+    if not os.path.isdir(d) or t.get("ref_fixed"):
+        return
+    box = {}
+    for f in range(t["in"], t["out"] + 1):
+        m = cv2.imread(os.path.join(d, f"{f:06d}.png"), 0)
+        if m is None:
+            continue
+        ys, xs = np.where(m > 127)
+        if len(xs) > 50:
+            ox, oy = t["region"][0], t["region"][1]          # the masks are crops of the card's region
+            box[f] = (float(xs.min() + ox), float(ys.min() + oy), float(xs.max() + ox), float(ys.max() + oy), float(len(xs)))
+    if len(box) < 8 or t["ref"] not in box:
+        return
+    areas = np.array([v[4] for v in box.values()])
+    med = float(np.median(areas))
+    if abs(box[t["ref"]][4] / med - 1) < 0.35:
+        return
+    steady = [f for f, v in box.items() if abs(v[4] / med - 1) < 0.15]
+    if not steady:
+        return
+    mid = (t["in"] + t["out"]) / 2
+    new = min(steady, key=lambda f: abs(f - mid))
+    a, b = box[t["ref"]], box[new]
+    k = float(np.sqrt(((b[2] - b[0]) * (b[3] - b[1])) / max(1.0, (a[2] - a[0]) * (a[3] - a[1]))))
+    move = lambda r: [int(round(b[0] + (r[0] - a[0]) * k)), int(round(b[1] + (r[1] - a[1]) * k)),
+                      int(round(b[0] + (r[2] - a[0]) * k)), int(round(b[1] + (r[3] - a[1]) * k))]
+    for x in lines:                                    # the whole card shares one reference
+        if x.get("ref") != t["ref"] or x.get("ref_fixed"):
+            continue
+        x["ref_box"] = move(x["ref_box"])
+        lay = x.get("layer") or {}
+        if lay.get("box"):
+            lay["box"] = move(lay["box"])
+        x["ref"] = new
+        x["ref_fixed"] = True
+        x.pop("anim", None) if not (x.get("anim") or {}).get("locked") else None
+    print(f"reference frame of {gid} moved to {new} (steady size)")
+
+
 def track(proj, only=None):
     """Per frame [dx, dy, scale, alpha] of the source text relative to its reference frame.
     Text map = |source - cleaned| clipped (shape, independent of background brightness);
@@ -105,6 +151,7 @@ def track(proj, only=None):
                 continue
             if t.get("anim", {}).get("locked"):
                 continue
+            _steady_ref(proj, gid, lines, t)
             reg = t["region"]; bx = t["ref_box"]; h = bx[3] - bx[1]
             pad = int(h * 0.4)
             rx0, ry0 = max(0, bx[0] - reg[0] - pad), max(0, bx[1] - reg[1] - pad)
@@ -156,10 +203,20 @@ def track(proj, only=None):
                 sc0 = float(np.clip(np.sqrt(m / max(1, m_ref)), 0.1, 5)) if al > 0.3 else prev_sc
                 # the mass guess counts everything in the search window (a bigger line next to this one
                 # too), so the steady guesses - the last frame's scale and no change - also compete
-                bm = _match(Sn, Rn, sc0)
+                if f == t["ref"]:
+                    fr[f] = [0, 0, 1.0, 1.0]                  # the reference frame is the reference, by definition
+                    prev_sc = 1.0
+                    continue
+                # the steady guesses first; the mass guess only when it is clearly better (a bigger line in the
+                # window, e.g. the rest of a logo, inflates it - it had won even on the reference frame itself,
+                # and the whole logo was then drawn zoomed and shifted)
+                bm = None
                 for c in (_match(Sn, Rn, prev_sc), _match(Sn, Rn, 1.0)):
-                    if c and (bm is None or c[3] > bm[3] + 0.08):     # clearly better only
+                    if c and (bm is None or c[3] > bm[3]):
                         bm = c
+                c = _match(Sn, Rn, sc0)
+                if c and (bm is None or c[3] > bm[3] + 0.08):
+                    bm = c
                 if bm is None:
                     fr[f] = [0, 0, 1, round(al, 3)]; continue
                 sc, cx, cy, v = bm
@@ -205,6 +262,16 @@ def track(proj, only=None):
                 for k in ("matte", "gain", "parts", "mref"):
                     a.pop(k, None)
                 a["from"] = big["id"]
+                # the big line's H takes ITS reference frame to each frame; the picture is laid out at THIS
+                # card's reference frame - rebase, or the logo is drawn with the wrong zoom and offset
+                # (a reference frame near the end of a zoom made the logo huge and cut off)
+                from .motion import _nearest
+                if a.get("H") and t.get("ref") != big.get("ref"):
+                    b = _nearest(a["H"], t["ref"])
+                    if b is not None:
+                        Bi = np.linalg.inv(np.array(b, np.float64).reshape(3, 3))
+                        a["H"] = {k: [round(float(x), 6) for x in (np.array(v, np.float64).reshape(3, 3) @ Bi).ravel()]
+                                  for k, v in a["H"].items()}
                 t["anim"] = a
         # how blurred the original is in each frame (a logo that flies in out of focus): measured on the
         # original itself, the letters' edge sharpness against the reference frame

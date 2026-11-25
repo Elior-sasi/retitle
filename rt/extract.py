@@ -23,9 +23,19 @@ def _region(lines, W, H):
     return [int(max(0, x0 - m)), int(max(0, y0 - m)), int(min(W, x1 + m)), int(min(H, y1 + m))]
 
 
+def cache_size_ok(d, reg):
+    """The saved frames really are crops of this region (Claude or the user may have changed the region
+    without the frames being taken again - then erasing and placing use the wrong picture)."""
+    f = sorted(glob.glob(os.path.join(d, "*.png")))
+    if not f:
+        return False
+    im = cv2.imread(f[0], cv2.IMREAD_UNCHANGED)
+    return im is not None and im.shape[1] == reg[2] - reg[0] and im.shape[0] == reg[3] - reg[1]
+
+
 def _cache_ok(lines, lo, hi, reg, d):
     """The card's saved frames still cover what it needs, at the same area."""
-    if not os.path.isdir(d):
+    if not os.path.isdir(d) or not cache_size_ok(d, reg):
         return False
     for t in lines:
         if not t.get("translate", True):

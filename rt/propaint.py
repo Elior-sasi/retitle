@@ -16,7 +16,7 @@ CODE_ZIP = f"https://github.com/sczhou/ProPainter/archive/{COMMIT}.zip"
 WEIGHTS = "https://github.com/sczhou/ProPainter/releases/download/v0.1.0/"
 WEIGHT_FILES = ("ProPainter.pth", "recurrent_flow_completion.pth", "raft-things.pth")
 UV_ZIP = "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip"
-PKGS = ["einops", "imageio", "imageio-ffmpeg", "scipy", "av", "opencv-python-headless", "numpy<2.3", "Pillow"]
+PKGS = ["requests", "einops", "imageio", "imageio-ffmpeg", "scipy", "av", "opencv-python-headless", "numpy<2.3", "Pillow"]
 STATE = {"state": "idle", "progress": None, "what": "", "error": ""}
 _T = [None]
 
@@ -199,6 +199,15 @@ def card(proj, gid, log=print, progress=None):
         if p.wait() == 0:
             break
         msg = "".join(tail)
+        import re as _re
+        miss = _re.search(r"No module named '([\w\-]+)", msg)
+        if miss and attempt < 2:                      # a library went missing (another install changed the venv)
+            mod = {"cv2": "opencv-python-headless", "PIL": "Pillow", "skimage": "scikit-image"}.get(miss.group(1), miss.group(1))
+            log(f"ProPainter: חסרה הספרייה {mod} - מתקין אותה ומנסה שוב")
+            uv = shutil.which("uv") or os.path.join(home(), "uv.exe" if os.name == "nt" else "uv")
+            subprocess.run([uv, "pip", "install", "--python", _py(), mod], capture_output=True,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            continue
         if "out of memory" in msg.lower() and attempt < 2:
             r *= 0.75; sub = str(max(8, int(sub) * 2 // 3))
             log("ProPainter: חסר זיכרון בכרטיס המסך - מנסה שוב בגודל קטן יותר")
