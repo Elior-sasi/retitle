@@ -30,8 +30,39 @@ def _latest(token):
     raise RuntimeError("; ".join(errs))
 
 
+def _size(url):
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Retitle"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return int(r.headers.get("Content-Length") or 0)
+
+
+def _latest_web():
+    """The same answer without GitHub's API (it allows 60 questions an hour per address, and the
+    model downloads ask it too): the latest release page's address names the tag, the files have fixed names."""
+    with urllib.request.urlopen(urllib.request.Request(f"https://github.com/{PUBLIC}/releases/latest",
+                                                       headers={"User-Agent": "Retitle"}), timeout=60) as r:
+        tag = r.geturl().rstrip("/").split("/")[-1]
+    if not tag.startswith("build-"):
+        raise RuntimeError("no release tag")
+    assets = []
+    for name in ("Retitle-Setup.exe", "Retitle-win64.zip"):
+        u = f"https://github.com/{PUBLIC}/releases/download/{tag}/{name}"
+        try:
+            sz = _size(u)
+        except Exception:
+            sz = 0                              # unknown: the download just reads to the end
+        assets.append({"name": name, "url": u, "browser_download_url": u, "size": sz})
+    return {"tag_name": tag, "assets": assets, "name": tag}
+
+
 def check(token=""):
-    rel = _latest(token)
+    try:
+        rel = _latest(token)
+    except Exception as e:
+        try:
+            rel = _latest_web()
+        except Exception:
+            raise e
     tag = rel.get("tag_name", "")
     n = int(tag.split("-")[-1]) if tag.split("-")[-1].isdigit() else 0
     assets = rel.get("assets", [])
