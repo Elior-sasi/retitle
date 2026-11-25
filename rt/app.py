@@ -8,8 +8,28 @@ from . import vio
 UI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), "Retitle")
 CFG = os.path.join(CFG_DIR, "settings.json")
-STATE = {"proj": None, "job": None, "log": [], "running": False, "error": None, "progress": None,
-         "stage": "", "step": 0, "steps": 0, "t0": 0, "cancel": False, "cancelled": False}
+QUIET = threading.local()        # a side task running next to the main one: no stage/progress of its own
+
+
+class _State(dict):
+    """STATE that ignores the progress card fields when written from a quiet side thread (the dialogue
+    translated next to the erasing), so the card keeps showing the main work."""
+    _CARD = {"stage", "step", "steps", "progress"}
+
+    def update(self, *a, **k):
+        d = dict(*a, **k)
+        if getattr(QUIET, "on", False):
+            d = {x: v for x, v in d.items() if x not in self._CARD}
+        super().update(d)
+
+    def __setitem__(self, k, v):
+        if getattr(QUIET, "on", False) and k in self._CARD:
+            return
+        super().__setitem__(k, v)
+
+
+STATE = _State({"proj": None, "job": None, "log": [], "running": False, "error": None, "progress": None,
+                "stage": "", "step": 0, "steps": 0, "t0": 0, "cancel": False, "cancelled": False})
 RANGE = [0.0, 1.0]               # current stage's share of the whole job
 PHASE = {"range": [0.0, 1.0], "name": ""}   # one-click / queue: the current part of the run
 WINDOW = None
@@ -137,7 +157,7 @@ def prog(x):
     """Stage progress 0..1, mapped onto the whole job. Also the cancel point for long loops."""
     if STATE["cancel"]:
         raise Cancelled()
-    if x is None:
+    if x is None or getattr(QUIET, "on", False):
         return
     a, b = RANGE
     v = a + (b - a) * min(1.0, max(0.0, float(x)))
@@ -498,7 +518,7 @@ def fonts_auto(only=None):
 def job_fontmatch():
     """Find a similar font for one title (button in the inspector). Result: fontmatch/<id>.json."""
     from . import fontmatch
-    a = STATE.get("args") or {}
+    a = args if args is not None else (STATE.get("args") or {})
     tid = a.get("id")
     T = vio.load_json(P("titles.json"))
     t = next((x for x in T["titles"] if x["id"] == tid), None)
@@ -582,7 +602,7 @@ def job_transcribe():
     log("התמלול מוכן. בחר כתובית והקלד עברית.")
 
 
-def job_youtube():
+def job_youtube(args=None):
     """Dialogue from the video's own captions on YouTube (youtube-transcript-api, MIT) instead of Whisper: the
     studio's subtitles are exact text (names, terms) even where music covers the voice. Generated (automatic)
     captions only when asked - they are speech recognition too."""
@@ -1047,11 +1067,83 @@ def job_auto(opts=None):
     already done are skipped; a missing Claude key just skips the translation steps."""
     opts = opts if opts is not None else (STATE.get("args") or {})
     parts = auto_parts(opts)
+    # The dialogue mostly waits for the internet (YouTube, Claude): it runs next to the local work instead of
+    # after it. Transcription uses the CPU/graphics card, so it stays in line - first, so that its translation
+    # can then run beside everything else. The SRT is written before the export (which packs it).
+    names = [j for j, *_ in parts]
+    side_jobs, side_at = [], None
+    if "translate_dialog" in names or "youtube" in names:
+        if "youtube" in names:
+            side_jobs = [p for p in parts if p[0] in ("youtube", "translate_dialog", "srt")]
+            side_at = -1                              # from the start
+        elif "transcribe" in names:
+            tr = [p for p in parts if p[0] == "transcribe"]
+            side_jobs = [p for p in parts if p[0] in ("translate_dialog", "srt")]
+            parts = tr + [p for p in parts if p[0] != "transcribe"]
+            side_at = "transcribe"
+        else:
+            side_jobs = [p for p in parts if p[0] in ("translate_dialog", "srt")]
+            side_at = -1
+        parts = [p for p in parts if p not in side_jobs]
+    side = {"t": None, "err": None}
+
+    def side_run():
+        QUIET.on = True
+        try:
+            for job, name, _ in side_jobs:
+                if STATE["cancel"]:
+                    return
+                log(f"במקביל: {name}")
+                try:
+                    if job == "youtube":
+                        try:
+                            job_youtube({"url": opts.get("youtube"), "auto": True, "translate": False})
+                        except Exception as e:
+                            log(f"כתוביות מיוטיוב לא הצליחו ({e}) - יתומלל בהמשך")
+                            side["transcribe"] = True
+                            return
+                    elif job == "translate_dialog":
+                        job_translate("dialog")
+                    else:
+                        JOBS[job]()
+                except Cancelled:
+                    return
+                except Exception as e:
+                    side["err"] = e
+                    log(f"במקביל: {name} לא הצליח ({e})")
+                    if job == "translate_dialog":
+                        continue                      # the SRT is still written, untranslated lines and all
+        finally:
+            QUIET.on = False
+
+    def side_start():
+        if side_jobs and side["t"] is None:
+            side["t"] = threading.Thread(target=side_run, daemon=True)
+            side["t"].start()
+
+    def side_join():
+        if side["t"] is not None:
+            if side["t"].is_alive():
+                STATE.update(stage="מחכה לסיום התרגום של הדיאלוג (רץ במקביל)")
+            while side["t"].is_alive():
+                side["t"].join(0.5)
+                prog(None)
+            side["t"] = None
+            if side.pop("transcribe", False):         # YouTube failed: the old way, in line
+                job_transcribe()
+                if settings().get("api_key") or settings().get("translate_engine") == "dicta":
+                    job_translate("dialog")
+                JOBS["srt"]()
+
+    if side_at == -1:
+        side_start()
     tot = sum(w for *_, w in parts) or 1
     acc = 0.0
     base = PHASE["range"][:]
     paused = not opts.get("review")
     for i, (job, name, w) in enumerate(parts):
+        if job == "export":
+            side_join()
         if not paused and job in ("design", "export"):
             paused = True
             wait_review()
@@ -1098,6 +1190,9 @@ def job_auto(opts=None):
             PHASE["no_claude"] = True
             log(f"דילגתי על השלבים של Claude: {e}")
         acc += w
+        if side_at == job:
+            side_start()
+    side_join()
     if not settings().get("api_key"):
         log("בלי מפתח Claude דילגתי על התרגום האוטומטי - אפשר לכתוב עברית ולייצא שוב")
     log("הכול הסתיים.")
