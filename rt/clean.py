@@ -866,4 +866,12 @@ def run(proj, only=None, progress=None):
         if t["id"] in built:
             t["built"] = built[t["id"]]
             t["built_region"] = built.get(t["id"] + "#reg")
+    # cards that are no longer translated: their old cleaned frames go, and they stop counting as "to build"
+    for gid, lines in groups(T2).items():
+        if only and gid not in only:
+            continue
+        if not any(t.get("translate", True) for t in lines) and any((t.get("built") or [0, 0, False])[2] for t in lines):
+            shutil.rmtree(os.path.join(proj, "clean", gid), ignore_errors=True)
+            for t in lines:
+                t["built"] = [t["in"], t["out"], False]
     vio.save_json(os.path.join(proj, "titles.json"), T2)

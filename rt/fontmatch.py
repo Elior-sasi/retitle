@@ -629,6 +629,91 @@ def apply_look(t, look):
             pass
 
 
+def check_looks(proj, T, log=print):
+    """Once per title (look_checked): projects whose looks were picked before this check existed. Titles
+    with the same picked look are checked together on the biggest one, so a style stays one style."""
+    sets = {}
+    for t in T["titles"]:
+        st = t.get("style") or {}
+        if not t.get("translate", True) or t.get("look_checked") or not t.get("font_by_claude"):
+            continue
+        if not (st.get("extrude") or st.get("outline") or st.get("shadow")):
+            t["look_checked"] = True
+            continue
+        key = json.dumps([st.get("extrude"), st.get("outline"), (st.get("shadow") or {}).get("color")], sort_keys=True)
+        sets.setdefault(key, []).append(t)
+    n = 0
+    for ls in sets.values():
+        big = max(ls, key=lambda x: (x["ref_box"][3] - x["ref_box"][1]) * (x["ref_box"][2] - x["ref_box"][0]))
+        dr = verify_look(proj, big)
+        for t in ls:
+            lock = set(t.get("style_locked", []))
+            for k in dr:
+                if k in lock:
+                    continue
+                if k == "extrude":
+                    t["style"].pop("extrude", None)
+                else:
+                    t["style"][k] = None
+            t["look_checked"] = True
+        n += len(ls) if dr else 0
+    if n:
+        log(f"הוסרו צד תלת-ממדי, קו מתאר או צל שאין במקור ({n} כותרות)")
+    return n
+
+
+def verify_look(proj, t):
+    """Claude may imagine a 3D side, an outline or a shadow the original does not have (a flat orange tagline
+    got a light grey extrusion). Each is kept only if the original shows it where it would be: the side's
+    colour next to the letters in its direction, the outline's colour around them, a shadow darker than the
+    opposite side. Returns what was dropped."""
+    st = t.get("style") or {}
+    lock = set(t.get("style_locked", []))
+    m = letters(proj, t)
+    crop, _ = crop_of(proj, t)
+    if m is None or crop is None or crop.size == 0:
+        return []
+    lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).astype(np.float32)
+    m = (m > 0).astype(np.uint8)
+    h, w = m.shape
+    near = cv2.dilate(m, np.ones((3, 3), np.uint8), iterations=1)
+
+    def shifted(dx, dy):
+        M = np.float32([[1, 0, dx], [0, 1, dy]])
+        return cv2.warpAffine(m, M, (w, h), flags=cv2.INTER_NEAREST)
+
+    def share(color, zone):
+        if zone.sum() < 20:
+            return None
+        c = cv2.cvtColor(np.uint8([[color]]), cv2.COLOR_BGR2LAB).astype(np.float32)[0, 0]
+        d = np.linalg.norm(lab[zone > 0] - c, axis=1)
+        return float((d < 28).mean())
+    dropped = []
+    ex = st.get("extrude")
+    if ex and "extrude" not in lock:
+        L = max(2.0, ex.get("steps", 1) * max(abs(ex.get("dx", 0)), abs(ex.get("dy", 0))))
+        side = shifted(ex.get("dx", 0) * L, ex.get("dy", 0) * L) & (1 - near)
+        sh = share(ex.get("color") or [0, 0, 0], side)
+        if sh is not None and sh < 0.15:
+            st.pop("extrude", None); dropped.append("extrude")
+    ol = st.get("outline")
+    if ol and "outline" not in lock:
+        ring = cv2.dilate(m, np.ones((3, 3), np.uint8), iterations=max(1, int(ol.get("width") or 1) + 1)) & (1 - m)
+        sh = share(ol.get("color") or [0, 0, 0], ring)
+        if sh is not None and sh < 0.15:
+            st["outline"] = None; dropped.append("outline")
+    sd = st.get("shadow")
+    if sd and "shadow" not in lock and (abs(sd.get("dx", 0)) + abs(sd.get("dy", 0))) >= 1.5:
+        a = shifted(sd["dx"], sd["dy"]) & (1 - near)
+        b = shifted(-sd["dx"], -sd["dy"]) & (1 - near)
+        if a.sum() > 20 and b.sum() > 20:
+            la, lb = float(lab[..., 0][a > 0].mean()), float(lab[..., 0][b > 0].mean())
+            if la > lb - 6:                         # not darker on the shadow's side than on the other
+                st["shadow"] = None; dropped.append("shadow")
+    t["look_checked"] = True
+    return dropped
+
+
 def apply_row(t, row):
     st = t.setdefault("style", {})
     st["font"] = row["font"]
@@ -692,6 +777,22 @@ def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print, o
                 t["font_top"] = [[x["font"], x["weight"], x["wdth"], x.get("diff", "")] for x in r["rows"][:5]]
                 t["font_auto"] = True; t["font_by_claude"] = True
                 done += 1
+            # only what the original really shows: checked on the style's biggest line, dropped for all
+            try:
+                dr = verify_look(proj, big)
+                for t in ls:
+                    for k in dr:
+                        if k in set(t.get("style_locked", [])):
+                            continue
+                        if k == "extrude":
+                            t["style"].pop("extrude", None)
+                        else:
+                            t["style"][k] = None
+                    t["look_checked"] = True
+                if dr:
+                    log(f"הוסר מהעיצוב מה שאין במקור: {', '.join({'extrude': 'צד תלת-ממדי', 'outline': 'קו מתאר', 'shadow': 'צל'}[k] for k in dr)}")
+            except Exception as e:
+                log(f"בדיקת העיצוב מול המקור לא הצליחה ({e.__class__.__name__})")
         todo = [t for t in todo if not t.get("font_by_claude")]
     # without Claude: one font per style (the biggest line of the style decides), never a different font per line
     cl = list(_clusters(todo).values())

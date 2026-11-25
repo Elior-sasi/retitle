@@ -206,7 +206,55 @@ def track(proj, only=None):
                     a.pop(k, None)
                 a["from"] = big["id"]
                 t["anim"] = a
+        # how blurred the original is in each frame (a logo that flies in out of focus): measured on the
+        # original itself, the letters' edge sharpness against the reference frame
+        for t in lines:
+            a = t.get("anim") or {}
+            if a.get("H") and not a.get("blur") and not a.get("locked"):
+                try:
+                    bl = _measure_blur(proj, gid, t)
+                    if bl:
+                        a["blur"] = bl
+                except Exception as e:
+                    print("blur measure failed", t["id"], e)
     vio.save_json(os.path.join(proj, "titles.json"), T)
+
+
+def _measure_blur(proj, gid, t):
+    """{frame: sigma px} where the original's letters are softer than in the reference frame. Edge energy
+    (99th percentile gradient / contrast) inside the title's box as the homography moves it; a ratio r of
+    the reference's sharpness means a blur of about 4.5 * (1/r - 1) px at the frame's scale."""
+    H = t["anim"]["H"]
+    reg = t["region"]; x0, y0, x1, y1 = t.get("ref_box") or t["box"]
+
+    def sharp(f):
+        img = cv2.imread(os.path.join(proj, "cache", gid, f"{int(f):06d}.png"))
+        M = np.array(H.get(str(f)) or [], np.float64)
+        if img is None or M.size != 9:
+            return None, None
+        M = M.reshape(3, 3)
+        pts = cv2.perspectiveTransform(np.float32([[[x0, y0]], [[x1, y0]], [[x1, y1]], [[x0, y1]]]), M).reshape(-1, 2)
+        pts -= (reg[0], reg[1])
+        h, w = img.shape[:2]
+        a, b = np.clip(pts.min(0), 0, [w - 1, h - 1]).astype(int)
+        c, d = np.clip(pts.max(0), 0, [w - 1, h - 1]).astype(int)
+        if c - a < 20 or d - b < 10:
+            return None, None
+        g = cv2.cvtColor(img[b:d, a:c], cv2.COLOR_BGR2GRAY).astype(np.float32)
+        m = np.hypot(cv2.Sobel(g, cv2.CV_32F, 1, 0), cv2.Sobel(g, cv2.CV_32F, 0, 1))
+        return float(np.percentile(m, 99)) / max(1.0, float(g.std())), float(np.sqrt(abs(np.linalg.det(M[:2, :2]))))
+    r0, _ = sharp(t.get("ref", t["in"]))
+    if not r0:
+        return {}
+    out = {}
+    for f in sorted(H, key=int):
+        r, s = sharp(f)
+        if r is None:
+            continue
+        sg = 4.5 * (r0 / max(1e-3, r) - 1) * s
+        if sg > 0.8:
+            out[f] = round(min(12.0, sg), 1)
+    return out
 
 
 # ---------------------------------------------------------------- fonts
@@ -355,6 +403,15 @@ def text_layer(he, st, ss=2):
 def build_layers(proj, only=None):
     """Render each line's Hebrew layer once (supersampled) -> layers/<id>.png + meta."""
     T = vio.load_json(os.path.join(proj, "titles.json"))
+    try:                                   # looks picked before the check against the original existed
+        from . import fontmatch
+        if fontmatch.check_looks(proj, T):
+            vio.save_json(os.path.join(proj, "titles.json"), T)
+            only = None                    # the changed titles need new layers too
+        elif any(t.get("look_checked") for t in T["titles"]):
+            vio.save_json(os.path.join(proj, "titles.json"), T)
+    except Exception as e:
+        print("check_looks", e)
     P = vio.load_json(os.path.join(proj, "project.json"))
     W = P["info"]["width"]
     d = os.path.join(proj, "layers"); os.makedirs(d, exist_ok=True)
@@ -486,6 +543,17 @@ def _ink(img):
         return None
 
 
+def _similar(Hm, target):
+    """The zoom and position of a homography without its stretch: uniform scale sqrt(det), the title's
+    centre mapped where the homography maps it."""
+    A = Hm[:2, :2]
+    s = float(np.sqrt(abs(np.linalg.det(A))))
+    tx, ty = target
+    p = Hm @ np.array([tx, ty, 1.0])
+    px, py = p[0] / p[2], p[1] / p[2]
+    return np.array([[s, 0, px - s * tx], [0, s, py - s * ty], [0, 0, 1]], np.float64)
+
+
 def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None, shift=(0, 0)):
     """Return premultiplied float RGBA full-frame for frame f, or None.
     Motion: full homography of the original when measured (rotation / perspective), else [dx, dy, scale];
@@ -517,8 +585,12 @@ def place(layer_rgba, meta, anim, f, W, H, proj=None, tid=None, part=None, shift
         # the full fit is trusted unless it stretches the title much more one way than the other
         # (in fast zoom blur it can wander off) - then the plain move and size are used
         sv = np.linalg.svd(np.asarray(Hm, np.float64)[:2, :2], compute_uv=False)
-        if sv[1] <= 1e-6 or sv[0] / sv[1] > 1.35:
+        if sv[1] <= 1e-6:
             Hm = None
+        elif sv[0] / sv[1] > 1.35:
+            # still keep its size and place: the same zoom and position without the stretch (a logo that
+            # enters huge and blurred has a wandering shape but a sound scale - the plain match loses both)
+            Hm = _similar(np.asarray(Hm, np.float64), meta["target"])
     if Hm is not None:
         A0 = np.array([[1 / ss, 0, tx - ax / ss], [0, 1 / ss, ty - ay / ss], [0, 0, 1]], np.float64)
         M = Hm @ A0
