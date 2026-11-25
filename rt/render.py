@@ -45,6 +45,7 @@ def _match(Dt, Dr, sc0):
         tp = cv2.resize(Dr, (tw, th), interpolation=cv2.INTER_AREA)
         # zero-mean correlation: plain correlation of all-positive maps favours smaller and smaller templates
         r = cv2.matchTemplate(Dt, tp, cv2.TM_CCOEFF_NORMED)
+        r = np.nan_to_num(r, nan=-1.0, posinf=-1.0, neginf=-1.0)      # a flat template has no zero-mean match
         _, v, _, loc = cv2.minMaxLoc(r)
         if best is None or v > best[3]:
             best = (sc, loc[0] + tw / 2, loc[1] + th / 2, v)

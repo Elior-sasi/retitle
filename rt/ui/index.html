@@ -476,7 +476,7 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
 <label class="chk"><input type="radio" name="au-m" id="au-m1" value="auto" checked> רגיל - המנוע עושה את רוב העבודה, Claude רק בכמה נקודות (מהיר, מעט מהמכסה)</label>
 <label class="chk"><input type="radio" name="au-m" id="au-m2" value="agent"> מלא - Claude Code עובר על כל כרטיס כמו בצ'אט, מתקן ובודק שוב (הכי טוב, איטי, יותר מהמכסה של המנוי)</label>
 <label class="chk"><input type="checkbox" id="au-rv" aria-describedby="au-rv-d"> לעצור לאישור התרגום שלי לפני הגרפיקה</label>
-<p class="note" id="au-rv-d" style="padding:0">אחרי התרגום ייפתח חלון עם כל הכותרות. אפשר לתקן את העברית, ורק אחרי "המשך" מתחילות המחיקה והעיצוב. Claude לא ישנה את מה שאישרת.</p>
+<p class="note" id="au-rv-d" style="padding:0">אחרי התרגום ייפתח חלון עם כל הכותרות. אפשר לתקן את העברית, ורק אחרי "המשך" מתחילות המחיקה והעיצוב. שורות שתיקנת נשארות כמו שכתבת - Claude לא ישנה אותן.</p>
 <p class="note" style="padding:0">במצב המלא Claude ממשיך לבדוק ולתקן עד שהוא מאשר את כל הכרטיסים (לכל היותר 10 סבבים).</p></fieldset>
 <h3 class="sub">הסדר</h3><ol id="au-plan" class="plan"></ol><p class="note" id="au-note" role="status"></p>
 <p class="note">שלבים שכבר בוצעו מדולגים. אפשר לעבוד על דברים אחרים בזמן הריצה, ולבטל בכל רגע.</p></div>
@@ -533,7 +533,7 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
 <table class="cmp"><thead><tr><th scope="col">כתובית</th><th scope="col">זמן</th><th scope="col">חומרה</th><th scope="col">מה הבעיה</th></tr></thead><tbody id="qc-b"></tbody></table></div>
 <div class="df"><button data-close>סגור</button></div></dialog>
 <dialog id="d-trv" aria-labelledby="dtr-h" aria-describedby="dtr-d"><h2 class="dh" id="dtr-h">אישור התרגום</h2><div class="db">
-<p class="note" id="dtr-d">הריצה עצרה לפני המחיקה והעיצוב. תקן את העברית כאן ולחץ "המשך". מה שתאשר כאן סופי - Claude לא ישנה אותו.</p>
+<p class="note" id="dtr-d">הריצה עצרה לפני המחיקה והעיצוב. תקן את העברית כאן ולחץ "המשך". שורות שתשנה נשארות כמו שכתבת - Claude לא ישנה אותן. שורות שלא נגעת בהן נשארות של Claude.</p>
 <ol id="trv-list" class="trv"></ol></div>
 <div class="df"><button type="button" class="qbtn" id="trv-stop">בטל את הריצה</button><button type="button" class="cta" id="trv-go">המשך לגרפיקה</button></div></dialog>
 <dialog id="d-cmp" aria-labelledby="dcm-h"><h2 class="dh" id="dcm-h">השוואת תרגום: Claude מול DictaLM</h2><div class="db">
@@ -617,7 +617,7 @@ function renderList(){const ul=$('#items');ul.replaceChildren();
   const q=S.filter.trim().toLowerCase();const dirty=new Set((S.data&&S.data.dirty)||[]);
   if(S.tab==='t'){
     if(!S.model.titles.length&&S.found&&S.found.length){      // provisional: what the analysis found so far
-      ul.append(el('li',{class:'note',role:'status',style:'padding:10px 14px',text:`זוהו עד עכשיו ${S.found.length} טקסטים - רשימה זמנית, הרשימה הסופית תופיע בסוף הניתוח`}));
+      ul.append(el('li',{class:'note',style:'padding:10px 14px',text:`זוהו עד עכשיו ${S.found.length} טקסטים - רשימה זמנית, הרשימה הסופית תופיע בסוף הניתוח`}));
       for(const it of S.found)ul.append(el('li',{class:'item prov','aria-label':`זוהה, עדיין לא סופי: ${it.text}, ${tc(it.first)}`},
         el('img',{src:`/api/file?k=${fileKey()}&p=live/found/${it.k}.jpg`,alt:'',loading:'lazy'}),
         el('div',{class:'pv'},el('div',{class:'pvt',lang:'en',dir:'ltr',text:it.text}),el('div',{class:'pvm',text:`${tc(it.first)} · זוהה - עדיין לא סופי`+(it.n>1?` · ב-${it.n} דגימות`:'')}))));
@@ -988,6 +988,8 @@ async function poll(){let s;try{s=await api('/api/status?f='+(document.hasFocus(
   $('#logbox').textContent=s.log.join('\n');S.running=s.running;
   if(s.found_t&&s.found_t!==S.foundT){S.foundT=s.found_t;api(`/api/file?k=${fileKey()}&p=live/found.json&t=${s.found_t}`).then(r=>{S.found=(r&&r.items)||[];if(!S.model.titles.length&&S.tab==='t')renderList()}).catch(()=>{})}
   if(!s.running&&S.found){S.found=null;S.foundT=0}
+  // the analysis finished inside a longer run (one-click / full mode): show the real list now, not at the very end
+  if(s.running&&!S.model.titles.length&&s.titles_t&&s.titles_t!==S.titlesT){S.titlesT=s.titles_t;reloadData(false).then(()=>{if(S.model.titles.length){S.found=null;renderAll()}})}
   if(s.waiting==='tr_review'&&!$('#d-trv').open&&!S.trvOpening){S.trvOpening=true;openReview().finally(()=>S.trvOpening=false)}
   if(!s.waiting&&$('#d-trv').open)$('#d-trv').close();
   if(s.proj&&s.proj!==S.proj&&!S.loading){S.loading=true;try{await loadProject(s.proj)}finally{S.loading=false}}S.proj=s.proj;

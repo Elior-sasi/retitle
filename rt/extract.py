@@ -63,6 +63,9 @@ def run(proj, pad=48, progress=None):
         reg = lines[0].get("region") or _region(lines, W, H)
         if any(t.get("logo_full") and not t.get("logo_bg_done") for t in lines):
             reg = _region(lines, W, H)
+        # a region set by hand or by Claude may reach past the picture: the saved crop is then smaller than
+        # the region, and the size check would take the frames again on every build
+        reg = [int(max(0, reg[0])), int(max(0, reg[1])), int(min(W, reg[2])), int(min(H, reg[3]))]
         a = min(min(t.get("in_override", t["sample_in"]), t.get("prev_sample", t["sample_in"] - every)) for t in lines) - 2
         b = max(max(t.get("out_override", t["sample_out"]), t.get("next_sample", t["sample_out"] + every)) for t in lines) + 2
         a, b = max(0, a), min(n - 1, b)

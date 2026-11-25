@@ -223,7 +223,10 @@ def needs_extract(T):
             g = t.get("group")
             if t.get("translate", True) and t.get("region") and g not in seen:
                 seen.add(g)
-                if not cache_size_ok(P("cache", g), t["region"]):
+                inf = vio.load_json(P("project.json"))["info"]
+                r = t["region"]
+                r = [max(0, r[0]), max(0, r[1]), min(inf["width"], r[2]), min(inf["height"], r[3])]
+                if not cache_size_ok(P("cache", g), r):
                     return True                       # the region changed after its frames were saved
     return False
 
@@ -987,7 +990,7 @@ def wait_review():
     """Pause the run until the user approves (and maybe edits) the Hebrew in the approval window.
     Nothing has been erased or designed yet, so nothing is rendered twice."""
     if not review_cards():
-        return
+        return 0
     ev = threading.Event()
     WAIT.update(ev=ev, kind="tr_review")
     STATE.update(stage="מחכה לאישור התרגום שלך")
@@ -1006,7 +1009,9 @@ def wait_review():
     finally:
         PHASE["waiting"] = False
         WAIT.update(ev=None, kind=None)
-    log("התרגום אושר - ממשיך לגרפיקה")
+    n = sum(1 for t in vio.load_json(P("titles.json"))["titles"] if t.get("he_locked"))
+    log("התרגום אושר - ממשיך לגרפיקה" + (f" ({n} שורות שתיקנת נעולות)" if n else ""))
+    return n
 
 
 def job_auto(opts=None):
@@ -1215,8 +1220,7 @@ the whole video's titles together, so a sentence across cards reads as one.
 {("Name glossary (always wins):" + chr(10) + gl) if gl else ""}
 Lines:
 {agent.card_list(proj)}""", "Claude עובר על כל הטקסטים שזוהו ומתרגם")
-        if (STATE.get("args") or {}).get("review"):
-            wait_review()
+        if (STATE.get("args") or {}).get("review") and wait_review():
             turn("The user approved the translation in the app. Lines with he_locked=true are final: "
                  "never change their he or translate again. Reply with your JSON only.", "Claude מקבל את התרגום שאישרת")
         fl = {t["id"] for t in vio.load_json(P("titles.json"))["titles"]
@@ -1908,6 +1912,7 @@ class H(BaseHTTPRequestHandler):
                                     "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"], "claude_turn": bool(PHASE.get("claude_turn")), "found_t": (os.path.getmtime(P("live", "found.json")) if STATE["running"] and STATE.get("proj")
                          and os.path.exists(P("live", "found.json"))
                          and os.path.getmtime(P("live", "found.json")) >= (STATE["t0"] or 0) else 0), "waiting": WAIT["kind"] if PHASE.get("waiting") else None,
+                                    "titles_t": (os.path.getmtime(P("titles.json")) if STATE.get("proj") and os.path.exists(P("titles.json")) else 0),
                                     "live": _live()})
         if u.path == "/api/live":
             f = os.path.join(STATE["proj"] or "", "live", "live.jpg")
@@ -2166,12 +2171,13 @@ class H(BaseHTTPRequestHandler):
                     if t["id"] not in ids:
                         continue
                     e = ed.get(t["id"]) or {}
-                    if "he" in e:
-                        t["he"] = str(e["he"]).strip()
-                    if "translate" in e:
-                        t["translate"] = bool(e["translate"])
-                    if t.get("translate", True) and not t.get("he"):
-                        continue                       # an empty line stays open for Claude
+                    changed = False
+                    if "he" in e and str(e["he"]).strip() != (t.get("he") or "").strip():
+                        t["he"] = str(e["he"]).strip(); changed = True
+                    if "translate" in e and bool(e["translate"]) != bool(t.get("translate", True)):
+                        t["translate"] = bool(e["translate"]); changed = True
+                    if not changed or (t.get("translate", True) and not t.get("he")):
+                        continue        # untouched lines stay Claude's (it may still improve them); empty stays open
                     t["he_locked"] = True
                     t["user_set"] = True
                 vio.save_json(P("titles.json"), T)

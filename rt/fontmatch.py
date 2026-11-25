@@ -69,12 +69,12 @@ def crop_of(proj, t, pad=6):
     return img[a:y1 - oy + pad, b:x1 - ox + pad], (ox + b, oy + a)
 
 
-def letters(proj, t):
+def letters(proj, t, pad=6):
     """Clean letter mask: fill colour (fill_lab, tol) only - no grow, no shadow - inside the word boxes."""
     mp = t.get("mask") or {}
     if "fill_lab" not in mp:
         return None
-    crop, (cx, cy) = crop_of(proj, t)
+    crop, (cx, cy) = crop_of(proj, t, pad)
     if crop is None or crop.size == 0:
         return None
     lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).astype(np.float32)
@@ -629,11 +629,81 @@ def apply_look(t, look):
             pass
 
 
+def _fill_holes(m):
+    h, w = m.shape
+    ff = np.zeros((h + 2, w + 2), np.uint8)
+    inv = (1 - m).astype(np.uint8).copy()
+    cv2.floodFill(inv, ff, (0, 0), 0)                  # what is left of the inverse are the enclosed holes
+    return (m | inv).astype(np.uint8)
+
+
+def body(proj, t, pad=6):
+    """(letter body mask, crop). The fill-colour mask is the whole letter for one-colour titles. A two-tone
+    letter (orange at the top fading to white, halftone dots - a cartoon's name cards) matches its fill colour
+    only in part: there the white inner line encloses the rest of the letter, so the enclosed holes are filled
+    in. Without this the checks read such a letter as plain white and dropped its real gradient and outline."""
+    m = letters(proj, t, pad)
+    c, _ = crop_of(proj, t, pad)
+    if m is None or c is None or c.size == 0:
+        return None, None
+    m = (m > 0).astype(np.uint8)
+    ys = np.nonzero(m)[0]
+    if ys.size < 60:
+        return m, c
+    y0, y1 = ys.min(), ys.max(); hh = max(1, y1 - y0)
+    top = m[y0:y0 + hh // 4 + 1].mean(); bot = m[y1 - hh // 4:y1 + 1].mean()
+    f = _fill_holes(m)
+    ratio = f.sum() / max(1, m.sum())
+    # sparse at the top and solid at the bottom, or big enclosed parts (more than letter counters):
+    # a two-tone letter. Over 3.5x it is rather a frame around background.
+    if ((bot > 0 and top / bot < 0.5) or ratio > 1.35) and ratio < 3.5:
+        return f, c
+    return m, c
+
+
+def measure_outline(proj, t):
+    """The original's outline around the letter body: {'width', 'color'} or None. Bands of growing distance
+    from the letters; the outline is the run of bands of one colour that differs from the letters' edge."""
+    b, c = body(proj, t, pad=40)
+    if b is None or b.sum() < 200:
+        return None
+    lab = cv2.cvtColor(c, cv2.COLOR_BGR2LAB).astype(np.float32)
+    k = np.ones((3, 3), np.uint8)
+    prev = b.copy(); cols = []
+    edge = lab[(b > 0) & (cv2.erode(b, k, iterations=2) == 0)]
+    if edge.size == 0:
+        return None
+    e = np.median(edge, 0)
+    for w in range(1, 31):
+        cur = cv2.dilate(prev, k)
+        band = (cur > 0) & (prev == 0)
+        prev = cur
+        if band.sum() < 30:
+            break
+        px = lab[band]
+        med = np.median(px, 0)
+        same = float((np.linalg.norm(px - med, axis=1) < 22).mean())
+        cols.append((med, same))
+    if len(cols) < 3:
+        return None
+    ref, rs = cols[1]                                  # band 1 is the anti-aliased edge: judge by band 2
+    if rs < 0.55 or np.linalg.norm(ref - e) < 25:
+        return None                                    # no clear ring of its own colour around the letters
+    width = 1
+    for med, same in cols[1:]:
+        if np.linalg.norm(med - ref) > 22 or same < 0.45:
+            break
+        width += 1
+    if width < 2:
+        return None
+    bgr = cv2.cvtColor(np.uint8([[ref]]), cv2.COLOR_LAB2BGR)[0, 0]
+    return {"width": int(width), "color": [int(v) for v in bgr]}
+
+
 def measured_colours(proj, t):
     """The letters' own colour in the original: median of the top, middle and bottom quarter of the letters
     (eroded, so no edge or outline pixel counts). None when the letters cannot be found."""
-    m = letters(proj, t)
-    c, _ = crop_of(proj, t)
+    m, c = body(proj, t)
     if m is None or c is None or c.size == 0:
         return None
     er = cv2.erode((m > 0).astype(np.uint8), np.ones((3, 3), np.uint8))
@@ -685,7 +755,37 @@ def check_looks(proj, T, log=print):
     sets = {}
     nc = 0
     for t in T["titles"]:
-        if t.get("translate", True) and t.get("font_by_claude") and not t.get("colour_checked"):
+        if t.get("translate", True) and t.get("kind") != "sub" and not t.get("look_v2"):
+            # the first checks read two-tone letters as plain (fill-colour pixels only): check again
+            t.pop("colour_checked", None); t.pop("look_checked", None)
+            st = t.get("style") or {}
+            if not st.get("outline") and "outline" not in set(t.get("style_locked", [])):
+                try:
+                    o = measure_outline(proj, t)
+                    if o:
+                        st["outline"] = o; nc += 1
+                except Exception:
+                    pass
+            t["look_v2"] = True
+    # a title the font pass never saw (Claude made it a title later, or split/merged it) would fall back to
+    # the default font next to cards in the show's chosen font: give it the font of the nearest-looking card
+    have = [t for t in T["titles"] if t.get("translate", True) and t.get("kind") != "sub" and (t.get("style") or {}).get("font")]
+    for t in T["titles"]:
+        st = t.get("style") or {}
+        if (not t.get("translate", True) or t.get("kind") == "sub" or st.get("font") or not have
+                or "font" in set(t.get("style_locked", [])) or (t.get("layer") or {}).get("type") not in (None, "text")):
+            continue
+        def dist(o):
+            a, b = (t.get("mask") or {}).get("fill_lab"), (o.get("mask") or {}).get("fill_lab")
+            d = float(np.linalg.norm(np.array(a) - np.array(b))) if a and b else 60.0
+            return d + 0.3 * abs(float(st.get("letter_h") or 0) - float((o.get("style") or {}).get("letter_h") or 0))
+        o = min(have, key=dist)
+        for k in ("font", "weight", "wdth"):
+            if (o.get("style") or {}).get(k):
+                st[k] = o["style"][k]
+        t["style"] = st; t["font_from"] = o["id"]; nc += 1
+    for t in T["titles"]:
+        if t.get("translate", True) and t.get("kind") != "sub" and not t.get("colour_checked"):
             try:
                 nc += bool(fix_colours(proj, t))
             except Exception:
@@ -693,7 +793,7 @@ def check_looks(proj, T, log=print):
             t["colour_checked"] = True
     for t in T["titles"]:
         st = t.get("style") or {}
-        if not t.get("translate", True) or t.get("look_checked") or not t.get("font_by_claude"):
+        if not t.get("translate", True) or t.get("look_checked") or t.get("kind") == "sub":
             continue
         if not (st.get("extrude") or st.get("outline") or st.get("shadow")):
             t["look_checked"] = True
@@ -729,8 +829,7 @@ def verify_look(proj, t):
     opposite side. Returns what was dropped."""
     st = t.get("style") or {}
     lock = set(t.get("style_locked", []))
-    m = letters(proj, t)
-    crop, _ = crop_of(proj, t)
+    m, crop = body(proj, t, pad=40)                   # room around the letters for outline, side and shadow
     if m is None or crop is None or crop.size == 0:
         return []
     lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).astype(np.float32)
@@ -761,7 +860,11 @@ def verify_look(proj, t):
         ring = cv2.dilate(m, np.ones((3, 3), np.uint8), iterations=max(1, int(ol.get("width") or 1) + 1)) & (1 - m)
         sh = share(ol.get("color") or [0, 0, 0], ring)
         if sh is not None and sh < 0.15:
-            st["outline"] = None; dropped.append("outline")
+            real = measure_outline(proj, t)
+            if real:
+                st["outline"] = real                  # there is an outline, in another colour/width
+            else:
+                st["outline"] = None; dropped.append("outline")
     sd = st.get("shadow")
     if sd and "shadow" not in lock and (abs(sd.get("dx", 0)) + abs(sd.get("dy", 0))) >= 1.5:
         a = shifted(sd["dx"], sd["dy"]) & (1 - near)
@@ -770,6 +873,17 @@ def verify_look(proj, t):
             la, lb = float(lab[..., 0][a > 0].mean()), float(lab[..., 0][b > 0].mean())
             if la > lb - 6:                         # not darker on the shadow's side than on the other
                 st["shadow"] = None; dropped.append("shadow")
+            else:
+                # its colour from the original (beyond the outline), not a guess
+                ow = int(((st.get("outline") or {}).get("width") or 0)) + 2
+                inner = cv2.dilate(m, np.ones((3, 3), np.uint8), iterations=ow)
+                zone = cv2.warpAffine(inner, np.float32([[1, 0, sd["dx"]], [0, 1, sd["dy"]]]), (w, h),
+                                      flags=cv2.INTER_NEAREST) & (1 - inner)
+                if zone.sum() > 40:
+                    px = crop[zone > 0]
+                    med = np.median(px, 0)
+                    if float(np.mean(np.linalg.norm(px - med, axis=1) < 40)) > 0.5:
+                        sd["color"] = [int(v) for v in med]
     t["look_checked"] = True
     return dropped
 
