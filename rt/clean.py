@@ -46,7 +46,8 @@ def line_mask(img, t, reg, f=None, proj=None, gid=None):
             # far from the logo only big pieces count (the logo zoomed or moved); small specks
             # there are the scene's own colours (sparks, reflections) and stay
             lh = int(max(8, (t.get("style") or {}).get("letter_h") or h))
-            near = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (lh | 1, lh | 1))) > 0
+            # = dilate by a lh-wide disc, but O(pixels): a big disc on a full frame took ~0.4 s per call
+            near = cv2.distanceTransform((m == 0).astype(np.uint8), cv2.DIST_L2, 5) <= (lh | 1) // 2
             far = ((w > 0) & ~near).astype(np.uint8)
             if far.any():
                 n_, lab_, st_, _ = cv2.connectedComponentsWithStats(far)

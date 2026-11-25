@@ -254,9 +254,16 @@ def settle(proj, before, log=print):
 def card_list(proj):
     """A short text table of the cards (the model reads the full JSON itself when it needs to)."""
     T = vio.load_json(os.path.join(proj, "titles.json"))
-    fps = vio.load_json(os.path.join(proj, "project.json"))["info"]["fps"]
+    PJ = vio.load_json(os.path.join(proj, "project.json"))
+    fps = PJ["info"]["fps"]
+    rng = PJ.get("range")
     rows = []
+    if rng:
+        rows.append(f"Work range: frames {rng[0]}-{rng[1]} ({vio.tc(rng[0], fps)} to {vio.tc(rng[1], fps)}). "
+                    "Only cards inside it are listed: work only on these. Never touch or extend cards outside the range.")
     for t in T["titles"]:
+        if rng and (t.get("out", 0) < rng[0] or t.get("in", 0) > rng[1]):
+            continue
         rows.append(f'{t["id"]} card {t["group"]} {vio.tc(t.get("in", 0), fps)} translate={t.get("translate", True)}'
                     f'{" styled" if t.get("styled") else ""} src="{t.get("src", "")}" he="{t.get("he", "")}"')
     return "\n".join(rows)
