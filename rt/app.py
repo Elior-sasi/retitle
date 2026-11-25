@@ -212,6 +212,8 @@ def needs_extract(T):
             continue
         if "mask" not in t or "cache" not in t or t.get("reextract"):
             return True
+        if STATE.get("proj") and t.get("group") and not os.path.isdir(P("cache", t["group"])):
+            return True                               # moved to a new card (e.g. by Claude): its frames are elsewhere
         if t["in"] < t["cache"][0] or t["out"] > t["cache"][1]:
             return True
     return False

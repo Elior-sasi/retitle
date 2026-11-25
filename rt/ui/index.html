@@ -499,7 +499,7 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
   <div class="df"><button class="qbtn" id="fp-import">ייבוא גופן (TTF / OTF)...</button><button class="qbtn" id="fp-refresh">רענן רשימה</button><button class="cta" data-close>סגור</button></div></dialog>
 <dialog id="d-recent" aria-labelledby="dr-h"><h2 class="dh" id="dr-h">פרויקטים אחרונים</h2><div class="db" id="recent2"></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
 <dialog id="d-relink" aria-labelledby="dk-h"><h2 class="dh" id="dk-h">הווידאו לא נמצא</h2><div class="db"><p id="relink-msg"></p><p class="note">אם הזזת או שינית את שם הווידאו, אתר אותו והפרויקט ימשיך מאיפה שעצרת.</p></div><div class="df"><button class="qbtn" data-close>לא עכשיו</button><button class="cta" id="relink-go">אתר את הווידאו...</button></div></dialog>
-<dialog id="d-log" aria-labelledby="dl-h"><h2 class="dh" id="dl-h">יומן פעולות</h2><div class="db"><div id="logbox" tabindex="0"></div></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
+<dialog id="d-log" aria-labelledby="dl-h"><h2 class="dh" id="dl-h">יומן פעולות</h2><div class="db"><div id="logbox" tabindex="0"></div></div><div class="df"><button type="button" id="log-copy">העתק</button><button class="cta" data-close>סגור</button></div></dialog>
 <dialog id="d-yt" aria-labelledby="dyt-h"><h2 class="dh" id="dyt-h">כתוביות מיוטיוב</h2><div class="db">
 <p class="note" style="padding:0">אם הסרטון קיים ביוטיוב עם כתוביות רשמיות, הטקסט המדויק שלהן ייכנס במקום התמלול. כתוביות הדיאלוג הקיימות יוחלפו.</p>
 <label for="yt-u">קישור לסרטון ביוטיוב</label><input type="url" id="yt-u" dir="ltr" style="width:100%" placeholder="https://www.youtube.com/watch?v=...">
@@ -1368,7 +1368,8 @@ addEventListener('pagehide',()=>{if(!S.proj||!Object.keys(saveTimers).length)ret
 function bulk(v){beginEdit();S.model.titles.forEach(t=>t.translate=v);endEdit();api('/api/titles',{titles:S.model.titles.map(t=>({id:t.id,translate:v}))}).then(()=>reloadData(true)).then(()=>{renderAll();refreshFrame()});say(v?'כל הכותרות יוחלפו':'אף כותרת לא תוחלף')}
 $('#w-open').onclick=openVideo;
 $('#q-auto').onclick=()=>openAuto();$('#q-analyze').onclick=()=>run('analyze');$('#q-trans').onclick=()=>run('transcribe');$('#q-build').onclick=()=>run('build');$('#q-export').onclick=()=>run('export');
-$('#b-all').onclick=()=>bulk(true);$('#b-none').onclick=()=>bulk(false);$('#b-log').onclick=()=>openDlg('#d-log');
+$('#b-all').onclick=()=>bulk(true);$('#b-none').onclick=()=>bulk(false);$('#log-copy').onclick=async()=>{const t=$('#logbox').innerText;try{await navigator.clipboard.writeText(t)}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove()}say('היומן הועתק')};
+$('#b-log').onclick=()=>openDlg('#d-log');
 $('#tab-t').onclick=()=>{S.tab='t';renderList()};$('#tab-c').onclick=()=>{S.tab='c';renderList()};
 $('#h-proj').addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();S.tab=S.tab==='t'?'c':'t';renderList();$(S.tab==='t'?'#tab-t':'#tab-c').focus()}});
 $('#search').addEventListener('input',e=>{S.filter=e.target.value;renderList()});
