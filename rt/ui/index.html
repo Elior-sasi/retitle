@@ -177,6 +177,9 @@ text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 2px #000,-2px -2px 2px #000,2px -2
 .wrange{position:absolute;top:0;background:rgba(255,209,102,.10);border-inline:2px solid #ffd166;pointer-events:none;z-index:1}
 .wrange-r{position:absolute;top:0;height:30px;background:rgba(255,209,102,.45);pointer-events:none}
 .opts{border:1px solid #3a3a44;border-radius:6px;padding:8px 12px;margin:0 0 10px}.opts legend{padding:0 6px}
+.trv{list-style:none;margin:0;padding:0;max-height:62vh;overflow:auto}.trv li{display:grid;grid-template-columns:160px 1fr;gap:6px 12px;padding:10px 4px;border-bottom:1px solid #3a3a44;align-items:center}
+.trv img{grid-row:span 3;width:160px;border-radius:4px;background:#111}.trv .src{direction:ltr;text-align:right;font-size:1.05em;color:#ddd}.trv .src small{color:#aaa;margin-inline-start:8px}
+.trv input[type=text]{font-size:1.25em;padding:6px 8px;direction:rtl;width:100%;box-sizing:border-box}.trv input[type=text]:disabled{opacity:.5}
 .opts .chk{display:block;margin:6px 0;font-size:1.05em}.plan{margin:4px 0 8px;padding-inline-start:1.5em;line-height:1.8}
 .qlist{list-style:none;margin:8px 0;padding:0;max-height:40vh;overflow:auto}.qlist li{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #2c2c34}
 .qlist .qn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.qst{border:1px solid currentColor;border-radius:4px;padding:1px 8px;font-size:.9em}
@@ -469,6 +472,8 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
 <fieldset class="opts"><legend>רמת העבודה</legend>
 <label class="chk"><input type="radio" name="au-m" id="au-m1" value="auto" checked> רגיל - המנוע עושה את רוב העבודה, Claude רק בכמה נקודות (מהיר, מעט מהמכסה)</label>
 <label class="chk"><input type="radio" name="au-m" id="au-m2" value="agent"> מלא - Claude Code עובר על כל כרטיס כמו בצ'אט, מתקן ובודק שוב (הכי טוב, איטי, יותר מהמכסה של המנוי)</label>
+<label class="chk"><input type="checkbox" id="au-rv" aria-describedby="au-rv-d"> לעצור לאישור התרגום שלי לפני הגרפיקה</label>
+<p class="note" id="au-rv-d" style="padding:0">אחרי התרגום ייפתח חלון עם כל הכותרות. אפשר לתקן את העברית, ורק אחרי "המשך" מתחילות המחיקה והעיצוב. Claude לא ישנה את מה שאישרת.</p>
 <p class="note" style="padding:0">במצב המלא Claude ממשיך לבדוק ולתקן עד שהוא מאשר את כל הכרטיסים (לכל היותר 10 סבבים).</p></fieldset>
 <h3 class="sub">הסדר</h3><ol id="au-plan" class="plan"></ol><p class="note" id="au-note" role="status"></p>
 <p class="note">שלבים שכבר בוצעו מדולגים. אפשר לעבוד על דברים אחרים בזמן הריצה, ולבטל בכל רגע.</p></div>
@@ -523,6 +528,10 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
 <p id="qc-sum" role="status" aria-live="polite"></p>
 <table class="cmp"><thead><tr><th scope="col">כתובית</th><th scope="col">זמן</th><th scope="col">חומרה</th><th scope="col">מה הבעיה</th></tr></thead><tbody id="qc-b"></tbody></table></div>
 <div class="df"><button data-close>סגור</button></div></dialog>
+<dialog id="d-trv" aria-labelledby="dtr-h" aria-describedby="dtr-d"><h2 class="dh" id="dtr-h">אישור התרגום</h2><div class="db">
+<p class="note" id="dtr-d">הריצה עצרה לפני המחיקה והעיצוב. תקן את העברית כאן ולחץ "המשך". מה שתאשר כאן סופי - Claude לא ישנה אותו.</p>
+<ol id="trv-list" class="trv"></ol></div>
+<div class="df"><button type="button" class="qbtn" id="trv-stop">בטל את הריצה</button><button type="button" class="cta" id="trv-go">המשך לגרפיקה</button></div></dialog>
 <dialog id="d-cmp" aria-labelledby="dcm-h"><h2 class="dh" id="dcm-h">השוואת תרגום: Claude מול DictaLM</h2><div class="db">
 <p class="note" style="padding:0" id="cmp-note">בכל שורה בחר את התרגום שעדיף לך. אפשר גם לערוך לפני השמירה.</p>
 <table class="cmp"><thead><tr><th scope="col">מקור</th><th scope="col">Claude</th><th scope="col">DictaLM</th><th scope="col">ייכנס</th></tr></thead><tbody id="cmp-b"></tbody></table></div>
@@ -892,15 +901,32 @@ function setEdge(which){if(!S.sel)return say('לא נבחר פריט');beginEdit
 const AGENT_PLAN=['ניתוח הכותרות (אם עוד לא נעשה)','Claude עובר על כל הטקסטים שזוהו, מסמן מה נשאר ומתרגם','תמלול ותרגום הדיאלוג, קובץ SRT','עיצוב כותרות מעוצבות ולוגואים','סבבים: בנייה וקידוד, Claude מסתכל על כל כרטיס לפני ואחרי, מתקן, ושוב - עד שהכול תקין'];
 function autoMode(){return $('#au-m2').checked?'agent':'auto'}
 async function planAuto(){if(autoMode()==='agent'){const s=await api('/api/settings');
-  $('#au-plan').replaceChildren(...AGENT_PLAN.map(n=>el('li',{text:n})));
+  const ap=AGENT_PLAN.slice();if($('#au-rv').checked)ap.splice(2,0,'עצירה: אתה מאשר ומתקן את התרגום');
+  $('#au-plan').replaceChildren(...ap.map(n=>el('li',{text:n})));
   $('#au-note').textContent=s.claude_code_found?'':'המצב המלא צריך את Claude Code במחשב, מחובר למנוי (העדפות > Claude).';$('#au-go').disabled=!s.claude_code_found;return}
   const r=await api('/api/auto_plan',{opts:{titles:$('#au-t').checked,dialog:$('#au-d').checked}});
-  $('#au-plan').replaceChildren(...(r.parts||[]).map(n=>el('li',{text:n})));
+  const pp=(r.parts||[]).slice();if($('#au-rv').checked){const k=pp.findIndex(n=>/עיצוב|בנייה/.test(n));if(k>=0)pp.splice(k,0,'עצירה: אתה מאשר ומתקן את התרגום')}
+  $('#au-plan').replaceChildren(...pp.map(n=>el('li',{text:n})));
   $('#au-note').textContent=r.key?'':'אין מפתח Claude בהעדפות - התרגום האוטומטי ידולג (אפשר להוסיף מפתח בהעדפות).';
   $('#au-go').disabled=!(r.parts||[]).length}
 function openAuto(){if(!S.proj)return say('פתח וידאו קודם');openDlg('#d-auto');planAuto()}
 $('#au-t').onchange=planAuto;$('#au-d').onchange=planAuto;$('#au-m1').onchange=planAuto;$('#au-m2').onchange=planAuto;$('#au-cancel').onclick=()=>$('#d-auto').close();
-$('#au-go').onclick=()=>{$('#d-auto').close();if(autoMode()==='agent')run('agent',{dialog:$('#au-d').checked,rounds:10});else run('auto',{titles:$('#au-t').checked,dialog:$('#au-d').checked})};
+$('#au-go').onclick=()=>{$('#d-auto').close();const rv=$('#au-rv').checked;try{localStorage.setItem('rt_review',rv?'1':'0')}catch(e){}
+  if(autoMode()==='agent')run('agent',{dialog:$('#au-d').checked,rounds:10,review:rv});else run('auto',{titles:$('#au-t').checked,dialog:$('#au-d').checked,review:rv})};
+try{$('#au-rv').checked=localStorage.getItem('rt_review')==='1'}catch(e){}
+$('#au-rv').onchange=()=>planAuto();
+async function openReview(){const r=await api('/api/tr_review',{act:'get'});const L=$('#trv-list');
+  L.replaceChildren(...r.cards.map(c=>{const inp=el('input',{type:'text',value:c.he,'aria-label':'עברית עבור '+c.src,lang:'he',dir:'rtl'});inp.dataset.id=c.id;
+    const ck=el('input',{type:'checkbox'});ck.checked=c.translate;ck.dataset.id=c.id;inp.disabled=!c.translate;ck.onchange=()=>{inp.disabled=!ck.checked};
+    return el('li',{},el('img',{src:`/api/file?k=${fileKey()}&p=thumbs/${c.id}.jpg`,alt:'הכותרת במקור: '+c.src}),
+      el('div',{class:'src',lang:'en'},c.src,el('small',{text:c.tc})),
+      el('label',{class:'chk'},ck,' לתרגם'),inp)}));
+  openDlg('#d-trv')}
+$('#d-trv').addEventListener('cancel',e=>e.preventDefault());     // Escape must not leave the run waiting with no window
+$('#trv-go').onclick=async()=>{const ed={};for(const i of $('#trv-list').querySelectorAll('input[type=text]'))(ed[i.dataset.id]??={}).he=i.value;
+  for(const c of $('#trv-list').querySelectorAll('input[type=checkbox]'))(ed[c.dataset.id]??={}).translate=c.checked;
+  await api('/api/tr_review',{edits:ed});$('#d-trv').close();say('התרגום אושר - ממשיך לגרפיקה')};
+$('#trv-stop').onclick=async()=>{await api('/api/cancel',{});$('#d-trv').close()};
 $('#au-queue').onclick=()=>{$('#d-auto').close();openQueue()};
 const QST={waiting:'ממתין',running:'רץ עכשיו',done:'הסתיים',error:'שגיאה'};
 function renderQueue(){const L=S.queue||[];
@@ -948,6 +974,8 @@ async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח
 let wasRunning=false;
 async function poll(){let s;try{s=await api('/api/status?f='+(document.hasFocus()&&!document.hidden?1:0))}catch(e){return}
   $('#logbox').textContent=s.log.join('\n');S.running=s.running;
+  if(s.waiting==='tr_review'&&!$('#d-trv').open&&!S.trvOpening){S.trvOpening=true;openReview().finally(()=>S.trvOpening=false)}
+  if(!s.waiting&&$('#d-trv').open)$('#d-trv').close();
   if(s.proj&&s.proj!==S.proj&&!S.loading){S.loading=true;try{await loadProject(s.proj)}finally{S.loading=false}}S.proj=s.proj;
   for(const id of['q-auto','q-analyze','q-trans','q-build','q-export'])$('#'+id).disabled=!s.proj||s.running;S.queue=s.queue||[];if($('#d-queue').open)renderQueue();
   $('#pbar').style.display='none';     // progress lives in the card over the video only
@@ -974,8 +1002,9 @@ function showBusy(s){const b=$('#busy');if(!s.running){b.hidden=true;$('#busy-li
   let left='';if(first)S.eta=null;
   if(p!=null&&p>0.03&&s.elapsed>20&&p<1){const raw=s.elapsed*(1-p)/p;S.eta=S.eta==null?raw:S.eta*0.8+raw*0.2;S.eta=Math.max(0,S.eta-0)}
   if(p!=null&&p<1)left=S.eta!=null?mmss(S.eta):'מחשב...';
-  if(s.claude_turn){S.eta=null;left=''}      // a Claude turn has no knowable length - no made-up countdown
-  $('#busy-left').textContent=s.claude_turn?'Claude בודק - הזמן תלוי בכמות':!left?'':S.eta!=null?'נותרו '+left:'מחשב זמן...';$('#busy-time').textContent='עברו '+mmss(s.elapsed);
+  if(s.claude_turn){S.eta=null;left=''}
+  if(s.waiting){S.eta=null;left=''}      // a Claude turn has no knowable length - no made-up countdown
+  $('#busy-left').textContent=s.waiting?'מחכה לך':s.claude_turn?'Claude בודק - הזמן תלוי בכמות':!left?'':S.eta!=null?'נותרו '+left:'מחשב זמן...';$('#busy-time').textContent='עברו '+mmss(s.elapsed);
   const lv=$('#busy-live');if(s.live&&S.liveOn!==false){if(s.live.t!==S.liveT){S.liveT=s.live.t;$('#busy-img').src='/api/live?t='+s.live.t;
       $('#busy-img').alt=(s.live.panels>1?'תצוגה חיה: מימין המקור, משמאל התוצאה. ':'תצוגה חיה: ')+s.live.label;$('#busy-cap').replaceChildren(...(s.live.panels>1?[el('span',{text:'מקור'}),el('span',{text:s.live.label}),el('span',{text:'תוצאה'})]:[el('span',{text:s.live.label})]))}lv.hidden=false}
   else lv.hidden=true;

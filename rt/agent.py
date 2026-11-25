@@ -48,6 +48,7 @@ RT --py .claude/skills/qc-video/scripts/qc-scan.py <video> (ffmpeg is on the pat
 check/guard.json: frames where something changed OUTSIDE the title areas (with check/guard_<frame>.jpg) -
 anything listed there is a bug to fix (usually a "title" that is not text and should be translate=false).
 
+Lines with he_locked=true were approved by the user: never change their he or translate (the app restores them).
 Hebrew rules: natural Hebrew a viewer reads in a glance, the official Hebrew title when there is one, no niqqud,
 plain " quotes, a regular hyphen - never an em dash, the user's name glossary always wins. A sentence split over
 several cards is translated as one sentence and split at the same places.
@@ -241,6 +242,10 @@ def settle(proj, before, log=print):
         if not o:
             changed.add(t.get("group"))
             continue
+        if o.get("he_locked"):                        # approved by the user: Claude may not change it
+            for k in ("he", "translate", "he_locked"):
+                if t.get(k) != o.get(k):
+                    t[k] = o.get(k); fixed = True
         if any(t.get(k) != o.get(k) for k in set(t) | set(o) if k not in keep):
             changed.add(t["group"])
             if t.get("he") != o.get("he") or t.get("style") != o.get("style"):

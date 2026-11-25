@@ -946,6 +946,51 @@ def auto_parts(opts=None):
     return parts
 
 
+WAIT = {"ev": None, "kind": None}
+
+
+def review_cards():
+    """The cards the user approves before any graphics work: translated on-screen titles in the work range."""
+    T = vio.load_json(P("titles.json"), {"titles": []})
+    pj = vio.load_json(P("project.json"))
+    rng, fps = pj.get("range"), pj["info"]["fps"]
+    out = []
+    for t in T["titles"]:
+        if t.get("kind") == "sub" or (rng and (t["out"] < rng[0] or t["in"] > rng[1])):
+            continue
+        if not t.get("translate", True) and not t.get("he"):
+            continue                                   # credits/names left in English: nothing to approve
+        out.append({"id": t["id"], "src": t.get("src", ""), "he": t.get("he", ""), "translate": t.get("translate", True),
+                    "tc": vio.tc(t["in"], fps), "group": t.get("group")})
+    return out
+
+
+def wait_review():
+    """Pause the run until the user approves (and maybe edits) the Hebrew in the approval window.
+    Nothing has been erased or designed yet, so nothing is rendered twice."""
+    if not review_cards():
+        return
+    ev = threading.Event()
+    WAIT.update(ev=ev, kind="tr_review")
+    STATE.update(stage="מחכה לאישור התרגום שלך")
+    log("מחכה לאישור התרגום שלך - חלון האישור פתוח")
+    try:
+        from . import notify
+        if settings().get("notify", True):
+            notify.ask("התרגום מחכה לאישור שלך", "Retitle עצר לפני הגרפיקה. תעבור על העברית ותלחץ המשך.")
+    except Exception:
+        pass
+    PHASE["waiting"] = True
+    try:
+        while not ev.wait(0.5):
+            if STATE["cancel"]:
+                raise Cancelled()
+    finally:
+        PHASE["waiting"] = False
+        WAIT.update(ev=None, kind=None)
+    log("התרגום אושר - ממשיך לגרפיקה")
+
+
 def job_auto(opts=None):
     """Everything in a row: analyse, translate, transcribe, build, export, check. Steps that are
     already done are skipped; a missing Claude key just skips the translation steps."""
@@ -954,7 +999,11 @@ def job_auto(opts=None):
     tot = sum(w for *_, w in parts) or 1
     acc = 0.0
     base = PHASE["range"][:]
+    paused = not opts.get("review")
     for i, (job, name, w) in enumerate(parts):
+        if not paused and job in ("design", "export"):
+            paused = True
+            wait_review()
         a = base[0] + (base[1] - base[0]) * acc / tot
         b = base[0] + (base[1] - base[0]) * (acc + w) / tot
         PHASE.update(range=[a, b], name=(PHASE.get("prefix", "") + f"חלק {i + 1} מתוך {len(parts)}: {name}"))
@@ -1138,6 +1187,10 @@ the whole video's titles together, so a sentence across cards reads as one.
 {("Name glossary (always wins):" + chr(10) + gl) if gl else ""}
 Lines:
 {agent.card_list(proj)}""", "Claude עובר על כל הטקסטים שזוהו ומתרגם")
+        if (STATE.get("args") or {}).get("review"):
+            wait_review()
+            turn("The user approved the translation in the app. Lines with he_locked=true are final: "
+                 "never change their he or translate again. Reply with your JSON only.", "Claude מקבל את התרגום שאישרת")
         fl = {t["id"] for t in vio.load_json(P("titles.json"))["titles"]
               if t.get("translate", True) and t.get("kind") != "sub" and not t.get("font_by_claude")
               and "font" not in t.get("style_locked", [])}
@@ -1814,7 +1867,7 @@ class H(BaseHTTPRequestHandler):
                                     "stage": STATE["stage"], "step": STATE["step"], "steps": STATE["steps"], "phase": PHASE["name"],
                                     "queue": QUEUE,
                                     "elapsed": round((time.time() if STATE["running"] else STATE.get("t1", time.time())) - STATE["t0"], 1) if STATE["t0"] else 0,
-                                    "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"], "claude_turn": bool(PHASE.get("claude_turn")),
+                                    "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"], "claude_turn": bool(PHASE.get("claude_turn")), "waiting": WAIT["kind"] if PHASE.get("waiting") else None,
                                     "live": _live()})
         if u.path == "/api/live":
             f = os.path.join(STATE["proj"] or "", "live", "live.jpg")
@@ -2060,6 +2113,30 @@ class H(BaseHTTPRequestHandler):
                     and not settings().get("api_key"):
                 return self._send(200, {"started": False, "need": "api_key"})
             return self._send(200, {"started": start(b["job"])})
+        if u.path == "/api/tr_review":
+            if b.get("act") == "get":
+                return self._send(200, {"cards": review_cards() if STATE.get("proj") else []})
+            if not WAIT.get("ev"):
+                return self._send(200, {"ok": False})
+            ed = b.get("edits") or {}
+            with LOCK:
+                T = vio.load_json(P("titles.json"))
+                ids = {c["id"] for c in review_cards()}
+                for t in T["titles"]:
+                    if t["id"] not in ids:
+                        continue
+                    e = ed.get(t["id"]) or {}
+                    if "he" in e:
+                        t["he"] = str(e["he"]).strip()
+                    if "translate" in e:
+                        t["translate"] = bool(e["translate"])
+                    if t.get("translate", True) and not t.get("he"):
+                        continue                       # an empty line stays open for Claude
+                    t["he_locked"] = True
+                    t["user_set"] = True
+                vio.save_json(P("titles.json"), T)
+            WAIT["ev"].set()
+            return self._send(200, {"ok": True})
         if u.path == "/api/dicta/install":
             from . import dicta
             dicta.install_async()

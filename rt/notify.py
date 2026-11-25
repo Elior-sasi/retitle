@@ -106,3 +106,9 @@ def job_ended(name_he, seconds, error=None, cancelled=False, enabled=True, extra
         title, body = f"{name_he} הסתיים", (extra[:150] + " - " if extra else "") + took
     threading.Thread(target=lambda: (toast(title, body), flash()), daemon=True).start()
     return True
+
+
+def ask(title, body):
+    """The run is waiting for the user: toast + flash, but only when they are not looking."""
+    if _away():
+        threading.Thread(target=lambda: (toast(title, body), flash()), daemon=True).start()
