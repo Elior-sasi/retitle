@@ -361,13 +361,41 @@ def build_steps(proxy=True):
     return steps
 
 
+def ensure_translated():
+    """Building with titles that have no Hebrew erases the English and draws nothing in its place.
+    Translate them first (Claude / DictaLM), or stop with a clear message."""
+    T = vio.load_json(P("titles.json"), {"titles": []})
+    pj = vio.load_json(P("project.json"))
+    rng = pj.get("range")
+    empty = [t for t in T["titles"] if t.get("translate", True) and t.get("kind") != "sub" and not (t.get("he") or "").strip()
+             and t.get("mode") != "remove" and not (rng and (t["out"] < rng[0] or t["in"] > rng[1]))]
+    if not empty:
+        return
+    s = settings()
+    if s.get("api_key") or s.get("translate_engine") == "dicta":
+        log(f"ל-{len(empty)} כותרות עוד אין עברית - מתרגם אותן קודם")
+        STATE.update(stage="מתרגם את הכותרות")
+        job_translate("titles")
+        ids = {t["id"] for t in empty}
+        try:                                           # and a matching font, as the one-click run would
+            STATE.update(stage="בוחר גופן דומה למקור")
+            fonts_auto(only={t["id"] for t in vio.load_json(P("titles.json"))["titles"]
+                             if t["id"] in ids and t.get("font_auto", True) and not t.get("font_by_claude")})
+        except Exception as e:
+            log(f"בחירת הגופן לא הצליחה ({e}) - ממשיך עם הגופן הרגיל")
+        return
+    raise RuntimeError(f"ל-{len(empty)} כותרות עוד אין עברית. תכתוב עברית ברשימה, או תחבר את Claude בהעדפות כדי לתרגם.")
+
+
 def job_build():
+    ensure_translated()
     run_steps(build_steps(True))
     log("מוכן. אפשר לנגן במצב תוצאה.")
 
 
 def job_export():
     from . import compose, check, srt, qa
+    ensure_translated()
     T = vio.load_json(P("titles.json"))
     pre = build_steps(False) if (dirty_groups(T) or needs_extract(T) or not os.path.exists(P("layers", "meta.json"))) else []
     res = {}
