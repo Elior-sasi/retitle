@@ -1226,7 +1226,8 @@ def job_agent():
         if reavideo.ready():
             part(0.25, 0.28, "rea-video מפרק את הסרטון")
             try:
-                reavideo.decompose(proj, log=log, cancel=lambda: STATE["cancel"])
+                reavideo.decompose(proj, log=log, cancel=lambda: STATE["cancel"], progress=prog,
+                                    stage=lambda x: STATE.update(stage=x))
                 reavideo.give_skill(proj)
             except Exception as e:
                 log(f"rea-video לא הצליח ({str(e)[:160]}) - ממשיך בלעדיו")

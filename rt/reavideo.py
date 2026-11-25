@@ -66,7 +66,7 @@ def env():
     return e
 
 
-def decompose(proj, log=print, cancel=lambda: False, lang="en"):
+def decompose(proj, log=print, cancel=lambda: False, lang="en", progress=None, stage=None):
     """rea-video decompose of the project's video into <proj>/rea (once; kept for later runs). With a work range
     only that stretch is cut out and decomposed (rea/range.json says where it starts, so its times can be
     mapped back: video time = rea time + start)."""
@@ -98,11 +98,24 @@ def decompose(proj, log=print, cancel=lambda: False, lang="en"):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                          errors="replace", env=env(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     tail = []
+    import re as _re
+    dur = (rng[1] - rng[0] + 1) / fps if rng else float(P["info"].get("duration") or 0)
+    mmss = lambda x: f"{int(x // 60)}:{int(x % 60):02d}"
     for line in p.stdout:
         tail = (tail + [line])[-20:]
         if cancel():
             p.kill()
             break
+        # it prints a line per shot it has looked at: show how far into the video it is (it used to sit at 0%)
+        m = _re.search(r"shot_(\d+)\s+(\d+):(\d+(?:\.\d+)?)-(\d+):(\d+(?:\.\d+)?)", line)
+        if m and dur > 0:
+            end = int(m.group(4)) * 60 + float(m.group(5))
+            if progress:
+                progress(min(0.95, 0.9 * end / dur))
+            if stage:
+                stage(f"rea-video מפרק את הסרטון - שוט {int(m.group(1))} ({mmss(end)} מתוך {mmss(dur)})")
+        elif stage and "rendered shots" in line:
+            stage("rea-video מסכם את מה שמצא")
     if p.wait() != 0 or not os.path.exists(os.path.join(out, "VIDEO.md")):
         raise RuntimeError("rea-video נכשל: " + "".join(tail)[-300:])
     want["start_s"] = round(rng[0] / fps, 3) if rng else 0.0
