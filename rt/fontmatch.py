@@ -629,10 +629,68 @@ def apply_look(t, look):
             pass
 
 
+def measured_colours(proj, t):
+    """The letters' own colour in the original: median of the top, middle and bottom quarter of the letters
+    (eroded, so no edge or outline pixel counts). None when the letters cannot be found."""
+    m = letters(proj, t)
+    c, _ = crop_of(proj, t)
+    if m is None or c is None or c.size == 0:
+        return None
+    er = cv2.erode((m > 0).astype(np.uint8), np.ones((3, 3), np.uint8))
+    ys = np.nonzero(er)[0]
+    if ys.size < 60:
+        return None
+    y0, y1 = ys.min(), ys.max(); h = max(1, y1 - y0)
+    out = []
+    for a, b in ((0, 0.25), (0.4, 0.6), (0.75, 1.0)):
+        sel = np.zeros_like(er); sel[y0 + int(a * h):y0 + int(b * h) + 1] = 1
+        px = c[(er > 0) & (sel > 0)]
+        if len(px) < 15:
+            return None
+        out.append([int(v) for v in np.median(px, 0)])
+    return out
+
+
+def _lab_d(a, b):
+    la, lb = [cv2.cvtColor(np.uint8([[x]]), cv2.COLOR_BGR2LAB).astype(np.float32)[0, 0] for x in (a, b)]
+    return float(np.linalg.norm(la - lb))
+
+
+def fix_colours(proj, t):
+    """Claude's fill and gradient are a reading of a small picture; the original's pixels decide. A gradient
+    is kept only if the original's top and bottom really differ."""
+    st = t.get("style") or {}
+    if "fill" in set(t.get("style_locked", [])) or t.get("layer", {}).get("type") not in (None, "text"):
+        return False
+    mc = measured_colours(proj, t)
+    if not mc:
+        return False
+    top, mid, bot = mc
+    gr = st.get("gradient")
+    want_gr = [top, bot] if _lab_d(top, bot) > 8 else None
+    now = gr or [st.get("fill") or mid, st.get("fill") or mid]
+    if _lab_d(now[0], top) > 10 or _lab_d(now[-1], bot) > 10 or (gr and not want_gr):
+        st["fill"] = mid
+        if want_gr:
+            st["gradient"] = want_gr
+        else:
+            st.pop("gradient", None)
+        return True
+    return False
+
+
 def check_looks(proj, T, log=print):
     """Once per title (look_checked): projects whose looks were picked before this check existed. Titles
     with the same picked look are checked together on the biggest one, so a style stays one style."""
     sets = {}
+    nc = 0
+    for t in T["titles"]:
+        if t.get("translate", True) and t.get("font_by_claude") and not t.get("colour_checked"):
+            try:
+                nc += bool(fix_colours(proj, t))
+            except Exception:
+                pass
+            t["colour_checked"] = True
     for t in T["titles"]:
         st = t.get("style") or {}
         if not t.get("translate", True) or t.get("look_checked") or not t.get("font_by_claude"):
@@ -659,7 +717,9 @@ def check_looks(proj, T, log=print):
         n += len(ls) if dr else 0
     if n:
         log(f"הוסרו צד תלת-ממדי, קו מתאר או צל שאין במקור ({n} כותרות)")
-    return n
+    if nc:
+        log(f"הצבעים של {nc} כותרות הותאמו לצבע שנמדד במקור")
+    return n + nc
 
 
 def verify_look(proj, t):
@@ -777,6 +837,12 @@ def run(proj, api_key="", model="claude-sonnet-5-5", progress=None, log=print, o
                 t["font_top"] = [[x["font"], x["weight"], x["wdth"], x.get("diff", "")] for x in r["rows"][:5]]
                 t["font_auto"] = True; t["font_by_claude"] = True
                 done += 1
+            for t in ls:                      # the colours as measured in the original, per line
+                try:
+                    fix_colours(proj, t)
+                except Exception:
+                    pass
+                t["colour_checked"] = True
             # only what the original really shows: checked on the style's biggest line, dropped for all
             try:
                 dr = verify_look(proj, big)
