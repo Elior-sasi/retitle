@@ -509,6 +509,7 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
 <p class="note" style="padding:0">אם הסרטון קיים ביוטיוב עם כתוביות רשמיות, הטקסט המדויק שלהן ייכנס במקום התמלול. כתוביות הדיאלוג הקיימות יוחלפו.</p>
 <label for="yt-u">קישור לסרטון ביוטיוב</label><input type="url" id="yt-u" dir="ltr" style="width:100%" placeholder="https://www.youtube.com/watch?v=...">
 <label class="chk"><input type="checkbox" id="yt-a"> אם אין רשמיות - להשתמש בכתוביות האוטומטיות</label>
+<label class="chk"><input type="checkbox" id="yt-t" checked> לתרגם לעברית אוטומטית מיד אחרי ההבאה</label>
 <label for="yt-o">הזזה בשניות (אם הקובץ שלך מתחיל אחרת מהסרטון ביוטיוב)</label><input type="number" id="yt-o" step="0.1" value="0" dir="ltr"></div>
 <div class="df"><button class="cta" id="yt-go">הבא כתוביות</button><button data-close>ביטול</button></div></dialog>
 <dialog id="d-qc" aria-labelledby="dqc-h"><h2 class="dh" id="dqc-h">בדיקת QC לכתוביות</h2><div class="db">
@@ -1066,7 +1067,7 @@ $('#pp-i').onclick=async()=>{await api('/api/propainter/install',{});say('מתק
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
   content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),claude_via:$('#s-via').value,auto_propainter:$('#s-ppauto').checked,notify:$('#s-notify').checked,translate_engine:$('#s-eng').value,tmdb_key:$('#s-tmdb').value.trim(),dicta_quant:$('#s-dq').value,gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';$('#s-tmdb').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
 function openYT(){closeMenu(true);const u=(S.data&&S.data.project&&S.data.project.youtube)||'';$('#yt-u').value=u;openDlg('#d-yt');$('#yt-u').focus()}
-$('#yt-go').onclick=()=>{const url=$('#yt-u').value.trim();if(!url){say('הדבק קישור');$('#yt-u').focus();return}$('#d-yt').close();run('youtube',{url,auto:$('#yt-a').checked,offset:+$('#yt-o').value||0})};
+$('#yt-go').onclick=()=>{const url=$('#yt-u').value.trim();if(!url){say('הדבק קישור');$('#yt-u').focus();return}$('#d-yt').close();run('youtube',{url,auto:$('#yt-a').checked,offset:+$('#yt-o').value||0,translate:$('#yt-t').checked})};
 // ---------------- CueLint: subtitle QC against broadcaster specs and the user's own client profiles
 const QC_HE={'reading-speed':d=>`קצב קריאה ${d.value} תווים בשנייה - מעל ${d.limit}`,'line-length':d=>`שורה ${d.lineIndex||''} באורך ${d.value} תווים - מעל ${d.limit}`,
   'line-count':d=>`${d.value} שורות - מעל ${d.limit}`,'min-duration':d=>`משך ${d.value} אלפיות - פחות מ-${d.limit}`,'max-duration':d=>`משך ${d.value} אלפיות - יותר מ-${d.limit}`,

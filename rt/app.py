@@ -590,6 +590,13 @@ def job_youtube():
         vio.save_json(P("dialog.json"), {"cues": cues})
         PJ = vio.load_json(P("project.json")); PJ["youtube"] = url; vio.save_json(P("project.json"), PJ)
     log(f"{len(cues)} כתוביות נכנסו מיוטיוב. התזמון הוא של הסרטון ביוטיוב - אם הקובץ שלך חתוך אחרת, הזז בשדה ההזזה.")
+    if a.get("translate") and cues:
+        eng = settings().get("translate_engine")
+        if eng != "dicta" and not settings().get("api_key"):
+            log("לתרגום האוטומטי צריך מפתח Claude בהעדפות (או DictaLM) - הכתוביות נכנסו בלי תרגום")
+            return
+        STATE.update(stage="מתרגם את הכתוביות לעברית")
+        job_translate("dialog")
 
 
 def job_srt():
