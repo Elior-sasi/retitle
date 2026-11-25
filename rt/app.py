@@ -1056,7 +1056,10 @@ def job_agent():
     PHASE["agent"] = True
     base = PHASE["range"][:]
 
+    skip = [0.0]                                  # analysis already done: the bar starts at what really runs
+
     def part(a, b, name):
+        a, b = [(x - skip[0]) / (1 - skip[0]) for x in (a, b)]
         PHASE.update(range=[base[0] + (base[1] - base[0]) * a, base[0] + (base[1] - base[0]) * b], name=name)
         RANGE[:] = [0.0, 1.0]
         STATE.update(stage="", step=0, steps=0)          # the phase name is shown already - no repeat
@@ -1079,6 +1082,8 @@ def job_agent():
         if not T:
             part(0.0, 0.25, "ניתוח הכותרות")
             job_analyze()
+        else:
+            skip[0] = 0.25
         from . import reavideo
         if reavideo.ready():
             part(0.25, 0.28, "rea-video מפרק את הסרטון")
@@ -1132,14 +1137,17 @@ Lines:
             log(f"העיצוב לא הצליח ({e})")
         last = []
         for k in range(rounds):
-            a = 0.5 + 0.5 * k / rounds
-            part(a, a + 0.35 / rounds, f"סבב {k + 1}: בנייה, קידוד ובדיקה")
+            # most videos need 2-4 rounds: each round takes half of what is left of the bar
+            a, w = 0.5 + 0.5 * (1 - 0.5 ** k), 0.5 * 0.5 ** (k + 1)
+            if k == rounds - 1:
+                w = 1.0 - a
+            part(a, a + 0.7 * w, f"סבב {k + 1}: בנייה, קידוד ובדיקה")
             job_export()
             sheets = sorted(f for f in os.listdir(P("check")) if f.endswith(".jpg")) if os.path.isdir(P("check")) else []
             if not sheets:
                 log("אין כרטיסים לבדיקה.")
                 break
-            part(a + 0.35 / rounds, a + 0.5 / rounds, f"סבב {k + 1}: Claude בודק כל כרטיס")
+            part(a + 0.7 * w, a + 0.9 * w, f"סבב {k + 1}: Claude בודק כל כרטיס")
             r, changed, _ = turn(f"""Round {k + 1} of {rounds}. The video was built and encoded. Look at EVERY sheet below
 (Read each one): per card, the source on the left and the Hebrew result on the right, from the frame before the title
 comes in to the frame after it goes out. {"Last round you asked for: " + json.dumps(last, ensure_ascii=False) + "." if last else ""}
@@ -1157,7 +1165,7 @@ Sheets: {", ".join("check/" + f for f in sheets)}""", f"סבב {k + 1}: Claude �
             if k == rounds - 1:
                 log("הגעתי לתקרה של 10 סבבים בלי ש-Claude אישר הכול. הייצוא האחרון הוא הגרסה הסופית - ההערות שלו ביומן.")
                 break
-            part(a + 0.5 / rounds, a + 1.0 / rounds, f"סבב {k + 1}: מתקן מה ש-Claude ביקש")
+            part(a + 0.9 * w, a + w, f"סבב {k + 1}: מתקן מה ש-Claude ביקש")
             with LOCK:
                 T = vio.load_json(P("titles.json"))
                 G = groups(T)
