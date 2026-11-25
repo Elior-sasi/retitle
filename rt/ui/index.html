@@ -627,8 +627,8 @@ function renderList(){const ul=$('#items');ul.replaceChildren();
       box.append(el('li',{class:'card'},el('div',{class:'card-h',dir:'auto'},el('span',{text:c.lines.length+' שורות · '}),el('bdi',{dir:'ltr',text:tc(Math.min(...c.lines.map(t=>t.in)))})),sub))};
     for(const c of live){n++;putCard(c,ul)}
     if(kept.length){const selKept=S.sel&&S.sel.k==='t'&&kept.some(c=>c.lines.some(t=>t.id===S.sel.id));const open=S.keptOpen||selKept||!!q;
-      const btn=el('button',{class:'fold','aria-expanded':String(open),onclick:()=>{S.keptOpen=!open;renderList()}},
-        el('span',{'aria-hidden':'true',text:open?'▾ ':'◂ '}),`נשארות כמו שהן - קרדיטים, לוגואים, טקסט בתמונה (${keptLines})`);
+      const btn=el('button',{class:'fold','aria-expanded':String(open),onclick:()=>{S.keptOpen=!open;renderList();renderTimeline()}},
+        el('span',{'aria-hidden':'true',text:open?'▾ ':'◂ '}),`${open?'הסתר':'הצג'} את מה שנשאר כמו שהוא - קרדיטים, לוגואים, טקסט בתמונה (${keptLines}), גם בציר הזמן`);
       ul.append(el('li',{class:'fold-li'},btn));
       if(open)for(const c of kept)putCard(c,ul)}
   }else{
@@ -770,7 +770,7 @@ function renderTimeline(){const inner=$('#tlinner');inner.replaceChildren();if(!
   const rg=S.data.project.range;if(rg){const x=rg[0]*pxf(),w=Math.max(2,(rg[1]-rg[0]+1)*pxf());
     inner.append(el('div',{class:'wrange-r',style:`left:${x}px;width:${w}px`}),el('div',{class:'wrange',style:`left:${x}px;width:${w}px;height:100%`}))}
   const place=(a,b,lanes)=>{for(let i=0;i<lanes.length;i++)if(lanes[i]<a){lanes[i]=b;return i}lanes.push(b);return lanes.length-1};
-  const lt=[],lc=[];const tl=S.model.titles.map(t=>({t,l:place(t.in,t.out,lt)}));
+  const lt=[],lc=[];const tl=S.model.titles.filter(t=>t.translate||S.keptOpen||isSel('t',t.id)).map(t=>({t,l:place(t.in,t.out,lt)}));  // what stays as it is shows only when its fold is open
   const cl=S.model.cues.map(c=>{const a=Math.round(c.start*S.fps),b=Math.round(c.end*S.fps)-1;return{c,a,b,l:place(a,b,lc)}});
   const nT=Math.max(1,lt.length),nC=Math.max(1,lc.length);
   const topV=RULER+(nT+nC)*LANE,topA=topV+VLANE;S.tlTop={v:topV,a:topA};
