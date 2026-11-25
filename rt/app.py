@@ -195,6 +195,14 @@ def dirty_groups(T):
                 out.add(gid)                          # the card's area changed (e.g. "whole logo")
             if not t.get("translate", True) and (t.get("built") or [0, 0, False])[2]:
                 out.add(gid)
+        # the erased frames themselves are missing (a cancelled build, or Claude moved a line to a new card)
+        act = [t for t in lines if t.get("translate", True) and "mask" in t]
+        if act and STATE.get("proj") and gid not in out:
+            d = P("clean", gid)
+            need = {f for t in act for f in range(t["in"], t["out"] + 1)}
+            have = {int(x[:6]) for x in os.listdir(d) if x[:6].isdigit()} if os.path.isdir(d) else set()
+            if not need <= have:
+                out.add(gid)
     return out
 
 
