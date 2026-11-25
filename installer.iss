@@ -47,9 +47,9 @@ Root: HKA; Subkey: "Software\Classes\Retitle.Project\DefaultIcon"; ValueType: st
 Root: HKA; Subkey: "Software\Classes\Retitle.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Retitle.exe"" ""%1"""
 
 [Icons]
-Name: "{group}\Retitle"; Filename: "{app}\Retitle.exe"
+Name: "{group}\Retitle"; Filename: "{app}\Retitle.exe"; AppUserModelID: "Elior.Retitle"
 Name: "{group}\{cm:UninstallProgram,Retitle}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Retitle"; Filename: "{app}\Retitle.exe"; Tasks: desktopicon
+Name: "{autodesktop}\Retitle"; Filename: "{app}\Retitle.exe"; AppUserModelID: "Elior.Retitle"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Retitle.exe"; Parameters: "--prepare"; StatusMsg: "מכין רכיבים..."; Flags: waituntilterminated skipifsilent; Tasks: prepare

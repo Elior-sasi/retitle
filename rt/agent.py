@@ -90,10 +90,12 @@ class Session:
         self.sid = None
         self.turns = 0
 
-    def ask(self, prompt, max_turns=200, timeout=4 * 3600):
+    def ask(self, prompt, max_turns=200, timeout=4 * 3600, on_event=None):
+        """One Claude Code turn. on_event(kind, detail) hears every tool call as it happens
+        (kind: read/look/edit/engine/shell/search/skill), so the app can show what Claude is doing."""
         from .translate import USAGE
         exe = _exe()
-        cmd = [exe, "-p", "--output-format", "json", "--model", self.model,
+        cmd = [exe, "-p", "--output-format", "stream-json", "--verbose", "--model", self.model,
                "--allowedTools", "Read", "Edit", "Write", "Glob", "Grep", "Bash", "PowerShell", "Skill",
                "--add-dir", self.proj, "--max-turns", str(max_turns)]
         if self.sid:
@@ -103,13 +105,37 @@ class Session:
             if self.tool:
                 prompt = f'RT = "{self.tool}"\n\n' + prompt
         p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             text=True, encoding="utf-8", cwd=self.proj,
+                             text=True, encoding="utf-8", errors="replace", cwd=self.proj,
                              env=_env(),
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         import threading
-        box = {}
-        th = threading.Thread(target=lambda: box.update(zip(("out", "err"), p.communicate(prompt))), daemon=True)
-        th.start()
+        box = {"out": {}, "err": []}
+
+        def read_out():
+            for line in p.stdout:
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                t = ev.get("type")
+                if t == "result":
+                    box["out"] = ev
+                elif t == "system" and ev.get("session_id"):
+                    box["sid"] = ev["session_id"]
+                elif t == "assistant" and on_event:
+                    for blk in (ev.get("message") or {}).get("content") or []:
+                        if isinstance(blk, dict) and blk.get("type") == "tool_use":
+                            try:
+                                on_event(*describe(blk.get("name"), blk.get("input") or {}, self.proj))
+                            except Exception:
+                                pass
+        th = threading.Thread(target=read_out, daemon=True)
+        te = threading.Thread(target=lambda: box["err"].extend(p.stderr), daemon=True)
+        th.start(); te.start()
+        try:
+            p.stdin.write(prompt); p.stdin.close()
+        except OSError:
+            pass
         t0 = time.time()
         while th.is_alive():
             th.join(1.0)
@@ -119,12 +145,14 @@ class Session:
                     from .app import Cancelled
                     raise Cancelled()
                 raise RuntimeError("Claude Code לא ענה בזמן")
-        try:
-            out = json.loads(box.get("out") or "{}")
-        except ValueError:
-            out = {}
+        p.wait()
+        te.join(2)
+        out = box["out"]
+        box["err"] = "".join(box["err"])
+        if not out.get("session_id") and box.get("sid"):
+            out["session_id"] = box["sid"]
         if p.returncode != 0 and not out.get("result") or out.get("is_error") and out.get("subtype") != "error_max_turns":
-            msg = (out.get("result") or box.get("err") or "").strip()[:300]
+            msg = (out.get("result") or box["err"] or "").strip()[:300]
             low = msg.lower()
             if "login" in low or "auth" in low:
                 raise RuntimeError("Claude Code לא מחובר - פתח אותו פעם אחת וכתוב /login")
@@ -139,6 +167,34 @@ class Session:
         USAGE["calls"] = USAGE.get("calls", 0) + 1
         USAGE["via_code"] = True
         return _answer(out.get("result") or "")
+
+
+def describe(name, inp, proj):
+    """A tool call -> (kind, Hebrew text, file path or None) for the progress card."""
+    f = inp.get("file_path") or inp.get("path") or ""
+    base = os.path.basename(f) if f else ""
+    if f and not os.path.isabs(f):
+        f = os.path.join(proj, f)
+    if name == "Read":
+        if base.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+            return "look", f"מסתכל על {base}", f
+        return "read", f"קורא {base}", None
+    if name in ("Edit", "Write", "MultiEdit"):
+        return "edit", f"עורך {base}", None
+    if name in ("Bash", "PowerShell"):
+        c = (inp.get("command") or "").strip()
+        if re.search(r"agent[\\/]+rt(\.cmd)?\b", c) or "rt.cmd" in c or "$RT" in c or "python -m rt" in c:
+            words = [w for w in re.split(r"\s+", c) if w and not w.startswith(("&", '"', "'")) and "rt.cmd" not in w and w not in ("RT", "$RT", "python", "-m", "rt") and not re.search(r"agent[\\/]+rt", w)
+                     and not re.match(r"^([A-Za-z]:[\\/]|/)", w) and w != "."]
+            return "engine", "מריץ את המנוע: " + " ".join(words[:3]), None
+        if "rea-video" in c:
+            return "engine", "מפעיל את rea-video", None
+        return "shell", "מריץ פקודה", None
+    if name in ("Glob", "Grep"):
+        return "search", "מחפש בקבצים", None
+    if name == "Skill":
+        return "skill", f"משתמש בסקיל {inp.get('skill') or inp.get('name') or ''}".strip(), None
+    return "other", name or "עובד", None
 
 
 def _env():

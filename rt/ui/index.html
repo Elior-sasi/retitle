@@ -446,6 +446,9 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
     <div role="group" aria-labelledby="gb-l"><div id="gb-st" role="status"></div><div class="row2" id="gb-b"></div></div>
     <span class="lbl" id="sync-l">סנכרון בין מחשבים<br><span class="unit">חינם, דרך OneDrive או Google Drive</span></span>
     <div role="group" aria-labelledby="sync-l"><div id="sync-st" role="status"></div><div class="row2" id="sync-b"></div></div>
+    <span class="lbl" id="nt-l">התראות</span><div role="group" aria-labelledby="nt-l"><label class="chk"><input type="checkbox" id="s-notify" aria-describedby="nt-d"> התראה של Windows כשעבודה ארוכה מסתיימת או נעצרת</label>
+      <div id="nt-d" class="unit">רק כשאתה לא מסתכל על Retitle. כפתור התוכנה בשורת המשימות גם מהבהב עד שתחזור.</div>
+      <div class="row2"><button type="button" class="mini" id="nt-test">שלח התראת ניסיון</button></div></div>
     <label for="s-max">פתיחת התוכנה</label><select id="s-max"><option value="1">מסך מלא (מוגדל)</option><option value="0">חלון רגיל</option></select>
     <label for="s-fs">גודל טקסט בממשק</label>
     <select id="s-fs"><option value="13">קטן (כמו Adobe)</option><option value="14">רגיל</option><option value="16">גדול</option><option value="18">גדול מאוד</option></select>
@@ -943,7 +946,7 @@ async function run(job,args){if(!S.proj)return say('אין פרויקט פתוח
   if(r.need==='api_key'){say('צריך את Claude: מפתח API או Claude Code מותקן - בוחרים בהעדפות',true);openDlg('#d-settings');setTimeout(()=>{const k=$('#s-key');if(k){k.focus();k.scrollIntoView({block:'center'})}},150);return}
   if(!r.started)return say('פעולה אחרת עדיין רצה',true);wasRunning=true;S.job=job;say(`${JOBN[job]||job} התחיל`)}
 let wasRunning=false;
-async function poll(){let s;try{s=await api('/api/status')}catch(e){return}
+async function poll(){let s;try{s=await api('/api/status?f='+(document.hasFocus()&&!document.hidden?1:0))}catch(e){return}
   $('#logbox').textContent=s.log.join('\n');S.running=s.running;
   if(s.proj&&s.proj!==S.proj&&!S.loading){S.loading=true;try{await loadProject(s.proj)}finally{S.loading=false}}S.proj=s.proj;
   for(const id of['q-auto','q-analyze','q-trans','q-build','q-export'])$('#'+id).disabled=!s.proj||s.running;S.queue=s.queue||[];if($('#d-queue').open)renderQueue();
@@ -971,7 +974,8 @@ function showBusy(s){const b=$('#busy');if(!s.running){b.hidden=true;$('#busy-li
   let left='';if(first)S.eta=null;
   if(p!=null&&p>0.03&&s.elapsed>20&&p<1){const raw=s.elapsed*(1-p)/p;S.eta=S.eta==null?raw:S.eta*0.8+raw*0.2;S.eta=Math.max(0,S.eta-0)}
   if(p!=null&&p<1)left=S.eta!=null?mmss(S.eta):'מחשב...';
-  $('#busy-left').textContent=!left?'':S.eta!=null?'נותרו '+left:'מחשב זמן...';$('#busy-time').textContent='עברו '+mmss(s.elapsed);
+  if(s.claude_turn){S.eta=null;left=''}      // a Claude turn has no knowable length - no made-up countdown
+  $('#busy-left').textContent=s.claude_turn?'Claude בודק - הזמן תלוי בכמות':!left?'':S.eta!=null?'נותרו '+left:'מחשב זמן...';$('#busy-time').textContent='עברו '+mmss(s.elapsed);
   const lv=$('#busy-live');if(s.live&&S.liveOn!==false){if(s.live.t!==S.liveT){S.liveT=s.live.t;$('#busy-img').src='/api/live?t='+s.live.t;
       $('#busy-img').alt=(s.live.panels>1?'תצוגה חיה: מימין המקור, משמאל התוצאה. ':'תצוגה חיה: ')+s.live.label;$('#busy-cap').replaceChildren(...(s.live.panels>1?[el('span',{text:'מקור'}),el('span',{text:s.live.label}),el('span',{text:'תוצאה'})]:[el('span',{text:s.live.label})]))}lv.hidden=false}
   else lv.hidden=true;
@@ -1026,11 +1030,12 @@ async function dlStatus(){const p=await api('/api/dicta');const st=$('#dl-st'),b
   else{st.textContent=(p.state==='error'?'ההורדה נכשלה: '+p.error+'. ':'')+'לא מותקן.';b.hidden=false}}
 $('#dl-i').onclick=async()=>{await api('/api/settings',{dicta_quant:$('#s-dq').value});await api('/api/dicta/install',{});say('מוריד את DictaLM ברקע');setTimeout(dlStatus,800)};
 async function loadSettings(){ppStatus();dlStatus();const s=await api('/api/settings');renderSync(s);renderGoogle();$('#s-max').value=s.open_maximized===false?'0':'1';$('#s-lang').value=s.src_lang||'eng';$('#s-wlang').value=s.whisper_lang||'';$('#s-wmodel').value=s.whisper_model||'large-v3';
-  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';$('#s-via').value=s.claude_via||'auto';$('#s-ppauto').checked=s.auto_propainter!==false;$('#s-eng').value=s.translate_engine||'claude';$('#tmdbset').textContent=s.tmdb_key_set?'מפתח שמור.':'אין מפתח.';$('#s-dq').value=s.dicta_quant||'Q4_K_M';$('#s-via-h').textContent=s.claude_code_found?'Claude Code נמצא במחשב.':'Claude Code לא נמצא במחשב.';
+  $('#s-gloss').value=s.glossary||'';$('#s-content').value=s.content||'trailer';$('#s-rle').checked=s.srt_rle!==false;$('#s-sep').checked=s.sep_vocals!==false;$('#ghset').textContent=s.gh_token_set?'טוקן שמור.':'אין טוקן.';$('#s-model').value=s.model||'';$('#keyset').textContent=s.api_key_set?'מפתח שמור.':'אין מפתח.';$('#s-via').value=s.claude_via||'auto';$('#s-ppauto').checked=s.auto_propainter!==false;$('#s-notify').checked=s.notify!==false;$('#s-eng').value=s.translate_engine||'claude';$('#tmdbset').textContent=s.tmdb_key_set?'מפתח שמור.':'אין מפתח.';$('#s-dq').value=s.dicta_quant||'Q4_K_M';$('#s-via-h').textContent=s.claude_code_found?'Claude Code נמצא במחשב.':'Claude Code לא נמצא במחשב.';
   const fs=s.ui_fs||14;$('#s-fs').value=String(fs);document.documentElement.style.setProperty('--fs',fs+'px');document.documentElement.style.setProperty('--row',Math.round(fs*2.3)+'px')}
+$('#nt-test').onclick=async()=>{await api('/api/notify_test',{});say('נשלחה התראת ניסיון. אם לא הופיעה, בדוק בהגדרות Windows > מערכת > התראות')};
 $('#pp-i').onclick=async()=>{await api('/api/propainter/install',{});say('מתקין ברקע');setTimeout(ppStatus,800)};
 $('#s-save').onclick=async()=>{await api('/api/settings',{src_lang:$('#s-lang').value,whisper_lang:$('#s-wlang').value.trim(),whisper_model:$('#s-wmodel').value,glossary:$('#s-gloss').value,
-  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),claude_via:$('#s-via').value,auto_propainter:$('#s-ppauto').checked,translate_engine:$('#s-eng').value,tmdb_key:$('#s-tmdb').value.trim(),dicta_quant:$('#s-dq').value,gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';$('#s-tmdb').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
+  content:$('#s-content').value,model:$('#s-model').value.trim(),api_key:$('#s-key').value.trim(),claude_via:$('#s-via').value,auto_propainter:$('#s-ppauto').checked,notify:$('#s-notify').checked,translate_engine:$('#s-eng').value,tmdb_key:$('#s-tmdb').value.trim(),dicta_quant:$('#s-dq').value,gh_token:$('#s-gh').value.trim(),srt_rle:$('#s-rle').checked,sep_vocals:$('#s-sep').checked,open_maximized:$('#s-max').value==='1',ui_fs:+$('#s-fs').value});$('#s-key').value='';$('#s-gh').value='';$('#s-tmdb').value='';await loadSettings();$('#d-settings').close();renderTimeline();say('ההעדפות נשמרו')};
 function openYT(){closeMenu(true);const u=(S.data&&S.data.project&&S.data.project.youtube)||'';$('#yt-u').value=u;openDlg('#d-yt');$('#yt-u').focus()}
 $('#yt-go').onclick=()=>{const url=$('#yt-u').value.trim();if(!url){say('הדבק קישור');$('#yt-u').focus();return}$('#d-yt').close();run('youtube',{url,auto:$('#yt-a').checked,offset:+$('#yt-o').value||0})};
 // ---------------- CueLint: subtitle QC against broadcaster specs and the user's own client profiles

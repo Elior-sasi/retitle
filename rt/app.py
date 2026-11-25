@@ -21,7 +21,7 @@ INK = {}                         # layer file -> drawn area
 
 
 # settings that travel between computers through the sync folder (secrets and recent files stay local)
-SHARED = ("open_maximized", "glossary", "content", "src_lang", "model", "srt_rle", "sep_vocals", "whisper_model", "whisper_lang", "ui_fs")
+SHARED = ("notify", "open_maximized", "glossary", "content", "src_lang", "model", "srt_rle", "sep_vocals", "whisper_model", "whisper_lang", "ui_fs")
 
 
 def sync_root():
@@ -70,7 +70,7 @@ def enable_sync(d):
 
 def settings():
     s = {"api_key": "", "model": "claude-sonnet-5-5", "glossary": "", "src_lang": "eng", "content": "trailer",
-         "srt_rle": True, "sep_vocals": True, "gh_token": "", "open_maximized": True,
+         "srt_rle": True, "sep_vocals": True, "gh_token": "", "open_maximized": True, "notify": True,
          "whisper_model": "large-v3", "whisper_lang": ""}
     s.update(vio.load_json(CFG, {}))
     if not s.get("asr_v3"):                    # one-time: back to large-v3, the most accurate (undoes the turbo switch of build ~20)
@@ -129,7 +129,8 @@ def _live():
         return None
     from . import live
     st = live.state(STATE["proj"])
-    return st if st and st.get("t", 0) >= (STATE["t0"] or 0) else None
+    since = PHASE.get("turn_t0", 0) if PHASE.get("claude_turn") else (STATE["t0"] or 0)
+    return st if st and st.get("t", 0) >= since else None      # no frozen frame from an earlier stage
 
 
 def prog(x):
@@ -1068,7 +1069,24 @@ def job_agent():
     def turn(prompt, stage):
         STATE.update(stage=stage)
         before = agent.snapshot(proj)
-        r = ses.ask(prompt)
+        n = [0]
+
+        def seen(kind, text, path):
+            # what Claude does right now; the bar creeps inside this part (the length of a turn is unknown)
+            n[0] += 1
+            STATE.update(stage="Claude: " + text)
+            prog(min(0.95, 1 - 0.965 ** n[0]))
+            if kind == "look" and path and os.path.exists(path):
+                from . import live
+                im = cv2.imdecode(np.fromfile(path, np.uint8), cv2.IMREAD_COLOR)
+                if im is not None:
+                    live.show(proj, text, im, every=0)
+        PHASE["claude_turn"] = True
+        PHASE["turn_t0"] = time.time()
+        try:
+            r = ses.ask(prompt, on_event=seen)
+        finally:
+            PHASE["claude_turn"] = False
         with LOCK:
             changed, err = agent.settle(proj, before, log)
         if err:
@@ -1100,7 +1118,7 @@ def job_agent():
             dst = os.path.join(proj, ".claude", "skills", name)
             shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(os.path.join(sk, name), dst)
-        part(0.28, 0.3, "Claude עובר על כל הטקסטים שזוהו")
+        part(0.28, 0.4, "Claude עובר על כל הטקסטים שזוהו")
         gl = (s.get("glossary") or "").strip()
         _, _, err = turn(f"""Project folder: {proj}
 Step 1 - what was detected. Read detect_sheet.jpg (each detected line at its frame, with its box) and titles.json.
@@ -1114,14 +1132,14 @@ Lines:
               if t.get("translate", True) and t.get("kind") != "sub" and not t.get("font_by_claude")
               and "font" not in t.get("style_locked", [])}
         if fl:
-            part(0.3, 0.33, "Claude בוחר גופן לכל סגנון")
+            part(0.4, 0.42, "Claude בוחר גופן לכל סגנון")
             try:
                 fonts_auto(only=fl)
             except Exception as e:
                 log(f"בחירת הגופנים לא הצליחה ({e})")
         if opts.get("dialog", True) and vio.load_json(P("project.json")).get("info", {}).get("has_audio", True):
             D = vio.load_json(P("dialog.json"), {"cues": []})["cues"]
-            part(0.33, 0.45, "תמלול ותרגום הדיאלוג")
+            part(0.42, 0.47, "תמלול ותרגום הדיאלוג")
             if not D:
                 job_transcribe()
             if s.get("api_key"):
@@ -1130,7 +1148,7 @@ Lines:
                 except Exception as e:
                     log(f"תרגום הדיאלוג לא הצליח ({e})")
             job_srt()
-        part(0.45, 0.5, "עיצוב כותרות מעוצבות ולוגואים")
+        part(0.47, 0.5, "עיצוב כותרות מעוצבות ולוגואים")
         try:
             job_design()
         except Exception as e:
@@ -1141,13 +1159,13 @@ Lines:
             a, w = 0.5 + 0.5 * (1 - 0.5 ** k), 0.5 * 0.5 ** (k + 1)
             if k == rounds - 1:
                 w = 1.0 - a
-            part(a, a + 0.7 * w, f"סבב {k + 1}: בנייה, קידוד ובדיקה")
+            part(a, a + 0.5 * w, f"סבב {k + 1}: בנייה, קידוד ובדיקה")
             job_export()
             sheets = sorted(f for f in os.listdir(P("check")) if f.endswith(".jpg")) if os.path.isdir(P("check")) else []
             if not sheets:
                 log("אין כרטיסים לבדיקה.")
                 break
-            part(a + 0.7 * w, a + 0.9 * w, f"סבב {k + 1}: Claude בודק כל כרטיס")
+            part(a + 0.5 * w, a + 0.9 * w, f"סבב {k + 1}: Claude בודק כל כרטיס")
             r, changed, _ = turn(f"""Round {k + 1} of {rounds}. The video was built and encoded. Look at EVERY sheet below
 (Read each one): per card, the source on the left and the Hebrew result on the right, from the frame before the title
 comes in to the frame after it goes out. {"Last round you asked for: " + json.dumps(last, ensure_ascii=False) + "." if last else ""}
@@ -1266,6 +1284,13 @@ JOBS = {"youtube": job_youtube, "translate_compare": job_translate_compare, "age
         "translate_titles": lambda: job_translate("titles"), "translate_dialog": lambda: job_translate("dialog")}
 
 
+JOB_HE = {"youtube": "כתוביות מיוטיוב", "translate_compare": "השוואת תרגום", "agent": "מצב מלא עם Claude Code", "propaint": "מחיקה חזקה",
+          "design_edit": "שינוי עיצוב עם Claude", "design": "עיצוב עם Claude", "auto": "הכול אוטומטית", "queue": "תור עבודה",
+          "review": "מיון עם Claude", "playable": "הכנת וידאו לניגון", "fontmatch": "חיפוש גופן דומה", "fonts": "התאמת גופנים",
+          "overlay": "ייצוא כותרות בלבד", "update": "עדכון", "analyze": "ניתוח כותרות", "build": "בניית תצוגה", "export": "ייצוא",
+          "transcribe": "תמלול", "srt": "יצירת SRT", "translate_titles": "תרגום כותרות", "translate_dialog": "תרגום כתוביות"}
+
+
 def start(name):
     if STATE["running"]:
         return False
@@ -1296,9 +1321,18 @@ def start(name):
             STATE["t1"] = time.time()
             PHASE.update(range=[0.0, 1.0], name="")
             PHASE.pop("no_claude", None)
+            PHASE["claude_turn"] = False
             _tr.MODE["batch"] = False
             STATE["running"] = False
             STATE["progress"] = None
+            if name != "update":
+                try:
+                    from . import notify
+                    last = STATE["log"][-1][10:].strip() if STATE["log"] else ""
+                    notify.job_ended(JOB_HE.get(name, name), STATE["t1"] - STATE["t0"], STATE["error"],
+                                     STATE["cancelled"], settings().get("notify", True), extra=last)
+                except Exception:
+                    pass
     threading.Thread(target=run, daemon=True).start()
     return True
 
@@ -1762,12 +1796,15 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"current": series_name(), "list": series.list_all()})
         if u.path == "/api/status":
             from . import asr
+            if "f" in q:
+                from . import notify
+                notify.report_focus(q["f"][0] == "1")
             return self._send(200, {"asr": asr.STATE, "proj": STATE["proj"], "file": STATE.get("file"), "missing_video": STATE.get("missing_video", False), "running": STATE["running"], "job": STATE["job"],
                                     "error": STATE["error"], "log": STATE["log"], "progress": STATE["progress"],
                                     "stage": STATE["stage"], "step": STATE["step"], "steps": STATE["steps"], "phase": PHASE["name"],
                                     "queue": QUEUE,
                                     "elapsed": round((time.time() if STATE["running"] else STATE.get("t1", time.time())) - STATE["t0"], 1) if STATE["t0"] else 0,
-                                    "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"],
+                                    "cancelled": STATE["cancelled"], "cancelling": STATE["cancel"] and STATE["running"], "claude_turn": bool(PHASE.get("claude_turn")),
                                     "live": _live()})
         if u.path == "/api/live":
             f = os.path.join(STATE["proj"] or "", "live", "live.jpg")
@@ -1948,6 +1985,10 @@ class H(BaseHTTPRequestHandler):
             if "whisper_model" in b:
                 from . import asr
                 asr.prepare(s.get("whisper_model", "large-v3"))
+            return self._send(200, {"ok": True})
+        if u.path == "/api/notify_test":
+            from . import notify
+            notify.toast("Retitle", "כך תיראה התראה כשעבודה ארוכה מסתיימת")
             return self._send(200, {"ok": True})
         if u.path == "/api/fonts/import":
             from . import fontlib
@@ -2300,6 +2341,11 @@ def prepare_ui():
 
 def main():
     global WINDOW
+    try:
+        from . import notify
+        notify.set_app_id()
+    except Exception:
+        pass
     _after_update()
     if "--prepare" in sys.argv:
         close_splash()
