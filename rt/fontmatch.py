@@ -749,6 +749,88 @@ def fix_colours(proj, t):
     return False
 
 
+def _is_logo(t, name):
+    """The film's or show's own name (all its words are in the video's name, e.g. ICE AGE in 'Ice Age- Boiling
+    Point - Official Trailer'): a logo keeps its own lettering, it is not one of the taglines."""
+    if t.get("kind") == "logo" or t.get("logo_full"):
+        return True
+    w = re.findall(r"[a-z0-9]+", (t.get("src") or "").lower())
+    return bool(w) and len("".join(w)) >= 3 and all(x in name for x in w)
+
+
+def unify_fonts(T, proj=None):
+    """One look per video: the taglines of one kind (designed/styled, or plain) get one Hebrew font. Claude
+    designs card by card and could pick a round font for one tagline and a block font for the next while the
+    original uses one font for all of them. The winner is the used font closest to the originals' letters
+    (stroke weight, corners, width...), else the one most cards use. Logos keep their own.
+    Returns the ids of designed cards whose picture must be drawn again."""
+    def font_of(t):
+        d = t.get("design") if isinstance(t.get("design"), dict) else None
+        return (d or {}).get("font") or (t.get("style") or {}).get("font")
+    name = ""
+    if proj:
+        pj = vio.load_json(os.path.join(proj, "project.json"), {})
+        base = os.path.splitext(os.path.basename(pj.get("video") or proj))[0].lower()
+        # only the title part: "Ice Age- Boiling Point - Official Trailer - In Theaters February 5" -> ice age boiling point
+        kw = r"\b(official|trailer|teaser|clip|promo|full episode|episode|season|s\d+e\d+|in theaters|\d{4})\b"
+        base = re.split(kw, base)[0] or re.sub(kw, " ", base)
+        name = " ".join(re.findall(r"[a-z0-9]+", base))
+    pool = [t for t in T["titles"] if t.get("translate", True) and t.get("kind") != "sub"
+            and t.get("mode") != "remove" and font_of(t) and not _is_logo(t, name)
+            and "font" not in set(t.get("style_locked", [])) and not t.get("font_user")]
+    groups = {}
+    for t in pool:
+        groups.setdefault(bool(t.get("styled") or t.get("design")), []).append(t)
+    redo = []
+    for ls in groups.values():
+        votes = {}
+        for t in ls:
+            votes.setdefault(font_of(t), []).append(t)
+        if len(ls) < 2 or len(votes) == 1:
+            continue
+        win = None
+        if proj:
+            try:
+                srcs = []
+                for t in ls:
+                    m = letters(proj, t)
+                    tr = traits(m) if m is not None else None
+                    if tr:
+                        srcs.append(_src_adj(tr, "latin"))
+                cands = candidate_traits(names=set(votes))
+                if srcs and cands:
+                    best = {}
+                    for n, w, d, tr in cands:
+                        sc = float(np.mean([_dist(sv, tr, "latin") for sv in srcs]))
+                        if n not in best or sc < best[n]:
+                            best[n] = sc
+                    if best:
+                        win = min(best, key=best.get)
+            except Exception:
+                win = None
+        if win is None:
+            win = max(votes, key=lambda f: (len(votes[f]), max(float((t.get("style") or {}).get("letter_h") or 0) for t in votes[f])))
+        donor = votes[win][0]
+        dd = donor.get("design") if isinstance(donor.get("design"), dict) else {}
+        for t in ls:
+            if font_of(t) == win:
+                continue
+            st = t.setdefault("style", {})
+            st["font"] = win
+            for k in ("weight", "wdth"):
+                if (donor.get("style") or {}).get(k) is not None:
+                    st[k] = donor["style"][k]
+            if isinstance(t.get("design"), dict):
+                t["design"]["font"] = win
+                for k in ("weight", "wdth"):
+                    if dd.get(k) is not None:
+                        t["design"][k] = dd[k]
+                if (t.get("layer") or {}).get("design"):
+                    redo.append(t["id"])
+            t["font_unified"] = win
+    return redo
+
+
 def check_looks(proj, T, log=print):
     """Once per title (look_checked): projects whose looks were picked before this check existed. Titles
     with the same picked look are checked together on the biggest one, so a style stays one style."""

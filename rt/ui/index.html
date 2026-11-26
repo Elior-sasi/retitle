@@ -540,6 +540,9 @@ table.cmp{width:100%;border-collapse:collapse}table.cmp th,table.cmp td{border-b
 <p class="note" style="padding:0" id="cmp-note">בכל שורה בחר את התרגום שעדיף לך. אפשר גם לערוך לפני השמירה.</p>
 <table class="cmp"><thead><tr><th scope="col">מקור</th><th scope="col">Claude</th><th scope="col">DictaLM</th><th scope="col">ייכנס</th></tr></thead><tbody id="cmp-b"></tbody></table></div>
 <div class="df"><button id="cmp-run">תרגם מחדש בשניהם</button><button class="cta" id="cmp-save">שמור את הבחירות</button><button data-close>סגור</button></div></dialog>
+<dialog id="d-done" aria-labelledby="dd-h" aria-describedby="dd-d"><h2 class="dh" id="dd-h">הווידאו מוכן</h2><div class="db">
+<p id="dd-d" style="font-size:1.1em">הווידאו בעברית נשמר בתיקיית הפלט של הפרויקט (out), יחד עם קובץ הכתוביות.</p></div>
+<div class="df"><button type="button" class="cta" id="dd-play">נגן את הווידאו</button><button type="button" id="dd-dir">פתח את התיקייה</button><button type="button" id="dd-chk">בדיקה: מקור מול תוצאה</button><button type="button" data-close>סגור</button></div></dialog>
 <dialog id="d-checks" aria-labelledby="dc-h"><h2 class="dh" id="dc-h">בדיקה: מקור מול תוצאה</h2><div class="db"><p class="note" style="padding:0">בכל תמונה: משמאל המקור, מימין התוצאה, מהפריים שלפני הכניסה עד שאחרי היציאה.</p><div class="checks" id="checks"></div></div><div class="df"><button class="cta" data-close>סגור</button></div></dialog>
 
 <script>
@@ -1001,7 +1004,7 @@ async function poll(){let s;try{s=await api('/api/status?f='+(document.hasFocus(
   else if(wasRunning&&s.cancelled){await reloadData(false);renderAll();say(`${JOBN[s.job]||''} בוטל`)}
   else if(wasRunning){await reloadData(false);renderAll();setMode(S.mode);
     if(s.error)say(`שגיאה ב${JOBN[s.job]||''}: ${s.error}`,true);else say(`${JOBN[s.job]||''} הסתיים. ${s.log.length?s.log[s.log.length-1].slice(10):''}`);
-    if(s.job==='export'&&!s.error&&S.data.checks.length)openChecks();
+    if(['export','auto','agent'].includes(s.job)&&!s.error&&s.log.some(l=>l.includes('הווידאו מוכן')))openDone();
     if(s.job==='analyze'&&!s.error)showNext();
     if(s.job==='playable'&&!s.error){S.playStamp=Date.now();setSrc()}
     if(s.job==='fontmatch'&&S.fmWait){const id=S.fmWait;S.fmWait=null;S.fm=S.fm||{};S.fm[id]=await api('/api/fontmatch?id='+encodeURIComponent(id));
@@ -1124,6 +1127,10 @@ async function openCompare(){closeMenu(true);const d=await api('/api/compare');c
 $('#cmp-run').onclick=()=>{$('#d-cmp').close();run('translate_compare')};
 $('#cmp-save').onclick=async()=>{const he={};$('#cmp-b').querySelectorAll('input').forEach(i=>he[i.dataset.id]=i.value.trim());
   const r=await api('/api/compare/pick',{he});$('#d-cmp').close();await reloadData(true);renderAll();refreshFrame();say(r.n+' כותרות עודכנו')};
+function openDone(){openDlg('#d-done');$('#dd-play').focus()}
+$('#dd-play').onclick=async()=>{const r=await api('/api/play_out',{});if(!r.ok)say('לא מצאתי וידאו בתיקיית הפלט',true);else{$('#d-done').close();say('פותח את '+r.name)}};
+$('#dd-dir').onclick=()=>{api('/api/reveal',{});$('#d-done').close()};
+$('#dd-chk').onclick=()=>{$('#d-done').close();openChecks()};
 function openChecks(){if(!S.data||!S.data.checks.length)return say('אין עדיין בדיקה - ייצא קודם');const box=$('#checks');box.replaceChildren(...S.data.checks.map(p=>el('figure',{},el('img',{src:`/api/file?k=${fileKey()}&p=check/${encodeURIComponent(p)}&t=${Date.now()}`,alt:`בדיקת כרטיס ${p.replace('.jpg','')}: מקור משמאל ותוצאה מימין`}),el('figcaption',{class:'note',text:'כרטיס '+p.replace('.jpg','')}))));openDlg('#d-checks')}
 
 // ================================================================ import / hardsubs / QA / update
@@ -1152,7 +1159,7 @@ $('#upd-go').onclick=async()=>{$('#d-upd').close();await flush();const r=await a
 
 // ================================================================ menus
 const MENUS=[
- ['קובץ',[['פרויקט חדש מקובץ וידאו...','Ctrl+N',()=>openVideo()],['פתח פרויקט...','Ctrl+O',()=>openProjectFile()],['פרויקטים אחרונים...','',()=>openRecent()],['-'],['שמור','Ctrl+S',()=>saveNow(),'proj'],['שמור בשם...','Ctrl+Shift+S',()=>saveAs(),'proj'],['סדרה...','',()=>openSeries(),'proj'],['-'],['ייבוא SRT מקור (לתרגום)...','',()=>importSrt(false),'proj'],['ייבוא SRT בעברית...','',()=>importSrt(true),'proj'],['-'],['ייצוא מדיה (וידאו + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כותרות בלבד על רקע שקוף (MOV)','',()=>run('overlay'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks']]],
+ ['קובץ',[['פרויקט חדש מקובץ וידאו...','Ctrl+N',()=>openVideo()],['פתח פרויקט...','Ctrl+O',()=>openProjectFile()],['פרויקטים אחרונים...','',()=>openRecent()],['-'],['שמור','Ctrl+S',()=>saveNow(),'proj'],['שמור בשם...','Ctrl+Shift+S',()=>saveAs(),'proj'],['סדרה...','',()=>openSeries(),'proj'],['-'],['ייבוא SRT מקור (לתרגום)...','',()=>importSrt(false),'proj'],['ייבוא SRT בעברית...','',()=>importSrt(true),'proj'],['-'],['ייצוא מדיה (וידאו + SRT)','Ctrl+M',()=>run('export'),'proj'],['ייצוא כותרות בלבד על רקע שקוף (MOV)','',()=>run('overlay'),'proj'],['ייצוא כתוביות בלבד (SRT)','',()=>run('srt'),'proj'],['-'],['נגן את הווידאו המוכן','',()=>api('/api/play_out',{}).then(r=>{if(!r.ok)say('אין עדיין וידאו מוכן - ייצא קודם',true)}),'proj'],['פתח תיקיית פלט','',()=>api('/api/reveal',{}),'proj'],['בדיקה אחרונה','',()=>openChecks(),'checks']]],
  ['עריכה',[['בטל','Ctrl+Z',()=>undo(),'undo'],['בצע שוב','Ctrl+Shift+Z',()=>redo(),'redo'],['-'],['בחר פריט במיקום הנגן','D',()=>selectAtPlayhead(),'proj'],['סמן תחילת טווח עבודה','I',()=>setRange('in'),'proj'],['סמן סוף טווח עבודה','O',()=>setRange('out'),'proj'],['נקה טווח עבודה','Ctrl+Shift+X',()=>setRange(null),'proj'],['-'],['תחילת הפריט = מיקום הנגן','Q',()=>setEdge('in'),'sel'],['סוף הפריט = מיקום הנגן','W',()=>setEdge('out'),'sel'],['-'],['להחליף את כל הכותרות','',()=>bulk(true),'proj'],['לא להחליף אף כותרת','',()=>bulk(false),'proj'],['-'],['העדפות...','Ctrl+,',()=>openDlg('#d-settings')]]],
  ['וידאו',[['הכול אוטומטית...','',()=>openAuto(),'proj'],['תור עבודה...','',()=>openQueue()],['-'],['נתח כותרות על המסך','',()=>run('analyze'),'proj'],['Claude: מיין שוב כותרות / לוגואים / קרדיטים','',()=>run('review'),'proj'],['תמלל דיאלוג','',()=>run('transcribe'),'proj'],['כתוביות מיוטיוב במקום תמלול...','',()=>openYT(),'proj'],['-'],['תרגם כותרות אוטומטית','',()=>run('translate_titles'),'proj'],['תרגם כתוביות אוטומטית','',()=>run('translate_dialog'),'proj'],['השוואת תרגום: Claude מול DictaLM...','',()=>openCompare(),'proj'],['-'],['העבר כתוביות צרובות לרשימת הכתוביות','',()=>hardsubs(),'subs'],['התאם גופנים אוטומטית','',()=>run('fonts'),'proj'],['בדיקת QA','',()=>openQA(),'proj'],['בדיקת QC לכתוביות לפי לקוח (CueLint)...','',()=>openQC(),'proj'],['-'],['בנה תצוגה (רינדור)','Enter',()=>run('build'),'proj']]],
  ['תצוגה',[['מקור','',()=>setMode('source'),'proj'],['תוצאה','T',()=>setMode('result'),'proj'],['זה לצד זה','Shift+T',()=>setMode('compare'),'proj'],['מסך מלא','Ctrl+`',()=>toggleFS(),'proj'],['-'],['הגדל זום','=',()=>zoomTo(S.zoom*1.5),'proj'],['הקטן זום','-',()=>zoomTo(S.zoom/1.5),'proj'],['התאם לחלון','\\',()=>fit(),'proj'],['-'],['יומן פעולות','',()=>openDlg('#d-log')]]],

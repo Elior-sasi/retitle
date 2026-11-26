@@ -2469,6 +2469,16 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(200, {"ok": False, "error": str(e)})
             return self._send(200, {"ok": True})
+        if u.path == "/api/play_out":
+            # the finished video in the PC's own player (the newest file in out/)
+            fs = sorted(glob.glob(P("out", "*.mp4")) + glob.glob(P("out", "*.mov")), key=os.path.getmtime)
+            if not fs:
+                return self._send(200, {"ok": False})
+            if sys.platform.startswith("win"):
+                os.startfile(fs[-1])
+            else:
+                subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", fs[-1]])
+            return self._send(200, {"ok": True, "name": os.path.basename(fs[-1])})
         if u.path == "/api/reveal":
             target = P("out") if os.path.isdir(P("out")) else STATE["proj"]
             if sys.platform.startswith("win"):

@@ -473,6 +473,16 @@ def build_layers(proj, only=None):
     T = vio.load_json(os.path.join(proj, "titles.json"))
     try:                                   # looks picked before the check against the original existed
         from . import fontmatch
+        redo = fontmatch.unify_fonts(T, proj)
+        if redo:
+            vio.save_json(os.path.join(proj, "titles.json"), T)
+            from . import design
+            for tid in redo:              # designed cards: draw their picture again in the shared font
+                try:
+                    design.rerender(proj, tid)
+                except Exception as e:
+                    print("rerender", tid, e)
+            only = None
         if fontmatch.check_looks(proj, T):
             vio.save_json(os.path.join(proj, "titles.json"), T)
             only = None                    # the changed titles need new layers too

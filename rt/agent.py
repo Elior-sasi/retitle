@@ -48,6 +48,7 @@ RT --py .claude/skills/qc-video/scripts/qc-scan.py <video> (ffmpeg is on the pat
 check/guard.json: frames where something changed OUTSIDE the title areas (with check/guard_<frame>.jpg) -
 anything listed there is a bug to fix (usually a "title" that is not text and should be translate=false).
 
+Taglines of one kind share ONE Hebrew font across the video (as the original does); only the film's own logo may differ - the app unifies the font otherwise.
 Lines with he_locked=true were approved by the user: never change their he or translate (the app restores them).
 Hebrew rules: natural Hebrew a viewer reads in a glance, the official Hebrew title when there is one, no niqqud,
 plain " quotes, a regular hyphen - never an em dash, the user's name glossary always wins. A sentence split over
