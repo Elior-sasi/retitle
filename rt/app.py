@@ -1257,6 +1257,23 @@ def agent_tool(proj):
     return p
 
 
+def metric_notes():
+    """check/metrics.json in words for Claude: cards whose Hebrew covers much more/less area than the original
+    letters, or whose erase changed the picture away from the letters (a smear)."""
+    M = vio.load_json(P("check", "metrics.json"), {})
+    out = []
+    for gid, m in sorted(M.items()):
+        r = m.get("size_ratio")
+        if r and (r > 1.3 or r < 0.7):
+            out.append(f"- {gid}: the Hebrew covers {r:.2f}x the area of the original letters (frame {m['frame']}) - "
+                       + ("make it smaller/lighter" if r > 1 else "make it bigger/heavier") + ", like the original")
+        e = m.get("erase_outside")
+        if e and e > 0.03:
+            out.append(f"- {gid}: the erase changed {int(e * 100)}% of the card's picture AWAY from the letters "
+                       f"(frame {m['frame']}) - a smeared background: tighten the mask / erase again")
+    return ("\n\nMeasured against the original (fix these):\n" + "\n".join(out)) if out else ""
+
+
 def job_agent():
     """Full mode: Claude Code works the whole video like an editor in chat - looks at every sheet, edits the
     titles itself, asks the engine for fixes and looks again, until every card is right."""
@@ -1403,7 +1420,7 @@ colour, light or font, animation that does not follow the source, mistakes in th
 Fix it: edit titles.json, run the engine yourself (RT ...), or write code for what the engine cannot do - then look
 again at what you changed (RT preview). Put in actions only what you want the app to do for you. After your turn the
 app builds, encodes and makes new sheets. Set done only when everything is right.
-Sheets: {", ".join("check/" + f for f in sheets)}""", f"סבב {k + 1}: Claude בודק כל כרטיס")
+Sheets: {", ".join("check/" + f for f in sheets)}{metric_notes()}""", f"סבב {k + 1}: Claude בודק כל כרטיס")
             acts = [x for x in r.get("actions") or [] if isinstance(x, dict)]
             last = acts
             if r.get("done") and not acts and not changed:

@@ -441,8 +441,22 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
     H, W = img.shape[:2]
     M0 = frame_mask(img, f, lines, reg)
     sm = _sam(proj, gid, f, M0.shape)
+    limit = None
     if sm is not None:                     # SAM 2 followed the whole letters (3D side, bevel, glow) through the card
         M0 = M0 | cv2.dilate(sm, np.ones((5, 5), np.uint8))
+        # ... and it says where the letters are NOT: the colour model alone (white snow letters, tolerance 50)
+        # also took the sky, clouds and rocks of the same colour - half the picture was rebuilt and smeared.
+        # Keep the erase close to SAM's letters (plus a margin for glow, side and soft edges).
+        if sm.sum() > 255 * 400:
+            lh = max([t["box"][3] - t["box"][1] for t in lines] or [60])
+            r = int(0.12 * lh) + 6
+            near = sm.copy()
+            for g in (f - 8, f - 3, f - 1, f + 1, f + 3, f + 8):   # the letters' path while they move
+                o = _sam(proj, gid, g, M0.shape)
+                if o is not None:
+                    near |= o
+            limit = cv2.dilate(near, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+            M0 = M0 & limit
     env = M0.copy()
     if second:
         # fading / moving text the colour model misses: rebuild a wider envelope (text area of
@@ -453,6 +467,8 @@ def clean_frame(proj, gid, f, lines, reg, cuts, n, lo, hi, K=14, thr_res=14.0, s
                 env |= frame_mask(gi, g, lines, reg, margin=0) if any(
                     t["in"] <= g <= t["out"] for t in lines) else 0
         env = cv2.dilate(env, np.ones((15, 15), np.uint8))
+        if limit is not None:
+            env &= limit
     M = M0 | env
     if not M.any():
         return img, 0.0, M
@@ -719,9 +735,22 @@ def _card(args):
     others = [o for o in T["titles"] if o["id"] not in ids and
               not (o["box"][2] < reg[0] or o["box"][0] > reg[2] or o["box"][3] < reg[1] or o["box"][1] > reg[3])]
     fr = []
+    from . import occlude
+    try:                                   # something passing in front of the title: found first, then kept
+        nfg = occlude.masks(proj, gid, a, b)
+        if nfg:
+            print(f"occlude {gid}: in front of the title in {nfg} frames")
+    except Exception as e:
+        print("occlude", gid, e)
     for f in range(a, b + 1):
         out, frac, M = clean_frame(proj, gid, f, lines, reg, S["cuts"], n, lo, hi, others=others,
                                    motion=S.get("motion"))
+        fg = occlude.get(proj, gid, f, out.shape)
+        if fg is not None:                 # the character / branch in front stays exactly as in the original
+            img0 = _load(proj, gid, f)
+            if img0 is not None and img0.shape == out.shape:
+                out = (out.astype(np.float32) * (1 - fg[..., None]) + img0.astype(np.float32) * fg[..., None]).astype(np.uint8)
+                M = (M.astype(np.float32) * (1 - fg)).astype(M.dtype)
         cv2.imwrite(os.path.join(d, f"{f:06d}.png"), out, PNG_FAST)
         cv2.imwrite(os.path.join(d, f"m{f:06d}.png"), M, PNG_FAST)
         src = cv2.imread(os.path.join(proj, "cache", gid, f"{f:06d}.png"))

@@ -1,5 +1,15 @@
 """End-to-end check: generated clip with 3 animated English titles -> Hebrew video + SRT."""
-import os, sys, json, shutil, subprocess, tempfile
+import os, sys, json, shutil, subprocess, tempfile, atexit
+_mk = tempfile.mkdtemp
+_made = []
+
+
+def _mkdtemp(*a, **k):                     # every temp folder of the test is removed at the end (they are ~250 MB)
+    d = _mk(*a, **k); _made.append(d); return d
+
+
+tempfile.mkdtemp = _mkdtemp
+atexit.register(lambda: [shutil.rmtree(d, ignore_errors=True) for d in _made])
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)

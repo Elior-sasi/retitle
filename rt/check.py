@@ -61,6 +61,35 @@ def run(proj, video_out=None):
             p = os.path.join(d, f"{gid}.jpg")
             cv2.imwrite(p, np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 88])
             sheets.append(p)
+    # numbers next to the pictures: how much letter the Hebrew draws against the original, and how much of the
+    # picture the erase changed away from the letters (a smeared patch) - things an eye misses on small sheets
+    metrics = {}
+    for gid, (fs, act) in plan.items():
+        try:
+            m = (min(t["in"] for t in act) + max(t["out"] for t in act)) // 2
+            if m not in src or m not in dst:
+                continue
+            x0, y0, x1, y1 = act[0]["region"]
+            a = src[m][y0:y1, x0:x1].astype(np.int16); b = dst[m][y0:y1, x0:x1].astype(np.int16)
+            cl = cv2.imread(os.path.join(proj, "clean", gid, f"{m:06d}.png"))
+            if cl is None or cl.shape[:2] != a.shape[:2]:
+                continue
+            cl = cl.astype(np.int16)
+            sm = cv2.imread(os.path.join(proj, "sam", gid, f"{m:06d}.png"), 0)
+            letters = (sm > 127) if sm is not None and sm.shape == a.shape[:2] else (np.abs(a - cl).max(2) > 40)
+            src_ink = float(letters.sum())
+            dst_ink = float((np.abs(b - cl).max(2) > 40).sum())
+            row = {"frame": m, "size_ratio": round(dst_ink / src_ink, 2) if src_ink > 400 else None}
+            if sm is not None and sm.shape == a.shape[:2]:
+                lh = max(t["box"][3] - t["box"][1] for t in act)
+                r = int(0.15 * lh) + 8
+                near = cv2.dilate(letters.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+                changed = (np.abs(cl - a).max(2) > 25) & (near == 0)
+                row["erase_outside"] = round(float(changed.mean()), 3)
+            metrics[gid] = row
+        except Exception as e:
+            print("metrics", gid, e)
+    vio.save_json(os.path.join(d, "metrics.json"), metrics)
     # accessible Hebrew report
     rows = []
     for gid, (fs, act) in plan.items():

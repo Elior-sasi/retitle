@@ -37,7 +37,14 @@ Spec (JSON; sizes are relative to the letter height "em" unless marked px):
  "fill": {"type": "solid"|"vertical"|"horizontal"|"radial", "colors": ["#rrggbb", ...], "texture": 0, "texture_scale": 0.15},
  "highlight": {"color": "#rrggbb", "width": 0.05, "side": "top"|"bottom"|"left"|"right"} or null,
  "outlines": [{"color": "#rrggbb", "width": 0.04}],      # inner first
- "extrude": {"dx": 0.0, "dy": 0.06, "steps": 8, "color": "#rrggbb", "shade": 0.3} or null,
+ "extrude": {"dx": 0.0, "dy": 0.06, "steps": 8, "color": "#rrggbb", "shade": 0.3,
+             "colors": ["#near", "#far"], "depth_scale": 1.0, "vanish": [0.5, 3.0], "opacity": 1.0,
+             "edge_light": "#rrggbb" or null, "edge_width": 0.03} or null,
+   # the letters' 3D side. Thick block letters (ice, stone, metal): steps 14-24 and a real depth (dx/dy 0.08-0.2).
+   # depth_scale < 1 puts it in perspective (the far end shrinks towards "vanish", x/y in the letter block 0..1,
+   # e.g. [0.5, 3.0] = seen from above, the side recedes downwards); colors = near -> far colour of the side
+   # (translucent ice: light cyan -> deep blue, with opacity 0.85); edge_light = the thin light line where the
+   # face meets the side (warm rim light in many CGI titles)
  "shadow": {"dx": 0.03, "dy": 0.05, "blur": 0.06, "color": "#000000", "opacity": 0.6} or null,
  "glow": {"color": "#rrggbb", "size": 0.15, "opacity": 0.5} or null,
  "marks": {"color": "#rrggbb", "per_letter": [1, 3], "length": 0.35, "width": 0.08, "chance": 0.7} or null,   # stripes from the letter edges (tiger, claws)
@@ -452,11 +459,29 @@ def render_spec(spec, source=None, em=200):
     grown = cv2.dilate(M, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(2 * total) + 1, int(2 * total) + 1))) if total >= 1 else M
     ex = spec.get("extrude")
     E = np.zeros_like(M)
+    TM = None                                          # how far into the side each pixel is (0 near .. 1 far)
     if ex:
         steps = int(ex.get("steps", 8) or 8)
         dx, dy = float(ex.get("dx", 0)) * em, float(ex.get("dy", 0.06)) * em
+        ds = float(ex.get("depth_scale", 1.0) or 1.0)
+        ys0, xs0 = np.where(M > 0.3)
+        if ds != 1.0 and len(xs0):
+            bx0, by0, bx1, by1 = xs0.min(), ys0.min(), xs0.max(), ys0.max()
+            vx = bx0 + float((ex.get("vanish") or [0.5, 3.0])[0]) * (bx1 - bx0)
+            vy = by0 + float((ex.get("vanish") or [0.5, 3.0])[1]) * (by1 - by0)
+        TM = np.full(M.shape, 2.0, np.float32)
         for k in range(1, steps + 1):
-            E = np.maximum(E, _shift(grown, dx * k / steps, dy * k / steps))
+            t = k / steps
+            if ds != 1.0 and len(xs0):
+                sc = 1 - (1 - ds) * t                   # perspective: the far end shrinks towards the vanishing point
+                A = np.float32([[sc, 0, (1 - sc) * vx + dx * t], [0, sc, (1 - sc) * vy + dy * t]])
+                Mk = cv2.warpAffine(grown, A, (w, h), flags=cv2.INTER_LINEAR)
+            else:
+                Mk = _shift(grown, dx * t, dy * t)
+            TM[(Mk > 0.5) & (TM > 1.5)] = t
+            E = np.maximum(E, Mk)
+            if k == 1:
+                M1 = Mk                                 # where the side starts: the edge light goes only there
     sh = spec.get("shadow")
     if sh:
         base = np.maximum(grown, E)
@@ -472,13 +497,26 @@ def render_spec(spec, source=None, em=200):
         over(np.array(_hex(gl.get("color"), (255, 255, 255)), np.float32), G * float(gl.get("opacity", 0.5)))
     if ex:
         c = np.array(_hex(ex.get("color"), (40, 40, 40)), np.float32)
+        cols = ex.get("colors") or []
+        near = np.array(_hex(cols[0], tuple(c)), np.float32) if cols else c
+        farc = np.array(_hex(cols[-1], tuple(c)), np.float32) if cols else c
         shade = float(ex.get("shade", 0.3) or 0)
-        # darker towards the far end of the extrusion
-        far = cv2.GaussianBlur(np.clip(E - grown, 0, 1), (0, 0), max(1.0, em * 0.02))
-        col = np.ones((h, w, 1), np.float32) * c * (1 - shade * far[..., None])
-        out_a = np.clip(E - grown, 0, 1)
+        tm = np.where(TM > 1.5, 1.0, TM) if TM is not None else np.ones(M.shape, np.float32)
+        tm = cv2.GaussianBlur(tm, (0, 0), max(1.0, em * 0.01))
+        # near -> far colour along the depth, darker towards the far end
+        col = (near[None, None, :] * (1 - tm[..., None]) + farc[None, None, :] * tm[..., None]) * (1 - shade * tm[..., None])
+        out_a = np.clip(E - grown, 0, 1) * float(ex.get("opacity", 1.0) or 1.0)
         out[..., :3] = out[..., :3] * (1 - out_a[..., None]) + col * out_a[..., None]
         out[..., 3] = out[..., 3] * (1 - out_a) + out_a
+        if ex.get("edge_light"):                     # the light line where the face meets the side
+            ew = max(1, int(round(float(ex.get("edge_width", 0.03) or 0.03) * em)))
+            # the faces' edges that turn towards the side (the side's first slice, a few px wide) - not all round
+            first = np.clip(M1 - grown, 0, 1)
+            band = cv2.dilate(first, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * ew + 1, 2 * ew + 1)))
+            band = band * np.clip(E - grown, 0, 1) * (cv2.dilate(grown, cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (4 * ew + 1, 4 * ew + 1))) > 0.5)
+            band = cv2.GaussianBlur(band, (0, 0), max(0.8, ew * 0.4))
+            over(np.array(_hex(ex.get("edge_light"), (255, 160, 120)), np.float32), np.clip(band * 1.5, 0, 1))
     acc = total
     for o, wd in reversed(list(zip(outl, widths))):     # outermost first
         r = int(round(acc))
@@ -708,6 +746,11 @@ def composite(design, crops_, scale_to="box"):
     iw, ih = max(1, ink[2] - ink[0]), max(1, ink[3] - ink[1])
     sw, sh = tw / iw, th / ih
     s = min(max(sw, sh), 1.2 * min(sw, sh))          # same rule as the build
+    a_src = float((crops_.get("letters") if crops_.get("letters") is not None else np.zeros(1)).sum())
+    if a_src > 400:                                   # ...including: no more drawn area than the original's letters
+        a_des = float((np.array(design.convert("RGBA"))[:, :, 3] > 127).sum())
+        if a_des > 0:
+            s = min(s, float(np.sqrt(1.1 * a_src / a_des)))
     d = design.resize((max(1, int(design.width * s)), max(1, int(design.height * s))), Image.LANCZOS)
     im = Image.fromarray(bg).convert("RGBA")
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2

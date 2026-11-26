@@ -749,6 +749,10 @@ def fix_colours(proj, t):
     return False
 
 
+SAME_FONT = 2.1      # trait distance below which two cards' original letters count as one font (measured: same font,
+                     # different words: 90% below 2.0; different fonts: 90% above 2.3)
+
+
 def _is_logo(t, name):
     """The film's or show's own name (all its words are in the video's name, e.g. ICE AGE in 'Ice Age- Boiling
     Point - Official Trailer'): a logo keeps its own lettering, it is not one of the taglines."""
@@ -778,11 +782,33 @@ def unify_fonts(T, proj=None):
     pool = [t for t in T["titles"] if t.get("translate", True) and t.get("kind") != "sub"
             and t.get("mode") != "remove" and font_of(t) and not _is_logo(t, name)
             and "font" not in set(t.get("style_locked", [])) and not t.get("font_user")]
-    groups = {}
+    # Group by the ORIGINAL's letters: cards whose source letters share stroke weight, corners, width, slant
+    # are one font in the original and get one Hebrew font; a trailer that really uses two fonts keeps two.
+    # Without measurable letters (no project frames) nothing is merged.
+    src_tr = {}
+    if proj:
+        for t in pool:
+            try:
+                m = letters(proj, t)
+                tr = traits(m) if m is not None else None
+                if tr:
+                    src_tr[t["id"]] = _src_adj(tr, "latin")
+            except Exception:
+                pass
+    groups = []
     for t in pool:
-        groups.setdefault(bool(t.get("styled") or t.get("design")), []).append(t)
+        sv = src_tr.get(t["id"])
+        if sv is None:
+            continue
+        kind = bool(t.get("styled") or t.get("design"))
+        for g in groups:
+            if g["kind"] == kind and _dist(sv, g["tr"], "latin") < SAME_FONT:
+                g["ls"].append(t)
+                break
+        else:
+            groups.append({"kind": kind, "tr": sv, "ls": [t]})
     redo = []
-    for ls in groups.values():
+    for ls in [g["ls"] for g in groups]:
         votes = {}
         for t in ls:
             votes.setdefault(font_of(t), []).append(t)
@@ -791,12 +817,7 @@ def unify_fonts(T, proj=None):
         win = None
         if proj:
             try:
-                srcs = []
-                for t in ls:
-                    m = letters(proj, t)
-                    tr = traits(m) if m is not None else None
-                    if tr:
-                        srcs.append(_src_adj(tr, "latin"))
+                srcs = [src_tr[t["id"]] for t in ls if t["id"] in src_tr]
                 cands = candidate_traits(names=set(votes))
                 if srcs and cands:
                     best = {}

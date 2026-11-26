@@ -139,6 +139,32 @@ def _steady_ref(proj, gid, lines, t):
     print(f"reference frame of {gid} moved to {new} (steady size)")
 
 
+def _src_ink_area(proj, t, rb):
+    """Pixels the original letters cover at the reference frame (3D side and outline included): SAM 2's mask
+    when there is one, else where the source differs from the erased picture inside the card box."""
+    from .extract import groups as _g
+    gid = t.get("group")
+    reg = t.get("region") or [0, 0, 0, 0]
+    f = t.get("ref")
+    if gid is None or f is None:
+        return 0.0
+    m = cv2.imread(os.path.join(proj, "sam", gid, f"{f:06d}.png"), 0)
+    if m is not None:
+        a = float((m > 127).sum())
+        return a if a > 400 else 0.0
+    a = cv2.imread(os.path.join(proj, "cache", gid, f"{f:06d}.png"))
+    b = cv2.imread(os.path.join(proj, "clean", gid, f"{f:06d}.png"))
+    if a is None or b is None or a.shape != b.shape:
+        return 0.0
+    x0, y0 = max(0, rb[0] - reg[0]), max(0, rb[1] - reg[1])
+    x1, y1 = min(a.shape[1], rb[2] - reg[0]), min(a.shape[0], rb[3] - reg[1])
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    d = np.abs(a[y0:y1, x0:x1].astype(np.int16) - b[y0:y1, x0:x1]).max(2)
+    v = float((d > 40).sum())
+    return v if v > 400 else 0.0
+
+
 def track(proj, only=None):
     """Per frame [dx, dy, scale, alpha] of the source text relative to its reference frame.
     Text map = |source - cleaned| clipped (shape, independent of background brightness);
@@ -542,6 +568,14 @@ def build_layers(proj, only=None):
                 th = max(8.0, (rb[3] - rb[1]) * t.get("style", {}).get("size_ratio", 1.0))
                 sw, sh = tw / iw0, th / ih0
                 ss = 1 / min(max(sw, sh), 1.2 * min(sw, sh))
+                # same box is not same size: Hebrew has no capitals, so a line that fills the English box
+                # carries far more letter than the original (a short THIS over FEBRUARY vs two full Hebrew
+                # lines). Not more than ~10% more drawn area than the original letters cover.
+                a_src = _src_ink_area(proj, t, rb)
+                if a_src:
+                    a_des = float((np.array(img)[:, :, 3] > 127).sum())
+                    if a_des > 0:
+                        ss = max(ss, float(np.sqrt(a_des / (1.1 * a_src))))
             anc = ((ink[0] + ink[2]) / 2, (ink[1] + ink[3]) / 2)
         else:
             continue
@@ -719,12 +753,27 @@ def title_layers(proj, t, meta, cache, f, W, H):
                 cache[key] = load_layer(pm["file"])
             L = place(cache[key], pm, anim, f, W, H, proj, t["id"], part=i, shift=shift)
             if L is not None:
-                out.append(L)
+                out.append(_behind(proj, t, f, L))
         return out
     if t["id"] not in cache:
         cache[t["id"]] = load_layer(m["file"])
     L = place(cache[t["id"]], m, anim, f, W, H, proj, t["id"], shift=shift)
-    return [L] if L is not None else []
+    return [_behind(proj, t, f, L)] if L is not None else []
+
+
+def _behind(proj, t, f, L):
+    """The Hebrew goes behind whatever passes in front of the original title (occlude/<gid>/)."""
+    from . import occlude
+    reg = t.get("region")
+    if not reg or not t.get("group"):
+        return L
+    fg = occlude.get(proj, t["group"], f, (reg[3] - reg[1], reg[2] - reg[0]))
+    if fg is None:
+        return L
+    L = L.copy()
+    x0, y0, x1, y1 = reg
+    L[y0:y1, x0:x1] *= (1 - fg)[..., None]          # premultiplied: colour and alpha together
+    return L
 
 
 def load_layer(path):
